@@ -34,6 +34,7 @@ class IntegrationStreamer(Base):
 
     contract_file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     contract_file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contract_valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # позиция карточки внутри колонки канбана (для сортировки внутри stage)
     position: Mapped[int] = mapped_column(Integer, default=0)

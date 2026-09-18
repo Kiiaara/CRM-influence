@@ -49,12 +49,25 @@ def _migrate_streamers_add_content_status():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN content_status VARCHAR(32)"))
 
 
+def _migrate_streamers_add_contract_valid_until():
+    """Добавляем колонку contract_valid_until в integration_streamers если её нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "integration_streamers" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("integration_streamers")]
+    if "contract_valid_until" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN contract_valid_until DATETIME"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _migrate_users_add_pinned()
     _migrate_users_add_vk_id()
     _migrate_streamers_add_content_status()
+    _migrate_streamers_add_contract_valid_until()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство
     db = SessionLocal()

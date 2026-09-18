@@ -60,6 +60,7 @@ class StreamerOut(BaseModel):
     deadline: Optional[datetime] = None
     description: str
     contract_file_name: Optional[str] = None
+    contract_valid_until: Optional[datetime] = None
     position: int
     created_at: datetime
     updated_at: datetime
@@ -119,6 +120,7 @@ class StreamerUpdate(BaseModel):
     streamer_tax_percent: Optional[float] = None
     deadline: Optional[datetime] = None
     description: Optional[str] = None
+    contract_valid_until: Optional[datetime] = None
     position: Optional[int] = None
 
 

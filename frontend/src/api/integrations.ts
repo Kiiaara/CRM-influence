@@ -44,6 +44,7 @@ export interface Streamer {
   deadline: string | null
   description: string
   contract_file_name: string | null
+  contract_valid_until: string | null
   position: number
   created_at: string
   updated_at: string

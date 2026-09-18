@@ -97,7 +97,9 @@ export default function IntegrationsBoard() {
         <div className="text-[11px] text-slate-400 mt-1">до {new Date(c.deadline).toLocaleDateString('ru-RU')}</div>
       )}
       {c.contract_file_name && (
-        <div className="text-[11px] text-brand-500 mt-1">📎 договор</div>
+        <div className="text-[11px] text-brand-500 mt-1">
+          📎 договор{c.contract_valid_until && ` до ${new Date(c.contract_valid_until).toLocaleDateString('ru-RU')}`}
+        </div>
       )}
     </div>
   )
@@ -500,11 +502,8 @@ function StreamerModal({
   })
 
   const addCase = useMutation({
-    mutationFn: () => integrationsApi.addCase(streamer.id, { title: newCaseTitle }),
-    onSuccess: () => {
-      setNewCaseTitle('')
-      qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'cases'] })
-    },
+    mutationFn: () => integrationsApi.addCase(streamer.id, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'cases'] }),
   })
 
   const updateCase = useMutation({
@@ -528,7 +527,6 @@ function StreamerModal({
     onSuccess: () => qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'cases'] }),
   })
 
-  const [newCaseTitle, setNewCaseTitle] = useState('')
 
   const save = () => {
     if (!form.streamer_name.trim()) return
@@ -544,6 +542,7 @@ function StreamerModal({
       streamer_tax_percent: form.streamer_tax_percent,
       deadline: form.deadline,
       description: form.description,
+      contract_valid_until: form.contract_valid_until,
     }
     update.mutate(payload)
   }
@@ -725,6 +724,15 @@ function StreamerModal({
                 className="text-sm text-slate-600 dark:text-slate-300"
               />
             )}
+            <div className="mt-2">
+              <label className="text-xs text-slate-500 dark:text-slate-400">Договор действует до</label>
+              <input
+                type="date"
+                value={form.contract_valid_until ? form.contract_valid_until.slice(0, 10) : ''}
+                onChange={e => setForm({ ...form, contract_valid_until: e.target.value || null })}
+                className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+              />
+            </div>
           </div>
 
           <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3">
@@ -786,20 +794,12 @@ function StreamerModal({
                 ))}
                 {cases.length === 0 && <div className="text-xs text-slate-400">Кейсов ещё нет</div>}
               </div>
-              <div className="flex gap-2">
-                <input
-                  value={newCaseTitle}
-                  onChange={e => setNewCaseTitle(e.target.value)}
-                  placeholder="Название кейса (например игра/бренд)"
-                  className="flex-1 bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
-                />
-                <button
-                  onClick={() => newCaseTitle.trim() && addCase.mutate()}
-                  className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg"
-                >
-                  + Кейс
-                </button>
-              </div>
+              <button
+                onClick={() => addCase.mutate()}
+                className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg"
+              >
+                + Новый кейс
+              </button>
             </div>
           )}
         </div>
@@ -836,42 +836,56 @@ function CaseStudyCard({
   const [whatWasDone, setWhatWasDone] = useState(caseStudy.what_was_done)
   const [result, setResult] = useState(caseStudy.result)
   const [dirty, setDirty] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
 
   const fieldCls = "w-full bg-white dark:bg-brand-900/30 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
+  const labelCls = "text-[11px] text-slate-500 dark:text-slate-400"
+
+  const handleFile = (f: File | undefined | null) => {
+    if (f && f.type.startsWith('image/')) onUploadPhoto(f)
+  }
 
   return (
     <div className="border border-slate-200 dark:border-brand-800 rounded-lg p-3 bg-slate-50 dark:bg-brand-950/40 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <input
-          value={title}
-          onChange={e => { setTitle(e.target.value); setDirty(true) }}
-          placeholder="Название (игра/бренд)"
-          className={`${fieldCls} font-medium`}
-        />
-        <button onClick={onRemove} className="text-red-500 hover:text-red-700 text-xs shrink-0">удалить</button>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1">
+          <label className={labelCls}>Название (игра/бренд)</label>
+          <input
+            value={title}
+            onChange={e => { setTitle(e.target.value); setDirty(true) }}
+            className={`${fieldCls} font-medium`}
+          />
+        </div>
+        <button onClick={onRemove} className="text-red-500 hover:text-red-700 text-xs shrink-0 mt-5">удалить</button>
       </div>
 
-      <textarea
-        value={description}
-        onChange={e => { setDescription(e.target.value); setDirty(true) }}
-        placeholder="Описание"
-        rows={2}
-        className={fieldCls}
-      />
-      <textarea
-        value={whatWasDone}
-        onChange={e => { setWhatWasDone(e.target.value); setDirty(true) }}
-        placeholder="Что сделано"
-        rows={2}
-        className={fieldCls}
-      />
-      <textarea
-        value={result}
-        onChange={e => { setResult(e.target.value); setDirty(true) }}
-        placeholder="Результат"
-        rows={2}
-        className={fieldCls}
-      />
+      <div>
+        <label className={labelCls}>Описание</label>
+        <textarea
+          value={description}
+          onChange={e => { setDescription(e.target.value); setDirty(true) }}
+          rows={2}
+          className={fieldCls}
+        />
+      </div>
+      <div>
+        <label className={labelCls}>Что сделано</label>
+        <textarea
+          value={whatWasDone}
+          onChange={e => { setWhatWasDone(e.target.value); setDirty(true) }}
+          rows={2}
+          className={fieldCls}
+        />
+      </div>
+      <div>
+        <label className={labelCls}>Результат</label>
+        <textarea
+          value={result}
+          onChange={e => { setResult(e.target.value); setDirty(true) }}
+          rows={2}
+          className={fieldCls}
+        />
+      </div>
 
       {dirty && (
         <button
@@ -883,18 +897,31 @@ function CaseStudyCard({
       )}
 
       <div className="pt-1">
+        <label className={labelCls}>Фото</label>
         {caseStudy.photo_name ? (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mt-1">
             <img src={integrationsApi.casePhotoUrl(caseStudy.id)} alt="" className="w-20 h-20 object-cover rounded-lg border border-slate-200 dark:border-brand-800" />
             <button onClick={onRemovePhoto} className="text-xs text-red-500 hover:text-red-700">Удалить фото</button>
           </div>
         ) : (
-          <input
-            type="file"
-            accept="image/*"
-            onChange={e => e.target.files?.[0] && onUploadPhoto(e.target.files[0])}
-            className="text-xs text-slate-600 dark:text-slate-300"
-          />
+          <label
+            onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files?.[0]) }}
+            className={`mt-1 flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-lg py-4 cursor-pointer text-xs transition ${
+              dragOver
+                ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/30 text-brand-600'
+                : 'border-slate-300 dark:border-brand-800 text-slate-400 hover:border-brand-400'
+            }`}
+          >
+            <span>Перетащи фото сюда или нажми, чтобы выбрать</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => handleFile(e.target.files?.[0])}
+            />
+          </label>
         )}
       </div>
     </div>
