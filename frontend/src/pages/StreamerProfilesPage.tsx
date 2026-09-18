@@ -73,6 +73,14 @@ export default function StreamerProfilesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
         <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-slate-100">База стримеров</h1>
         <div className="flex flex-wrap gap-2">
+          <a
+            href="https://docs.google.com/spreadsheets/d/18js3QuVJ0S0JnPxCoavKJsSIHCoLDhSRo3POAXYOkdE/edit?pli=1&gid=216813285#gid=216813285"
+            target="_blank"
+            rel="noreferrer"
+            className="bg-slate-100 dark:bg-brand-900 hover:bg-slate-200 dark:hover:bg-brand-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            🧮 Таблица расчёта
+          </a>
           <label className="bg-slate-100 dark:bg-brand-900 hover:bg-slate-200 dark:hover:bg-brand-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer">
             📤 Импорт из Excel
             <input
