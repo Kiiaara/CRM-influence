@@ -131,32 +131,72 @@ export default function StreamerProfilesPage() {
             <tr>
               <th className="px-3 py-2"><input type="checkbox" checked={selected.size === profiles.length && profiles.length > 0} onChange={toggleAll} className="w-4 h-4" /></th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Имя</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Ссылка на Twitch</th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Категория</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Соц. сети</th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Гео</th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Подписчики</th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Ср. онлайн</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Просмотров/мес</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Просмотры/стрим</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Подп. Telegram</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Telegram охват</th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Стоимость поста</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Реестр КНД</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Твич партнёр</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Статистика</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Обновлено статы</th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Менеджер</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Брендинг 1 нед</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Брендинг 2 нед</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Брендинг 3 нед</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Брендинг 1 мес</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Спецстрим</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Голосовая интеграция</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {profiles.map(p => (
+            {profiles.map(p => {
+              const money = (v: number | null) => v != null ? `${Math.round(v).toLocaleString('ru-RU')} ₽` : '—'
+              const num = (v: number | null) => v != null ? v.toLocaleString('ru-RU') : '—'
+              return (
               <tr key={p.id} className="border-t border-slate-100 dark:border-brand-900 hover:bg-slate-50 dark:hover:bg-brand-900/30">
                 <td className="px-3 py-2"><input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} className="w-4 h-4" /></td>
-                <td className="px-3 py-2 text-slate-900 dark:text-slate-100 cursor-pointer" onClick={() => setEditing(p)}>{p.name}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.category}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.geo}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.subscribers?.toLocaleString('ru-RU') ?? '—'}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.avg_online?.toLocaleString('ru-RU') ?? '—'}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.post_price != null ? `${p.post_price.toLocaleString('ru-RU')} ₽` : '—'}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.manager || '—'}</td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-slate-900 dark:text-slate-100 cursor-pointer whitespace-nowrap" onClick={() => setEditing(p)}>{p.name}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 max-w-[200px] truncate">
+                  {p.twitch_url ? <a href={p.twitch_url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">{p.twitch_url}</a> : '—'}
+                </td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{p.category || '—'}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 max-w-[180px] truncate">{p.social_links || '—'}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{p.geo || '—'}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{num(p.subscribers)}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{num(p.avg_online)}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{num(p.views_per_month)}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{num(p.views_per_stream)}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{num(p.telegram_subscribers)}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{num(p.telegram_reach)}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.post_price)}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 max-w-[160px] truncate">{p.knd_registry || '—'}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{p.twitch_partner ? 'Да' : 'Нет'}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 max-w-[160px] truncate">
+                  {p.stats_url ? <a href={p.stats_url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">ссылка</a> : '—'}
+                </td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{p.stats_updated_at ? p.stats_updated_at.slice(0, 10) : '—'}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{p.manager || '—'}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.branding_price_1w)}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.branding_price_2w)}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.branding_price_3w)}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.branding_price_1m)}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.special_stream_price)}</td>
+                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.voice_integration_price)}</td>
+                <td className="px-3 py-2 text-right whitespace-nowrap">
                   <button onClick={() => setEditing(p)} className="text-brand-600 hover:text-brand-700 text-xs mr-2">править</button>
                   <button onClick={() => confirm('Удалить стримера из базы?') && remove.mutate(p.id)} className="text-red-500 hover:text-red-700 text-xs">удалить</button>
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
         {profiles.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Стримеров нет — импортируй файл или добавь вручную</div>}
