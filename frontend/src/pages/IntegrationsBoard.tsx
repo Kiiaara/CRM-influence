@@ -86,12 +86,12 @@ export default function IntegrationsBoard() {
   }
 
   return (
-    <div className="p-10">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-semibold text-slate-900 dark:text-slate-100">Интеграции</h1>
+    <div className="p-4 sm:p-10">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-slate-100">Интеграции</h1>
         <button
           onClick={() => setPickingBrand(true)}
-          className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto"
         >
           + Новый стример
         </button>
@@ -402,7 +402,7 @@ function StreamerModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="text-xs text-slate-500 dark:text-slate-400">Стадия</label>
               <select

@@ -20,7 +20,7 @@ export default function HomePage() {
   const upcomingTasks = tasks.filter(t => t.due_at && t.status !== 'done').slice(0, 5)
 
   return (
-    <div className="p-10 max-w-6xl">
+    <div className="p-4 sm:p-10 max-w-6xl">
       <h1 className="text-3xl font-semibold text-slate-900 dark:text-slate-100 mb-1">
         Привет{me?.first_name ? `, ${me.first_name}` : ''}
       </h1>
