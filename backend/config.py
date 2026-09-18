@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     auth_bot_token: str = ""          # токен бота для Login Widget + отправки уведомлений
     auth_bot_username: str = ""       # @username бота (без @) - для Login Widget на фронте
     auth_allowed_tg_ids: str = ""     # через запятую: "12345,67890" - попадают в whitelist как admin при первом старте
+    telegram_api_base: str = "https://api.telegram.org"  # можно указать URL Cloudflare Worker-прокси, если сеть до api.telegram.org нестабильна
 
     # VK ID (вход через VK)
     vk_app_id: str = ""          # ID приложения из vk.com/apps?act=manage

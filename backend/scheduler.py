@@ -192,7 +192,7 @@ async def _poll_telegram_updates():
     try:
         async with httpx.AsyncClient(timeout=35.0) as client:
             r = await client.get(
-                f"https://api.telegram.org/bot{settings.auth_bot_token}/getUpdates",
+                f"{settings.telegram_api_base}/bot{settings.auth_bot_token}/getUpdates",
                 params={"offset": _tg_offset, "timeout": 25, "allowed_updates": '["message"]'},
             )
             if r.status_code != 200:

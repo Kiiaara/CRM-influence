@@ -6,7 +6,6 @@ import httpx
 from config import settings
 
 log = logging.getLogger(__name__)
-TG_API = "https://api.telegram.org"
 
 
 MAIN_KEYBOARD = {
@@ -25,7 +24,7 @@ async def send_message(chat_id: int, text: str, with_keyboard: bool = False) -> 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.post(
-                f"{TG_API}/bot{settings.auth_bot_token}/sendMessage",
+                f"{settings.telegram_api_base}/bot{settings.auth_bot_token}/sendMessage",
                 json=payload,
             )
             if r.status_code == 200:
@@ -49,7 +48,7 @@ async def set_my_commands():
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.post(
-                f"{TG_API}/bot{settings.auth_bot_token}/setMyCommands",
+                f"{settings.telegram_api_base}/bot{settings.auth_bot_token}/setMyCommands",
                 json={"commands": commands},
             )
             if r.status_code != 200:
