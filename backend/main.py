@@ -10,8 +10,10 @@ from database import engine, Base, SessionLocal
 import models  # регистрирует все ORM-классы
 from models.workspace import Workspace, WorkspaceMember
 from models.user import User
+from models.advertiser import Advertiser
+from models.integration import Integration
 from routers import auth as auth_router
-from routers import search, tasks, users, integrations, streamer_profiles, workspaces as workspaces_router
+from routers import search, tasks, users, integrations, streamer_profiles, workspaces as workspaces_router, advertisers as advertisers_router
 from scheduler import start_scheduler, stop_scheduler
 
 
@@ -154,6 +156,72 @@ def _migrate_streamers_add_ord_marking():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN ord_reporting_status VARCHAR(16) DEFAULT 'not_submitted'"))
 
 
+def _migrate_integrations_add_advertiser():
+    """Добавляем advertiser_id в integrations, если его нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "integrations" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("integrations")]
+    if "advertiser_id" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE integrations ADD COLUMN advertiser_id INTEGER"))
+
+
+def _migrate_brand_contacts_add_advertiser():
+    """Добавляем advertiser_id в brand_contacts, если его нет (было integration_id)."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "brand_contacts" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("brand_contacts")]
+    if "advertiser_id" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE brand_contacts ADD COLUMN advertiser_id INTEGER"))
+
+
+def _backfill_advertisers():
+    """Создаём Advertiser по уникальным brand внутри каждого workspace,
+    линкуем к ним существующие интеграции и переносим контакты бренда
+    с integration_id на advertiser_id."""
+    from sqlalchemy import text, inspect
+
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            text("SELECT DISTINCT workspace_id, brand FROM integrations WHERE advertiser_id IS NULL")
+        ).fetchall()
+        for workspace_id, brand in rows:
+            adv = db.query(Advertiser).filter_by(workspace_id=workspace_id, name=brand).first()
+            if not adv:
+                adv = Advertiser(workspace_id=workspace_id, name=brand)
+                db.add(adv)
+                db.commit()
+                db.refresh(adv)
+            db.execute(
+                text(
+                    "UPDATE integrations SET advertiser_id = :aid "
+                    "WHERE workspace_id = :wid AND brand = :brand AND advertiser_id IS NULL"
+                ),
+                {"aid": adv.id, "wid": workspace_id, "brand": brand},
+            )
+            db.commit()
+
+        # старые контакты (если есть) были привязаны к integration_id - подтягиваем advertiser_id через сделку
+        insp_cols = [c["name"] for c in inspect(engine).get_columns("brand_contacts")]
+        if "integration_id" in insp_cols:
+            db.execute(
+                text(
+                    "UPDATE brand_contacts SET advertiser_id = ("
+                    "  SELECT advertiser_id FROM integrations WHERE integrations.id = brand_contacts.integration_id"
+                    ") WHERE advertiser_id IS NULL"
+                )
+            )
+            db.commit()
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -163,6 +231,9 @@ async def lifespan(app: FastAPI):
     _migrate_streamers_add_contract_valid_until()
     _migrate_streamers_add_integration_date()
     _migrate_streamers_add_ord_marking()
+    _migrate_integrations_add_advertiser()
+    _migrate_brand_contacts_add_advertiser()
+    _backfill_advertisers()
     _migrate_workspaces_add_owner()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство
@@ -234,3 +305,4 @@ app.include_router(users.router)
 app.include_router(integrations.router)
 app.include_router(streamer_profiles.router)
 app.include_router(workspaces_router.router)
+app.include_router(advertisers_router.router)
