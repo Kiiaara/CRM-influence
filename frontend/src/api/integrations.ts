@@ -46,6 +46,36 @@ export const ORD_REPORTING_LABELS: Record<OrdReportingStatus, string> = {
   overdue: 'Просрочена',
 }
 
+export type ContractStatus =
+  | 'not_sent'
+  | 'sent_to_streamer'
+  | 'signed_by_streamer'
+  | 'sent_to_brand'
+  | 'signed_by_brand'
+  | 'active'
+  | 'expired'
+
+export const CONTRACT_STATUS_LABELS: Record<ContractStatus, string> = {
+  not_sent: 'Не отправлен',
+  sent_to_streamer: 'Отправлен стримеру',
+  signed_by_streamer: 'Подписан стримером',
+  sent_to_brand: 'Отправлен бренду',
+  signed_by_brand: 'Подписан брендом',
+  active: 'Активен',
+  expired: 'Истёк',
+}
+
+// цвет-индикатор для бейджа на карточке канбана
+export const CONTRACT_STATUS_COLOR: Record<ContractStatus, 'red' | 'yellow' | 'green'> = {
+  not_sent: 'red',
+  sent_to_streamer: 'yellow',
+  signed_by_streamer: 'yellow',
+  sent_to_brand: 'yellow',
+  signed_by_brand: 'green',
+  active: 'green',
+  expired: 'red',
+}
+
 export interface Streamer {
   id: number
   integration_id: number
@@ -66,12 +96,26 @@ export interface Streamer {
   description: string
   contract_file_name: string | null
   contract_valid_until: string | null
+  contract_status: ContractStatus
+  contract_sent_date: string | null
+  contract_signed_date: string | null
+  contract_notes: string
+  brief: string
   ord_responsible: OrdResponsible
   ord_status: OrdStatus
   ord_reporting_status: OrdReportingStatus
   position: number
   created_at: string
   updated_at: string
+}
+
+export interface DiscussionMessage {
+  id: number
+  streamer_id: number
+  author_tg_id: number | null
+  author_label: string | null
+  text: string
+  created_at: string
 }
 
 export interface Integration {
@@ -197,5 +241,17 @@ export const integrationsApi = {
   },
   async removeCasePhoto(caseId: number) {
     await api.delete(`/integrations/cases/${caseId}/photo`)
+  },
+
+  async discussion(streamerId: number) {
+    const { data } = await api.get<DiscussionMessage[]>(`/integrations/streamers/${streamerId}/discussion`)
+    return data
+  },
+  async addDiscussionMessage(streamerId: number, text: string) {
+    const { data } = await api.post<DiscussionMessage>(`/integrations/streamers/${streamerId}/discussion`, { text })
+    return data
+  },
+  async removeDiscussionMessage(messageId: number) {
+    await api.delete(`/integrations/discussion/${messageId}`)
   },
 }

@@ -156,6 +156,26 @@ def _migrate_streamers_add_ord_marking():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN ord_reporting_status VARCHAR(16) DEFAULT 'not_submitted'"))
 
 
+def _migrate_streamers_add_contract_status():
+    """Добавляем колонки статуса договора и ТЗ, если их нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "integration_streamers" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("integration_streamers")]
+    with engine.begin() as conn:
+        if "contract_status" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN contract_status VARCHAR(24) DEFAULT 'not_sent'"))
+        if "contract_sent_date" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN contract_sent_date DATETIME"))
+        if "contract_signed_date" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN contract_signed_date DATETIME"))
+        if "contract_notes" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN contract_notes TEXT DEFAULT ''"))
+        if "brief" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN brief TEXT DEFAULT ''"))
+
+
 def _migrate_integrations_add_advertiser():
     """Добавляем advertiser_id в integrations, если его нет."""
     from sqlalchemy import text, inspect
@@ -231,6 +251,7 @@ async def lifespan(app: FastAPI):
     _migrate_streamers_add_contract_valid_until()
     _migrate_streamers_add_integration_date()
     _migrate_streamers_add_ord_marking()
+    _migrate_streamers_add_contract_status()
     _migrate_integrations_add_advertiser()
     _migrate_brand_contacts_add_advertiser()
     _backfill_advertisers()
