@@ -25,7 +25,7 @@ export const authApi = {
     const { data } = await api.post('/auth/telegram', payload)
     return data as Me
   },
-  async loginVk(payload: { code: string; device_id: string; code_verifier?: string }) {
+  async loginVk(payload: { access_token: string }) {
     const { data } = await api.post('/auth/vk', payload)
     return data as Me
   },

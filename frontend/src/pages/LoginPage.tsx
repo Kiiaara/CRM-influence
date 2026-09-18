@@ -86,11 +86,10 @@ export default function LoginPage() {
         .on(VKID.WidgetEvents.ERROR, () => setError('Ошибка входа через VK'))
         .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, async (payload: any) => {
           try {
-            await authApi.loginVk({
-              code: payload.code,
-              device_id: payload.device_id,
-              code_verifier: payload.code_verifier,
-            })
+            // code_verifier из payload ненадёжен (SDK не всегда его прокидывает),
+            // поэтому меняем code на токен через сам SDK - он знает свой verifier
+            const tokenData = await VKID.Auth.exchangeCode(payload.code, payload.device_id)
+            await authApi.loginVk({ access_token: tokenData.access_token })
             navigate('/', { replace: true })
           } catch (e: any) {
             setError(e?.response?.data?.detail ?? 'Ошибка входа через VK')

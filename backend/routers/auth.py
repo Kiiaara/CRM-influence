@@ -74,42 +74,25 @@ def _issue_session(response: Response, db: Session, user: User) -> str:
 
 @router.post("/vk")
 async def vk_login(request: Request, response: Response, db: Session = Depends(get_db)):
-    """Вход через VK ID. Фронт присылает code + device_id от VKID SDK,
-    бэк меняет их на access_token и профиль пользователя."""
-    if not settings.vk_app_id or not settings.vk_client_secret:
-        raise HTTPException(500, "VK_APP_ID / VK_CLIENT_SECRET не настроены")
+    """Вход через VK ID. Обмен code на access_token уже сделан на фронте через
+    VKID.Auth.exchangeCode (SDK сам знает свой code_verifier), сюда прилетает
+    готовый access_token - им просто запрашиваем профиль пользователя."""
+    if not settings.vk_app_id:
+        raise HTTPException(500, "VK_APP_ID не настроен")
 
     body = await request.json()
-    code = body.get("code")
-    device_id = body.get("device_id")
-    code_verifier = body.get("code_verifier")
-    if not code or not device_id:
-        raise HTTPException(400, "Нужны code и device_id")
+    access_token = body.get("access_token")
+    if not access_token:
+        raise HTTPException(400, "Нужен access_token")
 
     async with httpx.AsyncClient(timeout=15) as client:
-        token_resp = await client.post(
-            "https://id.vk.com/oauth2/auth",
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "code_verifier": code_verifier or "",
-                "client_id": settings.vk_app_id,
-                "client_secret": settings.vk_client_secret,
-                "device_id": device_id,
-                "redirect_uri": settings.public_url,
-            },
-        )
-        token_data = token_resp.json()
-        if "access_token" not in token_data:
-            raise HTTPException(401, f"VK не выдал токен: {token_data.get('error_description') or token_data}")
-
         info_resp = await client.post(
             "https://id.vk.com/oauth2/user_info",
-            data={"client_id": settings.vk_app_id, "access_token": token_data["access_token"]},
+            data={"client_id": settings.vk_app_id, "access_token": access_token},
         )
         info = info_resp.json().get("user") or {}
 
-    vk_id = int(info.get("user_id") or token_data.get("user_id") or 0)
+    vk_id = int(info.get("user_id") or 0)
     if not vk_id:
         raise HTTPException(401, "VK не вернул user_id")
 
