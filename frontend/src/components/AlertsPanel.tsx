@@ -26,7 +26,7 @@ type Row = Streamer & { brand: string }
 
 // значение ["queryKey": ['integrations']] то же, что и на канбане/в документах -
 // алерты всегда синхронны с остальными разделами без дополнительных запросов
-export default function AlertsBell() {
+export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void }) {
   const { data: integrations = [] } = useQuery({ queryKey: ['integrations'], queryFn: integrationsApi.list })
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -91,26 +91,39 @@ export default function AlertsBell() {
   }, [rows])
 
   const total = groups.reduce((sum, g) => sum + g.items.length, 0)
+  const hot = total > 0
+
+  const close = () => {
+    setOpen(false)
+    onNavigate?.()
+  }
 
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="relative w-9 h-9 flex items-center justify-center rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 shrink-0"
-        aria-label="Горячие задачи"
+        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${
+          hot
+            ? 'alert-glow text-red-700 dark:text-red-300 font-medium'
+            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-brand-900'
+        }`}
       >
-        <span className="text-lg">🔥</span>
-        {total > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none">
-            {total > 99 ? '99+' : total}
+        <span className={`relative text-base ${hot ? 'animate-pulse' : ''}`}>🔥</span>
+        <span className="flex-1 text-left">Горячие задачи</span>
+        {hot && (
+          <span className="relative flex items-center justify-center shrink-0">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
+            <span className="relative min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none">
+              {total > 99 ? '99+' : total}
+            </span>
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 max-h-[70vh] overflow-y-auto bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl shadow-lg z-50">
+        <div className="absolute z-50 left-0 right-0 bottom-full mb-2 max-h-[60vh] overflow-y-auto bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl shadow-lg">
           <div className="px-4 py-3 border-b border-slate-100 dark:border-brand-900 font-semibold text-slate-900 dark:text-slate-100">
-            🔥 Горячие задачи{total > 0 && <span className="text-slate-400 font-normal"> ({total})</span>}
+            🔥 Горячие задачи{hot && <span className="text-slate-400 font-normal"> ({total})</span>}
           </div>
           {groups.length === 0 && (
             <div className="px-4 py-6 text-sm text-slate-400 text-center">Всё спокойно, ничего горящего нет.</div>
@@ -124,7 +137,7 @@ export default function AlertsBell() {
                 <Link
                   key={item.id}
                   to={`/integrations?open=${item.id}`}
-                  onClick={() => setOpen(false)}
+                  onClick={close}
                   className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900"
                 >
                   <span className="truncate">
