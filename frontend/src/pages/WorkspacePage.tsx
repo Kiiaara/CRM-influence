@@ -5,6 +5,7 @@ import { authApi } from '../api/auth'
 import { useTheme } from '../theme'
 import TopSearch from '../components/TopSearch'
 import WorkspaceSelector from '../components/WorkspaceSelector'
+import AlertsBell from '../components/AlertsBell'
 
 const navItems = [
   { to: '/', label: 'Главная', icon: '🏠' },
@@ -116,6 +117,7 @@ export default function WorkspacePage() {
           <div className="flex-1 min-w-0">
             <TopSearch />
           </div>
+          <AlertsBell />
         </header>
         <div className="flex-1 overflow-auto">
           <Outlet />
