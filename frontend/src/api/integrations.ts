@@ -66,6 +66,18 @@ export interface Payment {
   paid_at: string
 }
 
+export interface CaseStudy {
+  id: number
+  streamer_id: number
+  title: string
+  description: string
+  what_was_done: string
+  result: string
+  photo_name: string | null
+  created_at: string
+  updated_at: string
+}
+
 export const integrationsApi = {
   async list() {
     const { data } = await api.get<Integration[]>('/integrations')
@@ -128,5 +140,35 @@ export const integrationsApi = {
   },
   async removePayment(streamerId: number, paymentId: number) {
     await api.delete(`/integrations/streamers/${streamerId}/payments/${paymentId}`)
+  },
+
+  async cases(streamerId: number) {
+    const { data } = await api.get<CaseStudy[]>(`/integrations/streamers/${streamerId}/cases`)
+    return data
+  },
+  async addCase(streamerId: number, payload: Partial<Pick<CaseStudy, 'title' | 'description' | 'what_was_done' | 'result'>>) {
+    const { data } = await api.post<CaseStudy>(`/integrations/streamers/${streamerId}/cases`, payload)
+    return data
+  },
+  async updateCase(caseId: number, payload: Partial<Pick<CaseStudy, 'title' | 'description' | 'what_was_done' | 'result'>>) {
+    const { data } = await api.patch<CaseStudy>(`/integrations/cases/${caseId}`, payload)
+    return data
+  },
+  async removeCase(caseId: number) {
+    await api.delete(`/integrations/cases/${caseId}`)
+  },
+  async uploadCasePhoto(caseId: number, file: File) {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await api.post<CaseStudy>(`/integrations/cases/${caseId}/photo`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  casePhotoUrl(caseId: number) {
+    return `/api/integrations/cases/${caseId}/photo`
+  },
+  async removeCasePhoto(caseId: number) {
+    await api.delete(`/integrations/cases/${caseId}/photo`)
   },
 }

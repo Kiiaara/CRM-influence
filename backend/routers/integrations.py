@@ -15,6 +15,7 @@ from deps import get_current_user
 from models.integration import Integration
 from models.integration_streamer import IntegrationStreamer
 from models.integration_payment import IntegrationPayment
+from models.case_study import CaseStudy
 from models.user import User
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
@@ -24,6 +25,7 @@ PAYMENT_STATUSES = ("not_invoiced", "invoiced", "partial", "paid")
 CONTENT_STATUSES = ("awaiting_brief", "filming", "filmed")
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "contracts")
+CASE_PHOTO_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "case_photos")
 
 
 def _validate_stage(stage: str):
@@ -152,6 +154,33 @@ class PaymentCreate(BaseModel):
     currency: str = "RUB"
     comment: str = ""
     paid_at: Optional[datetime] = None
+
+
+class CaseStudyOut(BaseModel):
+    id: int
+    streamer_id: int
+    title: str
+    description: str
+    what_was_done: str
+    result: str
+    photo_name: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class CaseStudyCreate(BaseModel):
+    title: str = ""
+    description: str = ""
+    what_was_done: str = ""
+    result: str = ""
+
+
+class CaseStudyUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    what_was_done: Optional[str] = None
+    result: Optional[str] = None
 
 
 # ---------- сделки (бренды) ----------
@@ -382,5 +411,99 @@ def delete_payment(streamer_id: int, payment_id: int, db: Session = Depends(get_
     if not p or p.streamer_id != streamer_id:
         raise HTTPException(404)
     db.delete(p)
+    db.commit()
+    return {"ok": True}
+
+
+# ---------- кейсы для сайта (фото + результаты интеграции) ----------
+
+@router.get("/streamers/{streamer_id}/cases", response_model=List[CaseStudyOut])
+def list_cases(streamer_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not db.get(IntegrationStreamer, streamer_id):
+        raise HTTPException(404)
+    return (
+        db.query(CaseStudy)
+        .filter(CaseStudy.streamer_id == streamer_id)
+        .order_by(CaseStudy.created_at.desc())
+        .all()
+    )
+
+
+@router.post("/streamers/{streamer_id}/cases", response_model=CaseStudyOut, status_code=201)
+def create_case(streamer_id: int, data: CaseStudyCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not db.get(IntegrationStreamer, streamer_id):
+        raise HTTPException(404)
+    c = CaseStudy(streamer_id=streamer_id, **data.model_dump())
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@router.patch("/cases/{case_id}", response_model=CaseStudyOut)
+def update_case(case_id: int, data: CaseStudyUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    c = db.get(CaseStudy, case_id)
+    if not c:
+        raise HTTPException(404)
+    for k, v in data.model_dump(exclude_unset=True).items():
+        setattr(c, k, v)
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@router.delete("/cases/{case_id}")
+def delete_case(case_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    c = db.get(CaseStudy, case_id)
+    if not c:
+        raise HTTPException(404)
+    if c.photo_path and os.path.exists(c.photo_path):
+        os.remove(c.photo_path)
+    db.delete(c)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/cases/{case_id}/photo", response_model=CaseStudyOut)
+async def upload_case_photo(case_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    c = db.get(CaseStudy, case_id)
+    if not c:
+        raise HTTPException(404)
+    os.makedirs(CASE_PHOTO_DIR, exist_ok=True)
+
+    ext = os.path.splitext(file.filename or "")[1][:16]
+    stored_name = f"{uuid.uuid4().hex}{ext}"
+    dest_path = os.path.join(CASE_PHOTO_DIR, stored_name)
+
+    if c.photo_path and os.path.exists(c.photo_path):
+        os.remove(c.photo_path)
+
+    with open(dest_path, "wb") as f:
+        f.write(await file.read())
+
+    c.photo_path = dest_path
+    c.photo_name = file.filename
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@router.get("/cases/{case_id}/photo")
+def download_case_photo(case_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    c = db.get(CaseStudy, case_id)
+    if not c or not c.photo_path or not os.path.exists(c.photo_path):
+        raise HTTPException(404, "Фото не найдено")
+    return FileResponse(c.photo_path, filename=c.photo_name or "photo")
+
+
+@router.delete("/cases/{case_id}/photo")
+def delete_case_photo(case_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    c = db.get(CaseStudy, case_id)
+    if not c:
+        raise HTTPException(404)
+    if c.photo_path and os.path.exists(c.photo_path):
+        os.remove(c.photo_path)
+    c.photo_path = None
+    c.photo_name = None
     db.commit()
     return {"ok": True}

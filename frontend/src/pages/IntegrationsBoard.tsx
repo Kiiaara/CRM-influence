@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { integrationsApi, STAGES, PAYMENT_LABELS, CONTENT_LABELS } from '../api/integrations'
-import type { ContentStatus, Integration, Payment, PaymentStatus, Stage, Streamer } from '../api/integrations'
+import type { CaseStudy, ContentStatus, Integration, Payment, PaymentStatus, Stage, Streamer } from '../api/integrations'
 import { streamerProfilesApi } from '../api/streamerProfiles'
 
 const PAYMENT_COLORS: Record<PaymentStatus, string> = {
@@ -493,6 +493,43 @@ function StreamerModal({
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentComment, setPaymentComment] = useState('')
 
+  const { data: cases = [] } = useQuery({
+    queryKey: ['streamers', streamer.id, 'cases'],
+    queryFn: () => integrationsApi.cases(streamer.id),
+    enabled: !isNew,
+  })
+
+  const addCase = useMutation({
+    mutationFn: () => integrationsApi.addCase(streamer.id, { title: newCaseTitle }),
+    onSuccess: () => {
+      setNewCaseTitle('')
+      qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'cases'] })
+    },
+  })
+
+  const updateCase = useMutation({
+    mutationFn: (p: { id: number; payload: Partial<Pick<CaseStudy, 'title' | 'description' | 'what_was_done' | 'result'>> }) =>
+      integrationsApi.updateCase(p.id, p.payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'cases'] }),
+  })
+
+  const removeCase = useMutation({
+    mutationFn: (id: number) => integrationsApi.removeCase(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'cases'] }),
+  })
+
+  const uploadCasePhoto = useMutation({
+    mutationFn: (p: { id: number; file: File }) => integrationsApi.uploadCasePhoto(p.id, p.file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'cases'] }),
+  })
+
+  const removeCasePhoto = useMutation({
+    mutationFn: (id: number) => integrationsApi.removeCasePhoto(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'cases'] }),
+  })
+
+  const [newCaseTitle, setNewCaseTitle] = useState('')
+
   const save = () => {
     if (!form.streamer_name.trim()) return
     const payload: Partial<Streamer> = {
@@ -732,6 +769,39 @@ function StreamerModal({
               </button>
             </div>
           </div>
+
+          {!isNew && (
+            <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Кейсы для сайта (фото + результат)</div>
+              <div className="space-y-3 mb-3">
+                {cases.map((c: CaseStudy) => (
+                  <CaseStudyCard
+                    key={c.id}
+                    caseStudy={c}
+                    onSave={payload => updateCase.mutate({ id: c.id, payload })}
+                    onRemove={() => confirm('Удалить кейс?') && removeCase.mutate(c.id)}
+                    onUploadPhoto={file => uploadCasePhoto.mutate({ id: c.id, file })}
+                    onRemovePhoto={() => removeCasePhoto.mutate(c.id)}
+                  />
+                ))}
+                {cases.length === 0 && <div className="text-xs text-slate-400">Кейсов ещё нет</div>}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={newCaseTitle}
+                  onChange={e => setNewCaseTitle(e.target.value)}
+                  placeholder="Название кейса (например игра/бренд)"
+                  className="flex-1 bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
+                />
+                <button
+                  onClick={() => newCaseTitle.trim() && addCase.mutate()}
+                  className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg"
+                >
+                  + Кейс
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-between mt-6">
@@ -743,6 +813,89 @@ function StreamerModal({
             <button onClick={save} className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Сохранить</button>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function CaseStudyCard({
+  caseStudy,
+  onSave,
+  onRemove,
+  onUploadPhoto,
+  onRemovePhoto,
+}: {
+  caseStudy: CaseStudy
+  onSave: (payload: { title: string; description: string; what_was_done: string; result: string }) => void
+  onRemove: () => void
+  onUploadPhoto: (file: File) => void
+  onRemovePhoto: () => void
+}) {
+  const [title, setTitle] = useState(caseStudy.title)
+  const [description, setDescription] = useState(caseStudy.description)
+  const [whatWasDone, setWhatWasDone] = useState(caseStudy.what_was_done)
+  const [result, setResult] = useState(caseStudy.result)
+  const [dirty, setDirty] = useState(false)
+
+  const fieldCls = "w-full bg-white dark:bg-brand-900/30 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
+
+  return (
+    <div className="border border-slate-200 dark:border-brand-800 rounded-lg p-3 bg-slate-50 dark:bg-brand-950/40 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <input
+          value={title}
+          onChange={e => { setTitle(e.target.value); setDirty(true) }}
+          placeholder="Название (игра/бренд)"
+          className={`${fieldCls} font-medium`}
+        />
+        <button onClick={onRemove} className="text-red-500 hover:text-red-700 text-xs shrink-0">удалить</button>
+      </div>
+
+      <textarea
+        value={description}
+        onChange={e => { setDescription(e.target.value); setDirty(true) }}
+        placeholder="Описание"
+        rows={2}
+        className={fieldCls}
+      />
+      <textarea
+        value={whatWasDone}
+        onChange={e => { setWhatWasDone(e.target.value); setDirty(true) }}
+        placeholder="Что сделано"
+        rows={2}
+        className={fieldCls}
+      />
+      <textarea
+        value={result}
+        onChange={e => { setResult(e.target.value); setDirty(true) }}
+        placeholder="Результат"
+        rows={2}
+        className={fieldCls}
+      />
+
+      {dirty && (
+        <button
+          onClick={() => { onSave({ title, description, what_was_done: whatWasDone, result }); setDirty(false) }}
+          className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg"
+        >
+          Сохранить кейс
+        </button>
+      )}
+
+      <div className="pt-1">
+        {caseStudy.photo_name ? (
+          <div className="flex items-center gap-2">
+            <img src={integrationsApi.casePhotoUrl(caseStudy.id)} alt="" className="w-20 h-20 object-cover rounded-lg border border-slate-200 dark:border-brand-800" />
+            <button onClick={onRemovePhoto} className="text-xs text-red-500 hover:text-red-700">Удалить фото</button>
+          </div>
+        ) : (
+          <input
+            type="file"
+            accept="image/*"
+            onChange={e => e.target.files?.[0] && onUploadPhoto(e.target.files[0])}
+            className="text-xs text-slate-600 dark:text-slate-300"
+          />
+        )}
       </div>
     </div>
   )
