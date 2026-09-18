@@ -98,3 +98,26 @@ body { margin: 0; }
     animation: none;
   }
 }
+
+/* Моргающая плашка "Горячие задачи" в сайдбаре - привлекает внимание, пока есть горящие карточки */
+@keyframes alert-glow {
+  0%, 100% {
+    background-color: rgba(239, 68, 68, 0.07);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35);
+  }
+  50% {
+    background-color: rgba(239, 68, 68, 0.2);
+    box-shadow: 0 0 0 5px rgba(239, 68, 68, 0);
+  }
+}
+
+.alert-glow {
+  animation: alert-glow 1.7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-glow {
+    animation: none;
+    background-color: rgba(239, 68, 68, 0.14);
+  }
+}
