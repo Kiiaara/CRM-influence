@@ -17,6 +17,7 @@ from models.integration_streamer import IntegrationStreamer
 from models.integration_payment import IntegrationPayment
 from models.case_study import CaseStudy
 from models.advertiser import Advertiser
+from models.discussion_message import DiscussionMessage
 from models.user import User
 from models.workspace import Workspace
 
@@ -35,6 +36,15 @@ CONTENT_STATUSES = ("awaiting_brief", "filming", "filmed")
 ORD_RESPONSIBLE = ("us", "client")
 ORD_STATUSES = ("todo", "done")
 ORD_REPORTING_STATUSES = ("not_submitted", "submitted", "overdue")
+CONTRACT_STATUSES = (
+    "not_sent",
+    "sent_to_streamer",
+    "signed_by_streamer",
+    "sent_to_brand",
+    "signed_by_brand",
+    "active",
+    "expired",
+)
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "contracts")
 CASE_PHOTO_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "case_photos")
@@ -70,6 +80,11 @@ def _validate_ord_reporting_status(v: str):
         raise HTTPException(400, f"ord_reporting_status должен быть одним из: {', '.join(ORD_REPORTING_STATUSES)}")
 
 
+def _validate_contract_status(v: str):
+    if v not in CONTRACT_STATUSES:
+        raise HTTPException(400, f"contract_status должен быть одним из: {', '.join(CONTRACT_STATUSES)}")
+
+
 # ---------- схемы ----------
 
 class StreamerOut(BaseModel):
@@ -89,6 +104,11 @@ class StreamerOut(BaseModel):
     description: str
     contract_file_name: Optional[str] = None
     contract_valid_until: Optional[datetime] = None
+    contract_status: str
+    contract_sent_date: Optional[datetime] = None
+    contract_signed_date: Optional[datetime] = None
+    contract_notes: str
+    brief: str
     ord_responsible: str
     ord_status: str
     ord_reporting_status: str
@@ -157,6 +177,11 @@ class StreamerUpdate(BaseModel):
     integration_date: Optional[datetime] = None
     description: Optional[str] = None
     contract_valid_until: Optional[datetime] = None
+    contract_status: Optional[str] = None
+    contract_sent_date: Optional[datetime] = None
+    contract_signed_date: Optional[datetime] = None
+    contract_notes: Optional[str] = None
+    brief: Optional[str] = None
     ord_responsible: Optional[str] = None
     ord_status: Optional[str] = None
     ord_reporting_status: Optional[str] = None
@@ -234,6 +259,20 @@ class CaseStudyUpdate(BaseModel):
     description: Optional[str] = None
     what_was_done: Optional[str] = None
     result: Optional[str] = None
+
+
+class DiscussionMessageOut(BaseModel):
+    id: int
+    streamer_id: int
+    author_tg_id: Optional[int] = None
+    author_label: Optional[str] = None
+    text: str
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class DiscussionMessageCreate(BaseModel):
+    text: str
 
 
 # ---------- сделки (бренды) ----------
@@ -363,6 +402,8 @@ def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depend
         _validate_ord_status(data.ord_status)
     if data.ord_reporting_status is not None:
         _validate_ord_reporting_status(data.ord_reporting_status)
+    if data.contract_status is not None:
+        _validate_contract_status(data.contract_status)
     for k, v in data.model_dump(exclude_unset=True).items():
         setattr(s, k, v)
     db.commit()
@@ -570,5 +611,58 @@ def delete_case_photo(case_id: int, db: Session = Depends(get_db), user: User = 
         os.remove(c.photo_path)
     c.photo_path = None
     c.photo_name = None
+    db.commit()
+    return {"ok": True}
+
+
+# ---------- обсуждение сделки со стримером ----------
+
+def _author_label(db: Session, tg_id: Optional[int]) -> Optional[str]:
+    if tg_id is None:
+        return None
+    u = db.get(User, tg_id)
+    if not u:
+        return None
+    return u.label or u.tg_first_name or u.tg_username or str(u.tg_id)
+
+
+@router.get("/streamers/{streamer_id}/discussion", response_model=List[DiscussionMessageOut])
+def list_discussion(streamer_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not db.get(IntegrationStreamer, streamer_id):
+        raise HTTPException(404)
+    msgs = (
+        db.query(DiscussionMessage)
+        .filter(DiscussionMessage.streamer_id == streamer_id)
+        .order_by(DiscussionMessage.created_at.asc())
+        .all()
+    )
+    return [
+        DiscussionMessageOut.model_validate(m).model_copy(update={"author_label": _author_label(db, m.author_tg_id)})
+        for m in msgs
+    ]
+
+
+@router.post("/streamers/{streamer_id}/discussion", response_model=DiscussionMessageOut, status_code=201)
+def create_discussion_message(streamer_id: int, data: DiscussionMessageCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not db.get(IntegrationStreamer, streamer_id):
+        raise HTTPException(404)
+    text = data.text.strip()
+    if not text:
+        raise HTTPException(400, "Сообщение не может быть пустым")
+    m = DiscussionMessage(streamer_id=streamer_id, author_tg_id=user.tg_id, text=text)
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return DiscussionMessageOut.model_validate(m).model_copy(update={"author_label": _author_label(db, m.author_tg_id)})
+
+
+@router.delete("/discussion/{message_id}")
+def delete_discussion_message(message_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    m = db.get(DiscussionMessage, message_id)
+    if not m:
+        raise HTTPException(404)
+    if m.author_tg_id != user.tg_id and user.role != "admin":
+        raise HTTPException(403, "Можно удалить только своё сообщение")
+    db.delete(m)
     db.commit()
     return {"ok": True}

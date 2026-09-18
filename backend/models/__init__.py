@@ -10,3 +10,4 @@ from .streamer_profile import StreamerProfile  # noqa: F401
 from .case_study import CaseStudy  # noqa: F401
 from .advertiser import Advertiser  # noqa: F401
 from .brand_contact import BrandContact  # noqa: F401
+from .discussion_message import DiscussionMessage  # noqa: F401

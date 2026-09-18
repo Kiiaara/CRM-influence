@@ -12,6 +12,7 @@ class IntegrationStreamer(Base):
     ord_responsible: us | client - кто маркирует рекламу (получает erid) по этому размещению
     ord_status: todo | done - статус самой маркировки
     ord_reporting_status: not_submitted | submitted | overdue - статус отчётности в ОРД
+    contract_status: not_sent | sent_to_streamer | signed_by_streamer | sent_to_brand | signed_by_brand | active | expired
     """
     __tablename__ = "integration_streamers"
 
@@ -39,6 +40,13 @@ class IntegrationStreamer(Base):
     contract_file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     contract_file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     contract_valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    contract_status: Mapped[str] = mapped_column(String(24), default="not_sent")
+    contract_sent_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    contract_signed_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    contract_notes: Mapped[str] = mapped_column(Text, default="")
+
+    # ТЗ (техническое задание) для стримера, свободный текст
+    brief: Mapped[str] = mapped_column(Text, default="")
 
     # позиция карточки внутри колонки канбана (для сортировки внутри stage)
     position: Mapped[int] = mapped_column(Integer, default=0)
