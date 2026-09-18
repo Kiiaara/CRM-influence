@@ -9,6 +9,9 @@ export default function WorkspaceSelector() {
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
 
@@ -41,6 +44,25 @@ export default function WorkspaceSelector() {
     }
   }
 
+  const handleDelete = async (id: number) => {
+    setDeletingId(id)
+    setDeleteError(null)
+    try {
+      await workspacesApi.remove(id)
+      const wasCurrent = id === current?.id
+      await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+      if (wasCurrent) {
+        const remaining = workspaces.filter(w => w.id !== id)
+        if (remaining[0]) switchWorkspace(remaining[0].id)
+      }
+      setConfirmDeleteId(null)
+    } catch (e: any) {
+      setDeleteError(e?.response?.data?.detail ?? 'Не удалось удалить пространство')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   return (
     <div ref={wrapRef} className="relative">
       <button
@@ -58,19 +80,62 @@ export default function WorkspaceSelector() {
         <div className="absolute z-50 mt-1 w-72 rounded-lg border border-slate-200 dark:border-brand-800 bg-white dark:bg-brand-950 shadow-lg overflow-hidden">
           <div className="max-h-64 overflow-y-auto py-1">
             {workspaces.map(ws => (
-              <button
-                key={ws.id}
-                onClick={() => {
-                  switchWorkspace(ws.id)
-                  setOpen(false)
-                }}
-                className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left hover:bg-slate-50 dark:hover:bg-brand-900 ${
-                  ws.id === current.id ? 'bg-brand-50 dark:bg-brand-900/40' : ''
-                }`}
-              >
-                <span className="truncate">{ws.title}</span>
-                <span className="shrink-0 text-xs text-slate-400">{ROLE_LABELS[ws.my_role]}</span>
-              </button>
+              <div key={ws.id}>
+                <div
+                  className={`w-full flex items-center gap-1 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-brand-900 ${
+                    ws.id === current.id ? 'bg-brand-50 dark:bg-brand-900/40' : ''
+                  }`}
+                >
+                  <button
+                    onClick={() => {
+                      switchWorkspace(ws.id)
+                      setOpen(false)
+                    }}
+                    className="flex-1 flex items-center justify-between gap-2 text-left min-w-0"
+                  >
+                    <span className="truncate">{ws.title}</span>
+                    <span className="shrink-0 text-xs text-slate-400">{ROLE_LABELS[ws.my_role]}</span>
+                  </button>
+                  {ws.my_role === 'owner' && workspaces.length > 1 && (
+                    <button
+                      onClick={() => {
+                        setConfirmDeleteId(confirmDeleteId === ws.id ? null : ws.id)
+                        setDeleteError(null)
+                      }}
+                      title="Удалить пространство"
+                      className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      🗑
+                    </button>
+                  )}
+                </div>
+                {confirmDeleteId === ws.id && (
+                  <div className="px-3 py-2 bg-red-50 dark:bg-red-900/20 space-y-1.5">
+                    <div className="text-xs text-slate-600 dark:text-slate-300">
+                      Удалить «{ws.title}» безвозвратно?
+                    </div>
+                    {deleteError && <div className="text-xs text-red-500">{deleteError}</div>}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleDelete(ws.id)}
+                        disabled={deletingId === ws.id}
+                        className="flex-1 px-2 py-1 text-xs rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        {deletingId === ws.id ? 'Удаляю…' : 'Да, удалить'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setConfirmDeleteId(null)
+                          setDeleteError(null)
+                        }}
+                        className="px-2 py-1 text-xs rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-brand-900"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
           <div className="border-t border-slate-100 dark:border-brand-900 p-2">
