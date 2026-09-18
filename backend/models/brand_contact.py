@@ -5,12 +5,13 @@ from database import Base
 
 
 class BrandContact(Base):
-    """Контакт представителя бренда/рекламодателя внутри сделки (Integration).
-    Несколько контактов на сделку, один может быть отмечен как основной."""
+    """Контакт представителя рекламодателя (Advertiser). Несколько контактов
+    на рекламодателя, один может быть отмечен как основной. Общие на всю
+    историю сделок с этим рекламодателем, а не на одну конкретную сделку."""
     __tablename__ = "brand_contacts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    integration_id: Mapped[int] = mapped_column(Integer, ForeignKey("integrations.id", ondelete="CASCADE"), index=True)
+    advertiser_id: Mapped[int] = mapped_column(Integer, ForeignKey("advertisers.id", ondelete="CASCADE"), index=True)
 
     contact_type: Mapped[str] = mapped_column(String(16))  # email | telegram | whatsapp | phone | other
     value: Mapped[str] = mapped_column(String(255))

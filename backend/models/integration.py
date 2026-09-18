@@ -11,7 +11,10 @@ class Integration(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     workspace_id: Mapped[int] = mapped_column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    advertiser_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("advertisers.id", ondelete="RESTRICT"), index=True, nullable=True)
 
+    # денормализовано из advertiser.name - держим синхронно при переименовании рекламодателя,
+    # чтобы не трогать весь остальной код, который читает Integration.brand напрямую
     brand: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
 

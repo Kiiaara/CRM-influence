@@ -8,6 +8,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
+from models.advertiser import Advertiser
 from models.integration import Integration
 from models.integration_streamer import IntegrationStreamer
 from models.user import User
@@ -123,14 +124,25 @@ async def _finish(tg_id: int, data: dict):
         if workspace_id is None:
             await send_message(tg_id, "У тебя нет доступа ни к одному пространству, обратись к админу.")
             return
+        brand_name = data["brand"].strip()
+        advertiser = (
+            db.query(Advertiser)
+            .filter(Advertiser.workspace_id == workspace_id, Advertiser.name == brand_name)
+            .first()
+        )
+        if not advertiser:
+            advertiser = Advertiser(workspace_id=workspace_id, name=brand_name)
+            db.add(advertiser)
+            db.flush()
+
         integration = (
             db.query(Integration)
-            .filter(Integration.brand == data["brand"], Integration.workspace_id == workspace_id)
+            .filter(Integration.advertiser_id == advertiser.id, Integration.workspace_id == workspace_id)
             .order_by(Integration.created_at.desc())
             .first()
         )
         if not integration:
-            integration = Integration(workspace_id=workspace_id, brand=data["brand"])
+            integration = Integration(workspace_id=workspace_id, advertiser_id=advertiser.id, brand=advertiser.name)
             db.add(integration)
             db.flush()
 
