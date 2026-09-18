@@ -9,6 +9,7 @@ import WorkspaceSelector from '../components/WorkspaceSelector'
 const navItems = [
   { to: '/', label: 'Главная', icon: '🏠' },
   { to: '/integrations', label: 'Интеграции', icon: '🤝' },
+  { to: '/marking', label: 'Маркировка', icon: '🏷️' },
   { to: '/history', label: 'История', icon: '🗂️' },
   { to: '/streamers', label: 'База стримеров', icon: '📋' },
 ]

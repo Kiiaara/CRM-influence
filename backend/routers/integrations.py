@@ -33,6 +33,9 @@ STAGES = ("negotiation", "agreed", "awaiting_contract", "awaiting_payment", "don
 PAYMENT_STATUSES = ("not_invoiced", "invoiced", "partial", "paid")
 CONTENT_STATUSES = ("awaiting_brief", "filming", "filmed")
 CONTACT_TYPES = ("email", "telegram", "whatsapp", "phone", "other")
+ORD_RESPONSIBLE = ("us", "client")
+ORD_STATUSES = ("todo", "done")
+ORD_REPORTING_STATUSES = ("not_submitted", "submitted", "overdue")
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "contracts")
 CASE_PHOTO_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "case_photos")
@@ -51,6 +54,21 @@ def _validate_payment_status(status: str):
 def _validate_content_status(status: Optional[str]):
     if status is not None and status not in CONTENT_STATUSES:
         raise HTTPException(400, f"content_status должен быть одним из: {', '.join(CONTENT_STATUSES)}")
+
+
+def _validate_ord_responsible(v: str):
+    if v not in ORD_RESPONSIBLE:
+        raise HTTPException(400, f"ord_responsible должен быть одним из: {', '.join(ORD_RESPONSIBLE)}")
+
+
+def _validate_ord_status(v: str):
+    if v not in ORD_STATUSES:
+        raise HTTPException(400, f"ord_status должен быть одним из: {', '.join(ORD_STATUSES)}")
+
+
+def _validate_ord_reporting_status(v: str):
+    if v not in ORD_REPORTING_STATUSES:
+        raise HTTPException(400, f"ord_reporting_status должен быть одним из: {', '.join(ORD_REPORTING_STATUSES)}")
 
 
 # ---------- схемы ----------
@@ -72,6 +90,9 @@ class StreamerOut(BaseModel):
     description: str
     contract_file_name: Optional[str] = None
     contract_valid_until: Optional[datetime] = None
+    ord_responsible: str
+    ord_status: str
+    ord_reporting_status: str
     position: int
     created_at: datetime
     updated_at: datetime
@@ -118,6 +139,9 @@ class StreamerCreate(BaseModel):
     deadline: Optional[datetime] = None
     integration_date: Optional[datetime] = None
     description: str = ""
+    ord_responsible: str = "us"
+    ord_status: str = "todo"
+    ord_reporting_status: str = "not_submitted"
 
 
 class StreamerUpdate(BaseModel):
@@ -134,6 +158,9 @@ class StreamerUpdate(BaseModel):
     integration_date: Optional[datetime] = None
     description: Optional[str] = None
     contract_valid_until: Optional[datetime] = None
+    ord_responsible: Optional[str] = None
+    ord_status: Optional[str] = None
+    ord_reporting_status: Optional[str] = None
     position: Optional[int] = None
 
 
@@ -327,6 +354,9 @@ def create_streamer(integration_id: int, data: StreamerCreate, db: Session = Dep
     _validate_stage(data.stage)
     _validate_payment_status(data.payment_status)
     _validate_content_status(data.content_status)
+    _validate_ord_responsible(data.ord_responsible)
+    _validate_ord_status(data.ord_status)
+    _validate_ord_reporting_status(data.ord_reporting_status)
     max_pos = (
         db.query(IntegrationStreamer)
         .filter(IntegrationStreamer.integration_id == integration_id, IntegrationStreamer.stage == data.stage)
@@ -347,6 +377,9 @@ def create_streamer(integration_id: int, data: StreamerCreate, db: Session = Dep
         deadline=data.deadline,
         integration_date=data.integration_date,
         description=data.description,
+        ord_responsible=data.ord_responsible,
+        ord_status=data.ord_status,
+        ord_reporting_status=data.ord_reporting_status,
         position=(max_pos.position + 1) if max_pos else 0,
     )
     db.add(s)
@@ -366,6 +399,12 @@ def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depend
         _validate_payment_status(data.payment_status)
     if data.content_status is not None:
         _validate_content_status(data.content_status)
+    if data.ord_responsible is not None:
+        _validate_ord_responsible(data.ord_responsible)
+    if data.ord_status is not None:
+        _validate_ord_status(data.ord_status)
+    if data.ord_reporting_status is not None:
+        _validate_ord_reporting_status(data.ord_reporting_status)
     for k, v in data.model_dump(exclude_unset=True).items():
         setattr(s, k, v)
     db.commit()

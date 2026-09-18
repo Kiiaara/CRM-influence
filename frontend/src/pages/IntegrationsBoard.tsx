@@ -1,8 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { integrationsApi, STAGES, PAYMENT_LABELS, CONTENT_LABELS, CONTACT_TYPE_LABELS, CONTACT_TYPE_ICONS, contactQuickLink } from '../api/integrations'
-import type { BrandContact, CaseStudy, ContactType, ContentStatus, Integration, Payment, PaymentStatus, Stage, Streamer } from '../api/integrations'
+import {
+  integrationsApi,
+  STAGES,
+  PAYMENT_LABELS,
+  CONTENT_LABELS,
+  CONTACT_TYPE_LABELS,
+  CONTACT_TYPE_ICONS,
+  contactQuickLink,
+  ORD_RESPONSIBLE_LABELS,
+  ORD_STATUS_LABELS,
+  ORD_REPORTING_LABELS,
+} from '../api/integrations'
+import type {
+  BrandContact,
+  CaseStudy,
+  ContactType,
+  ContentStatus,
+  Integration,
+  OrdReportingStatus,
+  OrdResponsible,
+  OrdStatus,
+  Payment,
+  PaymentStatus,
+  Stage,
+  Streamer,
+} from '../api/integrations'
 import { streamerProfilesApi } from '../api/streamerProfiles'
 
 const PAYMENT_COLORS: Record<PaymentStatus, string> = {
@@ -547,6 +571,9 @@ export function StreamerModal({
       integration_date: form.integration_date,
       description: form.description,
       contract_valid_until: form.contract_valid_until,
+      ord_responsible: form.ord_responsible,
+      ord_status: form.ord_status,
+      ord_reporting_status: form.ord_reporting_status,
     }
     update.mutate(payload)
   }
@@ -647,6 +674,42 @@ export function StreamerModal({
               <option value="">— не задан —</option>
               {Object.entries(CONTENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
+          </div>
+
+          <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3">
+            <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Маркировка (ОРД)</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400">Ответственный</label>
+                <select
+                  value={form.ord_responsible}
+                  onChange={e => setForm({ ...form, ord_responsible: e.target.value as OrdResponsible })}
+                  className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                >
+                  {Object.entries(ORD_RESPONSIBLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400">Маркировка</label>
+                <select
+                  value={form.ord_status}
+                  onChange={e => setForm({ ...form, ord_status: e.target.value as OrdStatus })}
+                  className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                >
+                  {Object.entries(ORD_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400">Отчётность</label>
+                <select
+                  value={form.ord_reporting_status}
+                  onChange={e => setForm({ ...form, ord_reporting_status: e.target.value as OrdReportingStatus })}
+                  className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                >
+                  {Object.entries(ORD_REPORTING_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
