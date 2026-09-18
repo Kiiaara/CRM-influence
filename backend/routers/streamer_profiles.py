@@ -237,7 +237,8 @@ async def import_profiles(file: UploadFile = File(...), db: Session = Depends(ge
                     setattr(existing, k, v)
             updated += 1
         else:
-            db.add(StreamerProfile(**{k: v for k, v in values.items() if v is not None}, name=name))
+            fields = {k: v for k, v in values.items() if v is not None and k != "name"}
+            db.add(StreamerProfile(name=name, **fields))
             created += 1
 
     db.commit()
