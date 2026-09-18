@@ -1,0 +1,8 @@
+"""Регистрируем все модели чтобы Base.metadata.create_all их видел."""
+from .user import User           # noqa: F401
+from .auth_session import AuthSession  # noqa: F401
+from .workspace import Workspace      # noqa: F401
+from .task import Task                 # noqa: F401
+from .integration import Integration           # noqa: F401
+from .integration_streamer import IntegrationStreamer  # noqa: F401
+from .integration_payment import IntegrationPayment  # noqa: F401

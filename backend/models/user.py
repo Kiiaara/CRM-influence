@@ -1,0 +1,21 @@
+from datetime import datetime
+from sqlalchemy import BigInteger, String, DateTime, Boolean
+from sqlalchemy.orm import Mapped, mapped_column
+from database import Base
+
+
+class User(Base):
+    """Whitelist + роль. tg_id одновременно ID юзера и chat_id для личных сообщений
+    (если юзер хоть раз писал боту - иначе tg_chat_ready=False и шлём плашку в UI)."""
+    __tablename__ = "users"
+
+    tg_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    role: Mapped[str] = mapped_column(String(16), default="editor")  # admin | editor | viewer
+    label: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    tg_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tg_first_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # стал ли юзер досягаем для бота (написал ли /start)
+    tg_chat_ready: Mapped[bool] = mapped_column(Boolean, default=False)
+    # закреплённые id страниц - JSON-массив. Хранится в виде строки "[1,2,3]"
+    pinned_pages: Mapped[str] = mapped_column(String(2048), default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
