@@ -118,6 +118,95 @@ export interface DiscussionMessage {
   created_at: string
 }
 
+export type AuditField =
+  | 'stage'
+  | 'payment_status'
+  | 'content_status'
+  | 'amount'
+  | 'deadline'
+  | 'contract_status'
+  | 'contract_sent_date'
+  | 'contract_signed_date'
+  | 'ord_status'
+  | 'ord_reporting_status'
+  | 'created'
+  | 'deleted'
+  | 'payment_added'
+  | 'contract_uploaded'
+
+export interface AuditLogEntry {
+  id: number
+  streamer_id: number | null
+  integration_id: number | null
+  brand: string
+  streamer_name: string
+  field: AuditField
+  old_value: string | null
+  new_value: string | null
+  changed_by_tg_id: number | null
+  author_label: string | null
+  created_at: string
+}
+
+export const AUDIT_FIELD_LABELS: Record<AuditField, string> = {
+  stage: 'Стадия',
+  payment_status: 'Оплата',
+  content_status: 'Статус контента',
+  amount: 'Сумма',
+  deadline: 'Дедлайн',
+  contract_status: 'Статус договора',
+  contract_sent_date: 'Договор отправлен',
+  contract_signed_date: 'Договор подписан',
+  ord_status: 'Маркировка (ОРД)',
+  ord_reporting_status: 'Отчётность ОРД',
+  created: 'Карточка создана',
+  deleted: 'Карточка удалена',
+  payment_added: 'Поступила оплата',
+  contract_uploaded: 'Загружен файл договора',
+}
+
+// поля, значения которых - ключи из словарей-лейблов выше по файлу
+const STAGE_LABELS: Record<string, string> = Object.fromEntries(STAGES.map(s => [s.key, s.label]))
+const AUDIT_VALUE_LABELS: Partial<Record<AuditField, Record<string, string>>> = {
+  stage: STAGE_LABELS,
+  payment_status: PAYMENT_LABELS,
+  content_status: CONTENT_LABELS,
+  contract_status: CONTRACT_STATUS_LABELS,
+  ord_status: ORD_STATUS_LABELS,
+  ord_reporting_status: ORD_REPORTING_LABELS,
+}
+
+function formatAuditDate(v: string): string {
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return v
+  return d.toLocaleDateString('ru-RU')
+}
+
+export function formatAuditValue(field: AuditField, value: string | null): string {
+  if (value == null) return '—'
+  const map = AUDIT_VALUE_LABELS[field]
+  if (map) return map[value] ?? value
+  if (field === 'amount') return `${Number(value).toLocaleString('ru-RU')} ₽`
+  if (field === 'deadline' || field === 'contract_sent_date' || field === 'contract_signed_date') {
+    return formatAuditDate(value)
+  }
+  return value
+}
+
+const AUDIT_STANDALONE_FIELDS: AuditField[] = ['created', 'deleted']
+const AUDIT_SINGLE_VALUE_FIELDS: AuditField[] = ['payment_added', 'contract_uploaded']
+
+export function describeAuditEntry(e: AuditLogEntry): string {
+  const label = AUDIT_FIELD_LABELS[e.field]
+  if (AUDIT_STANDALONE_FIELDS.includes(e.field)) return label
+  if (e.field === 'payment_added' && e.new_value) {
+    const [amount, currency] = e.new_value.split(' ')
+    return `${label}: ${Number(amount).toLocaleString('ru-RU')} ${currency}`
+  }
+  if (AUDIT_SINGLE_VALUE_FIELDS.includes(e.field)) return `${label}: ${e.new_value}`
+  return `${label}: ${formatAuditValue(e.field, e.old_value)} → ${formatAuditValue(e.field, e.new_value)}`
+}
+
 export interface Integration {
   id: number
   advertiser_id: number | null
@@ -253,5 +342,14 @@ export const integrationsApi = {
   },
   async removeDiscussionMessage(messageId: number) {
     await api.delete(`/integrations/discussion/${messageId}`)
+  },
+
+  async auditLog(streamerId: number) {
+    const { data } = await api.get<AuditLogEntry[]>(`/integrations/streamers/${streamerId}/audit-log`)
+    return data
+  },
+  async auditLogFeed(limit = 100) {
+    const { data } = await api.get<AuditLogEntry[]>('/integrations/audit-log', { params: { limit } })
+    return data
   },
 }

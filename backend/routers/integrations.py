@@ -18,6 +18,7 @@ from models.integration_payment import IntegrationPayment
 from models.case_study import CaseStudy
 from models.advertiser import Advertiser
 from models.discussion_message import DiscussionMessage
+from models.audit_log import AuditLogEntry
 from models.user import User
 from models.workspace import Workspace
 
@@ -27,6 +28,49 @@ def _get_integration_or_404(db: Session, ws: Workspace, integration_id: int) -> 
     if not it or it.workspace_id != ws.id:
         raise HTTPException(404)
     return it
+
+
+# поля стримера, изменения которых пишем в журнал - только те, что важны для бизнеса
+TRACKED_FIELDS = (
+    "stage",
+    "payment_status",
+    "content_status",
+    "amount",
+    "deadline",
+    "contract_status",
+    "contract_sent_date",
+    "contract_signed_date",
+    "ord_status",
+    "ord_reporting_status",
+)
+
+
+def _log_audit(
+    db: Session,
+    *,
+    workspace_id: int,
+    streamer_id: Optional[int],
+    integration_id: Optional[int],
+    brand: str,
+    streamer_name: str,
+    field: str,
+    old,
+    new,
+    user: Optional[User],
+):
+    if old == new:
+        return
+    db.add(AuditLogEntry(
+        workspace_id=workspace_id,
+        streamer_id=streamer_id,
+        integration_id=integration_id,
+        brand=brand,
+        streamer_name=streamer_name,
+        field=field,
+        old_value=str(old) if old is not None else None,
+        new_value=str(new) if new is not None else None,
+        changed_by_tg_id=user.tg_id if user else None,
+    ))
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
@@ -275,6 +319,21 @@ class DiscussionMessageCreate(BaseModel):
     text: str
 
 
+class AuditLogEntryOut(BaseModel):
+    id: int
+    streamer_id: Optional[int] = None
+    integration_id: Optional[int] = None
+    brand: str
+    streamer_name: str
+    field: str
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    changed_by_tg_id: Optional[int] = None
+    author_label: Optional[str] = None
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
 # ---------- сделки (бренды) ----------
 
 @router.get("", response_model=List[IntegrationOut])
@@ -292,6 +351,26 @@ def suggest_streamer_names(db: Session = Depends(get_db), user: User = Depends(g
     """Уникальные ранее введённые имена стримеров - для автоподстановки."""
     rows = db.query(IntegrationStreamer.streamer_name).distinct().all()
     return sorted({r[0] for r in rows if r[0]})
+
+
+@router.get("/audit-log", response_model=List[AuditLogEntryOut])
+def workspace_audit_log(
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    ws: Workspace = Depends(get_current_workspace),
+):
+    """Должен быть объявлен раньше GET /{integration_id}, иначе 'audit-log' парсится как int-id."""
+    entries = (
+        db.query(AuditLogEntry)
+        .filter(AuditLogEntry.workspace_id == ws.id)
+        .order_by(AuditLogEntry.created_at.desc())
+        .limit(min(limit, 300))
+        .all()
+    )
+    return [
+        AuditLogEntryOut.model_validate(e).model_copy(update={"author_label": _author_label(db, e.changed_by_tg_id)})
+        for e in entries
+    ]
 
 
 @router.post("", response_model=IntegrationOut, status_code=201)
@@ -346,8 +425,14 @@ def list_streamers(integration_id: int, db: Session = Depends(get_db), ws: Works
 
 
 @router.post("/{integration_id}/streamers", response_model=StreamerOut, status_code=201)
-def create_streamer(integration_id: int, data: StreamerCreate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
-    _get_integration_or_404(db, ws, integration_id)
+def create_streamer(
+    integration_id: int,
+    data: StreamerCreate,
+    db: Session = Depends(get_db),
+    ws: Workspace = Depends(get_current_workspace),
+    user: User = Depends(get_current_user),
+):
+    it = _get_integration_or_404(db, ws, integration_id)
     _validate_stage(data.stage)
     _validate_payment_status(data.payment_status)
     _validate_content_status(data.content_status)
@@ -382,6 +467,11 @@ def create_streamer(integration_id: int, data: StreamerCreate, db: Session = Dep
     db.add(s)
     db.commit()
     db.refresh(s)
+    _log_audit(
+        db, workspace_id=it.workspace_id, streamer_id=s.id, integration_id=integration_id,
+        brand=it.brand, streamer_name=s.streamer_name, field="created", old=None, new=s.streamer_name, user=user,
+    )
+    db.commit()
     return s
 
 
@@ -404,10 +494,24 @@ def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depend
         _validate_ord_reporting_status(data.ord_reporting_status)
     if data.contract_status is not None:
         _validate_contract_status(data.contract_status)
-    for k, v in data.model_dump(exclude_unset=True).items():
+
+    changes = data.model_dump(exclude_unset=True)
+    old_values = {f: getattr(s, f) for f in TRACKED_FIELDS if f in changes}
+
+    for k, v in changes.items():
         setattr(s, k, v)
     db.commit()
     db.refresh(s)
+
+    tracked_changed = [f for f in TRACKED_FIELDS if f in changes]
+    if tracked_changed:
+        it = db.get(Integration, s.integration_id)
+        for f in tracked_changed:
+            _log_audit(
+                db, workspace_id=it.workspace_id, streamer_id=s.id, integration_id=s.integration_id,
+                brand=it.brand, streamer_name=s.streamer_name, field=f, old=old_values[f], new=getattr(s, f), user=user,
+            )
+        db.commit()
     return s
 
 
@@ -416,6 +520,13 @@ def delete_streamer(streamer_id: int, db: Session = Depends(get_db), user: User 
     s = db.get(IntegrationStreamer, streamer_id)
     if not s:
         raise HTTPException(404)
+    it = db.get(Integration, s.integration_id)
+    if it:
+        _log_audit(
+            db, workspace_id=it.workspace_id, streamer_id=s.id, integration_id=s.integration_id,
+            brand=it.brand, streamer_name=s.streamer_name, field="deleted", old=s.streamer_name, new=None, user=user,
+        )
+        db.commit()
     if s.contract_file_path and os.path.exists(s.contract_file_path):
         os.remove(s.contract_file_path)
     db.delete(s)
@@ -444,6 +555,15 @@ async def upload_contract(streamer_id: int, file: UploadFile = File(...), db: Se
 
     s.contract_file_path = dest_path
     s.contract_file_name = file.filename
+
+    it = db.get(Integration, s.integration_id)
+    if it:
+        _log_audit(
+            db, workspace_id=it.workspace_id, streamer_id=s.id, integration_id=s.integration_id,
+            brand=it.brand, streamer_name=s.streamer_name, field="contract_uploaded", old=None,
+            new=file.filename, user=user,
+        )
+
     db.commit()
     db.refresh(s)
     return s
@@ -505,6 +625,14 @@ def create_payment(streamer_id: int, data: PaymentCreate, db: Session = Depends(
         s.payment_status = "paid"
     elif total_paid > 0:
         s.payment_status = "partial"
+
+    it = db.get(Integration, s.integration_id)
+    if it:
+        _log_audit(
+            db, workspace_id=it.workspace_id, streamer_id=s.id, integration_id=s.integration_id,
+            brand=it.brand, streamer_name=s.streamer_name, field="payment_added", old=None,
+            new=f"{data.amount:g} {data.currency}", user=user,
+        )
 
     db.commit()
     db.refresh(p)
@@ -666,3 +794,21 @@ def delete_discussion_message(message_id: int, db: Session = Depends(get_db), us
     db.delete(m)
     db.commit()
     return {"ok": True}
+
+
+# ---------- журнал изменений (кто когда что менял) ----------
+
+@router.get("/streamers/{streamer_id}/audit-log", response_model=List[AuditLogEntryOut])
+def streamer_audit_log(streamer_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if not db.get(IntegrationStreamer, streamer_id):
+        raise HTTPException(404)
+    entries = (
+        db.query(AuditLogEntry)
+        .filter(AuditLogEntry.streamer_id == streamer_id)
+        .order_by(AuditLogEntry.created_at.desc())
+        .all()
+    )
+    return [
+        AuditLogEntryOut.model_validate(e).model_copy(update={"author_label": _author_label(db, e.changed_by_tg_id)})
+        for e in entries
+    ]

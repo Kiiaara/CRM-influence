@@ -11,8 +11,10 @@ import {
   ORD_REPORTING_LABELS,
   CONTRACT_STATUS_LABELS,
   CONTRACT_STATUS_COLOR,
+  describeAuditEntry,
 } from '../api/integrations'
 import type {
+  AuditLogEntry,
   CaseStudy,
   ContentStatus,
   ContractStatus,
@@ -550,6 +552,12 @@ export function StreamerModal({
     onSuccess: () => qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'discussion'] }),
   })
 
+  const { data: auditLog = [] } = useQuery({
+    queryKey: ['streamers', streamer.id, 'audit-log'],
+    queryFn: () => integrationsApi.auditLog(streamer.id),
+    enabled: !isNew,
+  })
+
   const update = useMutation({
     mutationFn: (p: Partial<Streamer>) => integrationsApi.updateStreamer(streamer.id, p),
     onSuccess: () => {
@@ -571,6 +579,7 @@ export function StreamerModal({
     onSuccess: (data) => {
       setForm(f => ({ ...f, contract_file_name: data.contract_file_name }))
       qc.invalidateQueries({ queryKey: ['integrations'] })
+      qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'audit-log'] })
     },
   })
 
@@ -587,6 +596,7 @@ export function StreamerModal({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'payments'] })
       qc.invalidateQueries({ queryKey: ['integrations'] })
+      qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'audit-log'] })
     },
   })
 
@@ -982,6 +992,27 @@ export function StreamerModal({
                 >
                   Отправить
                 </button>
+              </div>
+            </div>
+          )}
+
+          {!isNew && (
+            <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3">
+              <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Журнал изменений</div>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {auditLog.map((e: AuditLogEntry) => (
+                  <div key={e.id} className="flex items-start justify-between gap-2 text-xs">
+                    <span className="text-slate-700 dark:text-slate-300">
+                      <span className="font-medium text-slate-500 dark:text-slate-400">{e.author_label ?? 'кто-то'}</span>
+                      {' · '}
+                      {describeAuditEntry(e)}
+                    </span>
+                    <span className="text-slate-400 shrink-0 whitespace-nowrap">
+                      {new Date(e.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                ))}
+                {auditLog.length === 0 && <div className="text-xs text-slate-400">Изменений пока нет</div>}
               </div>
             </div>
           )}
