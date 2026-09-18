@@ -114,7 +114,7 @@ export default function LoginPage() {
   }, [vkAppId, theme, navigate])
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-brand-50 to-brand-100 dark:from-brand-900 dark:to-brand-950">
+    <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-brand-50 to-brand-100 dark:from-brand-900 dark:to-brand-950 app-ambient-bg">
       <button
         onClick={toggle}
         className="fixed top-4 right-4 w-10 h-10 rounded-lg bg-white/70 dark:bg-brand-900/70 border border-slate-200 dark:border-brand-800 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-brand-900 backdrop-blur transition"

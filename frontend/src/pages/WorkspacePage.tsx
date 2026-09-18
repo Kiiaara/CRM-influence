@@ -79,7 +79,7 @@ export default function WorkspacePage() {
   )
 
   return (
-    <div className="min-h-screen flex bg-slate-50 dark:bg-brand-950">
+    <div className="min-h-screen flex bg-slate-50 dark:bg-brand-950 app-ambient-bg">
       {/* Десктоп: сайдбар всегда виден */}
       <aside className="hidden md:flex w-64 bg-white dark:bg-brand-950 border-r border-slate-200 dark:border-brand-900 flex-col shrink-0">
         {sidebarContent}

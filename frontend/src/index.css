@@ -30,3 +30,71 @@
 }
 
 body { margin: 0; }
+
+/* Живой фон рабочей области: мягко плавающие пятна в цветах бренда */
+.app-ambient-bg {
+  position: relative;
+  isolation: isolate;
+}
+
+.app-ambient-bg::before,
+.app-ambient-bg::after {
+  content: '';
+  position: fixed;
+  z-index: -1;
+  border-radius: 9999px;
+  filter: blur(80px);
+  opacity: 0.35;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.app-ambient-bg::before {
+  top: -10%;
+  left: -8%;
+  width: 42vw;
+  height: 42vw;
+  background: radial-gradient(circle, var(--color-brand-400), transparent 70%);
+  animation: ambient-float-a 22s ease-in-out infinite;
+}
+
+.app-ambient-bg::after {
+  bottom: -12%;
+  right: -6%;
+  width: 38vw;
+  height: 38vw;
+  background: radial-gradient(circle, var(--color-brand-600), transparent 70%);
+  animation: ambient-float-b 26s ease-in-out infinite;
+}
+
+:root .app-ambient-bg::before,
+:root .app-ambient-bg::after {
+  opacity: 0.16;
+}
+
+:root:not([data-theme="light"]) .app-ambient-bg::before,
+.dark .app-ambient-bg::before {
+  opacity: 0.3;
+}
+
+:root:not([data-theme="light"]) .app-ambient-bg::after,
+.dark .app-ambient-bg::after {
+  opacity: 0.28;
+}
+
+@keyframes ambient-float-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(6vw, 8vh) scale(1.15); }
+}
+
+@keyframes ambient-float-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-5vw, -6vh) scale(1.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-ambient-bg::before,
+  .app-ambient-bg::after {
+    animation: none;
+  }
+}
