@@ -4,19 +4,19 @@ import {
   integrationsApi,
   CONTRACT_STATUS_LABELS,
   CONTRACT_STATUS_COLOR,
+  CONTENT_LABELS,
 } from '../api/integrations'
-import type { ContractStatus, Streamer } from '../api/integrations'
+import type { ContentStatus, ContractStatus, Streamer } from '../api/integrations'
 
 interface Row extends Streamer {
   brand: string
 }
 
-type Tab = 'contracts' | 'briefs' | 'statuses'
+type Tab = 'contracts' | 'briefs'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'contracts', label: 'Договоры' },
   { key: 'briefs', label: 'ТЗ' },
-  { key: 'statuses', label: 'Статусы' },
 ]
 
 const selectCls = "bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-slate-100"
@@ -70,7 +70,7 @@ export default function DocumentsPage() {
         />
       </div>
       <p className="text-slate-500 dark:text-slate-400 mb-4 text-sm">
-        Договоры, ТЗ и статусы по всем сделкам. Изменения здесь сразу видны на канбане и наоборот.
+        Договоры и ТЗ по всем сделкам. Изменения здесь сразу видны на канбане и наоборот.
       </p>
 
       <div className="flex gap-2 mb-4">
@@ -95,6 +95,9 @@ export default function DocumentsPage() {
                 <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Бренд</th>
                 <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Стример</th>
                 <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Файл</th>
+                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Статус</th>
+                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Отправлен</th>
+                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Подписан</th>
                 <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Действует до</th>
               </tr>
             </thead>
@@ -119,44 +122,6 @@ export default function DocumentsPage() {
                       />
                     )}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    <input
-                      type="date"
-                      value={r.contract_valid_until ? r.contract_valid_until.slice(0, 10) : ''}
-                      onChange={e => update.mutate({ id: r.id, p: { contract_valid_until: e.target.value || null } })}
-                      className={selectCls}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {tab === 'briefs' && (
-          <div className="divide-y divide-slate-100 dark:divide-brand-900">
-            {filtered.map(r => (
-              <BriefRow key={r.id} row={r} onSave={text => update.mutate({ id: r.id, p: { brief: text } })} />
-            ))}
-          </div>
-        )}
-
-        {tab === 'statuses' && (
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 dark:bg-brand-900/50">
-              <tr>
-                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Бренд</th>
-                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Стример</th>
-                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Статус договора</th>
-                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Отправлен</th>
-                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Подписан</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(r => (
-                <tr key={r.id} className="border-t border-slate-100 dark:border-brand-900">
-                  <td className="px-3 py-2 text-slate-900 dark:text-slate-100 whitespace-nowrap">{r.brand}</td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{r.streamer_name}</td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     <select
                       value={r.contract_status}
@@ -184,10 +149,31 @@ export default function DocumentsPage() {
                       className={selectCls}
                     />
                   </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <input
+                      type="date"
+                      value={r.contract_valid_until ? r.contract_valid_until.slice(0, 10) : ''}
+                      onChange={e => update.mutate({ id: r.id, p: { contract_valid_until: e.target.value || null } })}
+                      className={selectCls}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        )}
+
+        {tab === 'briefs' && (
+          <div className="divide-y divide-slate-100 dark:divide-brand-900">
+            {filtered.map(r => (
+              <BriefRow
+                key={r.id}
+                row={r}
+                onSave={text => update.mutate({ id: r.id, p: { brief: text } })}
+                onStatusChange={status => update.mutate({ id: r.id, p: { content_status: status } })}
+              />
+            ))}
+          </div>
         )}
 
         {filtered.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Ничего не найдено</div>}
@@ -196,22 +182,40 @@ export default function DocumentsPage() {
   )
 }
 
-function BriefRow({ row, onSave }: { row: Row; onSave: (text: string) => void }) {
+function BriefRow({
+  row,
+  onSave,
+  onStatusChange,
+}: {
+  row: Row
+  onSave: (text: string) => void
+  onStatusChange: (status: ContentStatus) => void
+}) {
   const [text, setText] = useState(row.brief)
   const [dirty, setDirty] = useState(false)
 
   return (
     <div className="px-3 py-2">
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
         <span className="text-sm text-slate-900 dark:text-slate-100">{row.brand} <span className="text-slate-400">· {row.streamer_name}</span></span>
-        {dirty && (
-          <button
-            onClick={() => { onSave(text); setDirty(false) }}
-            className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-2 py-0.5 rounded-md"
+        <div className="flex items-center gap-2">
+          <select
+            value={row.content_status ?? ''}
+            onChange={e => onStatusChange(e.target.value as ContentStatus)}
+            className={selectCls}
           >
-            Сохранить
-          </button>
-        )}
+            <option value="">— статус не задан —</option>
+            {Object.entries(CONTENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          {dirty && (
+            <button
+              onClick={() => { onSave(text); setDirty(false) }}
+              className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-2 py-0.5 rounded-md"
+            >
+              Сохранить
+            </button>
+          )}
+        </div>
       </div>
       <textarea
         value={text}
