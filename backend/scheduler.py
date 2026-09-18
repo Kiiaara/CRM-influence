@@ -208,8 +208,17 @@ async def _poll_telegram_updates():
                     continue
                 if text.startswith("/start"):
                     _mark_chat_ready(tg_id, from_)
-                    await send_message(tg_id, "Привет 👋 Я буду присылать тебе уведомления о задачах из «Заметочницы».")
+                    await send_message(
+                        tg_id,
+                        "Привет 👋 Я буду присылать тебе уведомления по интеграциям из CRM-influence.\n\n"
+                        "Жми кнопку ниже или пиши /new_integration, чтобы добавить интеграцию.",
+                        with_keyboard=True,
+                    )
                     continue
+                if text.strip() == "❌ Отменить диалог":
+                    text = "/cancel"
+                elif text.strip() == "➕ Новая интеграция":
+                    text = "/new_integration"
                 if await bot_dialog.handle_command(tg_id, text):
                     continue
                 await bot_dialog.handle_message(tg_id, text)

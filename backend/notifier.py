@@ -9,15 +9,24 @@ log = logging.getLogger(__name__)
 TG_API = "https://api.telegram.org"
 
 
-async def send_message(chat_id: int, text: str) -> bool:
+MAIN_KEYBOARD = {
+    "keyboard": [[{"text": "➕ Новая интеграция"}], [{"text": "❌ Отменить диалог"}]],
+    "resize_keyboard": True,
+}
+
+
+async def send_message(chat_id: int, text: str, with_keyboard: bool = False) -> bool:
     if not settings.auth_bot_token:
         log.warning("AUTH_BOT_TOKEN не задан, уведомление не отправлено")
         return False
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    if with_keyboard:
+        payload["reply_markup"] = MAIN_KEYBOARD
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.post(
                 f"{TG_API}/bot{settings.auth_bot_token}/sendMessage",
-                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
+                json=payload,
             )
             if r.status_code == 200:
                 return True
@@ -26,3 +35,24 @@ async def send_message(chat_id: int, text: str) -> bool:
     except Exception:
         log.exception("Не удалось отправить TG-сообщение")
         return False
+
+
+async def set_my_commands():
+    """Регистрирует меню команд бота (кнопка Menu рядом с полем ввода)."""
+    if not settings.auth_bot_token:
+        return
+    commands = [
+        {"command": "new_integration", "description": "Добавить новую интеграцию"},
+        {"command": "cancel", "description": "Отменить текущий диалог"},
+        {"command": "start", "description": "Начать / привязать аккаунт"},
+    ]
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(
+                f"{TG_API}/bot{settings.auth_bot_token}/setMyCommands",
+                json={"commands": commands},
+            )
+            if r.status_code != 200:
+                log.warning("setMyCommands -> %s: %s", r.status_code, r.text)
+    except Exception:
+        log.exception("Не удалось зарегистрировать команды бота")

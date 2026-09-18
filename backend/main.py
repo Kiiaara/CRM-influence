@@ -97,6 +97,8 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     if settings.auth_bot_token:
+        from notifier import set_my_commands
+        await set_my_commands()
         start_scheduler()
     yield
     stop_scheduler()
