@@ -26,6 +26,26 @@ export const CONTENT_LABELS: Record<ContentStatus, string> = {
   filmed: 'Снят контент',
 }
 
+export type OrdResponsible = 'us' | 'client'
+export type OrdStatus = 'todo' | 'done'
+export type OrdReportingStatus = 'not_submitted' | 'submitted' | 'overdue'
+
+export const ORD_RESPONSIBLE_LABELS: Record<OrdResponsible, string> = {
+  us: 'Мы',
+  client: 'Клиент',
+}
+
+export const ORD_STATUS_LABELS: Record<OrdStatus, string> = {
+  todo: 'Сделать',
+  done: 'Сделано',
+}
+
+export const ORD_REPORTING_LABELS: Record<OrdReportingStatus, string> = {
+  not_submitted: 'Не сдана',
+  submitted: 'Сдана',
+  overdue: 'Просрочена',
+}
+
 export interface Streamer {
   id: number
   integration_id: number
@@ -46,6 +66,9 @@ export interface Streamer {
   description: string
   contract_file_name: string | null
   contract_valid_until: string | null
+  ord_responsible: OrdResponsible
+  ord_status: OrdStatus
+  ord_reporting_status: OrdReportingStatus
   position: number
   created_at: string
   updated_at: string

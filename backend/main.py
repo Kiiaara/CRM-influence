@@ -138,6 +138,22 @@ def _migrate_streamers_add_integration_date():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN notified_report BOOLEAN DEFAULT 0"))
 
 
+def _migrate_streamers_add_ord_marking():
+    """Добавляем колонки маркировки рекламы (ОРД), если их нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "integration_streamers" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("integration_streamers")]
+    with engine.begin() as conn:
+        if "ord_responsible" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN ord_responsible VARCHAR(16) DEFAULT 'us'"))
+        if "ord_status" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN ord_status VARCHAR(16) DEFAULT 'todo'"))
+        if "ord_reporting_status" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN ord_reporting_status VARCHAR(16) DEFAULT 'not_submitted'"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -146,6 +162,7 @@ async def lifespan(app: FastAPI):
     _migrate_streamers_add_content_status()
     _migrate_streamers_add_contract_valid_until()
     _migrate_streamers_add_integration_date()
+    _migrate_streamers_add_ord_marking()
     _migrate_workspaces_add_owner()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство

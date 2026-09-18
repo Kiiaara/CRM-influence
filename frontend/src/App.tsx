@@ -5,6 +5,7 @@ import WorkspacePage from './pages/WorkspacePage'
 import HomePage from './pages/HomePage'
 import IntegrationsBoard from './pages/IntegrationsBoard'
 import HistoryPage from './pages/HistoryPage'
+import MarkingPage from './pages/MarkingPage'
 import StreamerProfilesPage from './pages/StreamerProfilesPage'
 import SearchPage from './pages/SearchPage'
 import AdminUsersPage from './pages/AdminUsersPage'
@@ -32,6 +33,7 @@ export default function App() {
       <Route element={<ProtectedShell />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/integrations" element={<IntegrationsBoard />} />
+        <Route path="/marking" element={<MarkingPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/streamers" element={<StreamerProfilesPage />} />
         <Route path="/search" element={<SearchPage />} />

@@ -9,6 +9,9 @@ class IntegrationStreamer(Base):
     stage: negotiation | agreed | awaiting_contract | awaiting_payment | done | cancelled
     payment_status: not_invoiced | invoiced | partial | paid
     content_status: awaiting_brief | filming | filmed
+    ord_responsible: us | client - кто маркирует рекламу (получает erid) по этому размещению
+    ord_status: todo | done - статус самой маркировки
+    ord_reporting_status: not_submitted | submitted | overdue - статус отчётности в ОРД
     """
     __tablename__ = "integration_streamers"
 
@@ -39,6 +42,11 @@ class IntegrationStreamer(Base):
 
     # позиция карточки внутри колонки канбана (для сортировки внутри stage)
     position: Mapped[int] = mapped_column(Integer, default=0)
+
+    # маркировка рекламы (ОРД / erid)
+    ord_responsible: Mapped[str] = mapped_column(String(16), default="us")
+    ord_status: Mapped[str] = mapped_column(String(16), default="todo")
+    ord_reporting_status: Mapped[str] = mapped_column(String(16), default="not_submitted")
 
     # флаги напоминаний бота по integration_date (чтобы не слать повторно)
     notified_branding_check: Mapped[bool] = mapped_column(default=False)
