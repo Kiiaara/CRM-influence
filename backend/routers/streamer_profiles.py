@@ -141,6 +141,25 @@ def delete_profile(profile_id: int, db: Session = Depends(get_db), user: User = 
     return {"ok": True}
 
 
+def _clean_number(value) -> Optional[float]:
+    """Достаём число из 'p.155 265', '5 860 000', '82%' и подобного мусора."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    if not s:
+        return None
+    s = s.replace("\xa0", " ")
+    # оставляем цифры, точку, запятую и минус
+    cleaned = "".join(ch for ch in s if ch.isdigit() or ch in ".,-")
+    cleaned = cleaned.replace(",", ".")
+    if not cleaned or cleaned in ("-", "."):
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
 def _cast(value, py_type):
     if value is None or value == "":
         return None
@@ -149,14 +168,23 @@ def _cast(value, py_type):
             return value
         return str(value).strip().lower() in ("да", "yes", "true", "1", "истина")
     if py_type is int:
-        return int(float(value))
+        n = _clean_number(value)
+        return int(n) if n is not None else None
     if py_type is float:
-        return float(value)
+        return _clean_number(value)
     if py_type is datetime:
         if isinstance(value, datetime):
             return value
         return None
     return str(value)
+
+
+def _name_from_twitch_url(url: object) -> str:
+    """Если колонки 'Имя' нет, берём ник из хвоста ссылки на Twitch."""
+    s = str(url or "").strip().rstrip("/")
+    if not s:
+        return ""
+    return s.rsplit("/", 1)[-1]
 
 
 @router.post("/import")
@@ -179,8 +207,10 @@ async def import_profiles(file: UploadFile = File(...), db: Session = Depends(ge
         if h in header_to_field:
             col_map[idx] = header_to_field[h]
 
-    if "name" not in col_map.values():
-        raise HTTPException(400, "В файле должна быть колонка 'Имя'")
+    has_name_col = "name" in col_map.values()
+    twitch_col_idx = next((idx for idx, f in col_map.items() if f == "twitch_url"), None)
+    if not has_name_col and twitch_col_idx is None:
+        raise HTTPException(400, "В файле должна быть колонка 'Имя' или 'Ссылка на Twitch'")
 
     created, updated = 0, 0
     for row in rows[1:]:
@@ -193,6 +223,10 @@ async def import_profiles(file: UploadFile = File(...), db: Session = Depends(ge
             values[field] = _cast(row[idx], field_types[field])
 
         name = values.get("name")
+        if not name and twitch_col_idx is not None and twitch_col_idx < len(row):
+            name = _name_from_twitch_url(row[twitch_col_idx])
+            if name:
+                values["name"] = name
         if not name:
             continue
 
