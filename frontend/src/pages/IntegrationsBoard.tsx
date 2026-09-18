@@ -422,7 +422,7 @@ function BulkStreamersModal({
   )
 }
 
-function StreamerModal({
+export function StreamerModal({
   streamer,
   brand,
   onClose,

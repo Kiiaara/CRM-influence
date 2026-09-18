@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 from deps import get_current_user
+from models.integration import Integration
 from models.integration_streamer import IntegrationStreamer
 from models.user import User
 
@@ -25,11 +26,13 @@ def search(q: str = Query(..., min_length=1), db: Session = Depends(get_db), use
     like = f"%{q}%"
     items = (
         db.query(IntegrationStreamer)
+        .join(Integration, IntegrationStreamer.integration_id == Integration.id)
         .options(joinedload(IntegrationStreamer.integration))
         .filter(or_(
             IntegrationStreamer.streamer_name.ilike(like),
             IntegrationStreamer.contact.ilike(like),
             IntegrationStreamer.description.ilike(like),
+            Integration.brand.ilike(like),
         ))
         .limit(30)
         .all()
