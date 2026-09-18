@@ -1,6 +1,8 @@
-# Заметочница
+# CRM-influence
 
-Внутренний Notion-like сервис: страницы с текстом, таблицы (как Notion databases), шаблоны, поиск, дашборды с виджетами (KPI/линейные/столбчатые/круговые графики), календарь задач с TG-уведомлениями.
+CRM для инфлюенс-менеджмента: сделки с брендами, пул стримеров внутри каждой сделки
+(свои сроки/сумма/статус/договор/оплаты у каждого), канбан по стадиям, авторасчёт
+комиссии и суммы на руки стримеру, поиск, календарь задач с TG-уведомлениями.
 
 ## Стек
 
@@ -47,14 +49,13 @@ DEV_AUTH_BYPASS=true    # вход без авторизации (для лок�
 
 ```
 backend/
-  models/         ORM (User, Page, DbTable, Row, Template, Dashboard, Widget, Task...)
+  models/         ORM (User, Integration, IntegrationStreamer, IntegrationPayment, Task...)
   routers/        FastAPI роуты
   notifier.py     отправка в TG
   scheduler.py    APScheduler + long-polling /start
 frontend/
   src/api/        axios-клиенты под каждый ресурс
-  src/pages/      React-страницы
-  src/components/widgets/  карточки виджетов
+  src/pages/      React-страницы (IntegrationsBoard - канбан, HomePage - сводка)
 ```
 
 ## Деплой на VPS

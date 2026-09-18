@@ -22,7 +22,6 @@ class TaskOut(BaseModel):
     due_at: Optional[datetime] = None
     status: str
     assignee_tg_id: Optional[int] = None
-    page_id: Optional[int] = None
     created_at: datetime
     model_config = {"from_attributes": True}
 
@@ -33,7 +32,6 @@ class TaskCreate(BaseModel):
     due_at: Optional[datetime] = None
     status: str = "todo"
     assignee_tg_id: Optional[int] = None
-    page_id: Optional[int] = None
 
 
 class TaskUpdate(BaseModel):
@@ -42,7 +40,6 @@ class TaskUpdate(BaseModel):
     due_at: Optional[datetime] = None
     status: Optional[str] = None
     assignee_tg_id: Optional[int] = None
-    page_id: Optional[int] = None
 
 
 @router.get("", response_model=List[TaskOut])
@@ -69,7 +66,6 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db), user: User = De
         due_at=data.due_at,
         status=data.status,
         assignee_tg_id=data.assignee_tg_id,
-        page_id=data.page_id,
         created_by_tg_id=user.tg_id,
     )
     db.add(t)

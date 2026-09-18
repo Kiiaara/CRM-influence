@@ -9,11 +9,7 @@ import SearchPage from './pages/SearchPage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import { authApi } from './api/auth'
 
-// Dev-режим: пускаем сразу в воркспейс без TG-логина (синхронно с backend DEV_AUTH_BYPASS)
-const DEV_BYPASS = true
-
 function ProtectedShell() {
-  if (DEV_BYPASS) return <WorkspacePage />
   const { data, isLoading, isError } = useQuery({
     queryKey: ['me'],
     queryFn: authApi.me,

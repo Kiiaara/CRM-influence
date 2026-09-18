@@ -7,7 +7,6 @@ export interface Task {
   due_at: string | null
   status: 'todo' | 'doing' | 'done'
   assignee_tg_id: number | null
-  page_id: number | null
   created_at: string
 }
 

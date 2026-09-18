@@ -15,7 +15,6 @@ class Task(Base):
     status: Mapped[str] = mapped_column(String(16), default="todo")  # todo | doing | done
     assignee_tg_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.tg_id", ondelete="SET NULL"), nullable=True, index=True)
     created_by_tg_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    page_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pages.id", ondelete="SET NULL"), nullable=True)
     # флаги чтобы не дублировать TG-уведомления
     notified_assigned: Mapped[bool] = mapped_column(Boolean, default=False)
     notified_deadline: Mapped[bool] = mapped_column(Boolean, default=False)

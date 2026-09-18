@@ -49,7 +49,7 @@ export default function CalendarPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-semibold text-slate-900 dark:text-slate-100">Календарь задач</h1>
         <button
-          onClick={() => setEditing({ id: 0, title: '', description: '', due_at: new Date().toISOString().slice(0, 16), status: 'todo', assignee_tg_id: null, page_id: null, created_at: '' })}
+          onClick={() => setEditing({ id: 0, title: '', description: '', due_at: new Date().toISOString().slice(0, 16), status: 'todo', assignee_tg_id: null, created_at: '' })}
           className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
         >
           + Новая задача
@@ -69,7 +69,7 @@ export default function CalendarPage() {
           selectable
           height={650}
           dateClick={(info) => {
-            setEditing({ id: 0, title: '', description: '', due_at: info.dateStr.length === 10 ? info.dateStr + 'T12:00' : info.dateStr.slice(0, 16), status: 'todo', assignee_tg_id: null, page_id: null, created_at: '' })
+            setEditing({ id: 0, title: '', description: '', due_at: info.dateStr.length === 10 ? info.dateStr + 'T12:00' : info.dateStr.slice(0, 16), status: 'todo', assignee_tg_id: null, created_at: '' })
           }}
           eventClick={(info) => {
             const t = tasks.find(x => String(x.id) === info.event.id)
