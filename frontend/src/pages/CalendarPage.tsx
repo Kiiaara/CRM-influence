@@ -55,7 +55,7 @@ export default function CalendarPage() {
           + Новая задача
         </button>
       </div>
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 [&_.fc]:text-slate-800 dark:[&_.fc]:text-slate-200 [&_.fc-button-primary]:!bg-brand-600 [&_.fc-button-primary]:!border-brand-600 dark:[&_.fc-theme-standard_td]:!border-slate-800 dark:[&_.fc-theme-standard_th]:!border-slate-800 dark:[&_.fc-scrollgrid]:!border-slate-800">
+      <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-4 [&_.fc]:text-slate-800 dark:[&_.fc]:text-slate-200 [&_.fc-button-primary]:!bg-brand-600 [&_.fc-button-primary]:!border-brand-600 dark:[&_.fc-theme-standard_td]:!border-brand-900 dark:[&_.fc-theme-standard_th]:!border-brand-900 dark:[&_.fc-scrollgrid]:!border-brand-900">
         <FullCalendar
           ref={calRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -92,14 +92,14 @@ export default function CalendarPage() {
               value={editing.title}
               onChange={e => setEditing({ ...editing, title: e.target.value })}
               placeholder="Что сделать"
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-brand-500 text-slate-900 dark:text-slate-100"
+              className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 outline-none focus:border-brand-500 text-slate-900 dark:text-slate-100"
             />
             <textarea
               value={editing.description}
               onChange={e => setEditing({ ...editing, description: e.target.value })}
               placeholder="Описание"
               rows={3}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-brand-500 text-slate-900 dark:text-slate-100"
+              className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 outline-none focus:border-brand-500 text-slate-900 dark:text-slate-100"
             />
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -108,7 +108,7 @@ export default function CalendarPage() {
                   type="datetime-local"
                   value={editing.due_at ?? ''}
                   onChange={e => setEditing({ ...editing, due_at: e.target.value })}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                  className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
                 />
               </div>
               <div>
@@ -116,7 +116,7 @@ export default function CalendarPage() {
                 <select
                   value={editing.status}
                   onChange={e => setEditing({ ...editing, status: e.target.value as Task['status'] })}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                  className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
                 >
                   <option value="todo">Сделать</option>
                   <option value="doing">В работе</option>
@@ -129,7 +129,7 @@ export default function CalendarPage() {
               <select
                 value={editing.assignee_tg_id ?? ''}
                 onChange={e => setEditing({ ...editing, assignee_tg_id: e.target.value ? Number(e.target.value) : null })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               >
                 <option value="">— не назначено —</option>
                 {users.map(u => (
@@ -149,7 +149,7 @@ export default function CalendarPage() {
               )}
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Отмена</button>
+              <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 rounded-lg">Отмена</button>
               <button
                 onClick={async () => {
                   if (!editing.title.trim()) return
@@ -190,7 +190,7 @@ export default function CalendarPage() {
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-lg w-full p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-lg w-full p-6" onClick={e => e.stopPropagation()}>
         {children}
       </div>
     </div>

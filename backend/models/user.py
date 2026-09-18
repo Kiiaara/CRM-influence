@@ -14,6 +14,8 @@ class User(Base):
     label: Mapped[str | None] = mapped_column(String(128), nullable=True)
     tg_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
     tg_first_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # VK ID для входа через VK (привязывается к тому же аккаунту, что и TG)
+    vk_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True, index=True)
     # стал ли юзер досягаем для бота (написал ли /start)
     tg_chat_ready: Mapped[bool] = mapped_column(Boolean, default=False)
     # закреплённые id страниц - JSON-массив. Хранится в виде строки "[1,2,3]"

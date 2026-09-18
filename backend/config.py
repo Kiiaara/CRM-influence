@@ -10,9 +10,14 @@ class Settings(BaseSettings):
     auth_bot_username: str = ""       # @username бота (без @) - для Login Widget на фронте
     auth_allowed_tg_ids: str = ""     # через запятую: "12345,67890" - попадают в whitelist как admin при первом старте
 
+    # VK ID (вход через VK)
+    vk_app_id: str = ""          # ID приложения из vk.com/apps?act=manage
+    vk_client_secret: str = ""   # Защищённый ключ приложения
+
     # Сессии
     session_secret: str = "change-me"  # сейчас не используется (cookie - random token), но оставлено на будущее
     session_ttl_days: int = 30
+    cookie_secure: bool = False  # на проде с HTTPS ставим true
 
     # Сеть
     frontend_origin: str = "http://localhost:5173"  # CORS

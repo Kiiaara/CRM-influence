@@ -24,6 +24,19 @@ def _migrate_users_add_pinned():
             conn.execute(text("ALTER TABLE users ADD COLUMN pinned_pages VARCHAR(2048) DEFAULT '[]'"))
 
 
+def _migrate_users_add_vk_id():
+    """Добавляем колонку vk_id в users если её нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "users" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("users")]
+    if "vk_id" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN vk_id BIGINT"))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_vk_id ON users (vk_id)"))
+
+
 def _migrate_streamers_add_content_status():
     """Добавляем колонку content_status в integration_streamers если её нет."""
     from sqlalchemy import text, inspect
@@ -40,6 +53,7 @@ def _migrate_streamers_add_content_status():
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _migrate_users_add_pinned()
+    _migrate_users_add_vk_id()
     _migrate_streamers_add_content_status()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство
@@ -71,6 +85,7 @@ PUBLIC_PATHS = {
     "/api/health",
     "/api/auth/config",
     "/api/auth/telegram",
+    "/api/auth/vk",
     "/api/auth/me",
     "/api/auth/logout",
 }

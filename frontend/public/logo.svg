@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="star" x1="30%" y1="10%" x2="75%" y2="95%">
+      <stop offset="0%" stop-color="#7ef2d4"/>
+      <stop offset="45%" stop-color="#2ee0b0"/>
+      <stop offset="100%" stop-color="#0f8f78"/>
+    </linearGradient>
+    <linearGradient id="starDark" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#1aa88a"/>
+      <stop offset="100%" stop-color="#0b5f52"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#2bd3ac"/>
+      <stop offset="100%" stop-color="#0c6455"/>
+    </linearGradient>
+    <linearGradient id="wing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1c9d84"/>
+      <stop offset="100%" stop-color="#0a4f45"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="108" fill="#0c2e27"/>
+
+  <!-- боковые грани -->
+  <path d="M148 150 L196 168 L206 300 L168 246 Z" fill="url(#wing)"/>
+  <path d="M364 150 L316 168 L306 300 L344 246 Z" fill="url(#wing)"/>
+
+  <!-- искры над звездой -->
+  <path d="M196 74 L214 112 L192 106 Z" fill="#35dcb4"/>
+  <path d="M316 74 L298 112 L320 106 Z" fill="#35dcb4"/>
+
+  <!-- звезда -->
+  <path d="M256 60 L288 178 L256 210 Z" fill="url(#star)"/>
+  <path d="M256 60 L224 178 L256 210 Z" fill="url(#starDark)"/>
+  <path d="M402 166 L288 178 L272 216 Z" fill="url(#star)"/>
+  <path d="M402 166 L296 236 L272 216 Z" fill="url(#starDark)"/>
+  <path d="M110 166 L224 178 L240 216 Z" fill="url(#starDark)"/>
+  <path d="M110 166 L216 236 L240 216 Z" fill="url(#star)"/>
+  <path d="M346 322 L266 238 L296 236 Z" fill="url(#starDark)"/>
+  <path d="M346 322 L286 214 L296 236 Z" fill="url(#star)"/>
+  <path d="M166 322 L246 238 L216 236 Z" fill="url(#star)"/>
+  <path d="M166 322 L226 214 L216 236 Z" fill="url(#starDark)"/>
+
+  <!-- нижний щит-стрела -->
+  <path d="M206 300 L256 268 L306 300 L256 470 Z" fill="url(#shield)"/>
+  <path d="M256 268 L306 300 L256 470 Z" fill="#0d6d5c" opacity="0.65"/>
+  <path d="M232 318 L256 302 L280 318 L256 412 Z" fill="#59ebc6" opacity="0.9"/>
+</svg>

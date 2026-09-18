@@ -36,7 +36,7 @@ export default function HomePage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Ближайшие дедлайны по интеграциям" to="/integrations">
           {upcomingIntegrations.map(c => (
-            <Link key={c.id} to={`/integrations?open=${c.id}`} className="flex justify-between items-center py-2 px-3 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
+            <Link key={c.id} to={`/integrations?open=${c.id}`} className="flex justify-between items-center py-2 px-3 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 rounded-lg">
               <span>
                 <span className="font-medium">{c.brand}</span>
                 <span className="text-slate-400"> × {c.streamer_name}</span>
@@ -67,7 +67,7 @@ export default function HomePage() {
 
 function StatCard({ icon, label, value, to }: { icon: string; label: string; value: number; to: string }) {
   return (
-    <Link to={to} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 hover:border-brand-400 dark:hover:border-brand-600 transition flex items-center gap-4">
+    <Link to={to} className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-5 hover:border-brand-400 dark:hover:border-brand-600 transition flex items-center gap-4">
       <div className="text-3xl">{icon}</div>
       <div>
         <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">{value.toLocaleString('ru-RU')}</div>
@@ -79,7 +79,7 @@ function StatCard({ icon, label, value, to }: { icon: string; label: string; val
 
 function Section({ title, to, children }: { title: string; to: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-2">
+    <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-2">
       <div className="flex items-center justify-between px-3 py-2">
         <h2 className="font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
         <Link to={to} className="text-xs text-brand-600 hover:text-brand-700">все →</Link>

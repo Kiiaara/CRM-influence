@@ -30,11 +30,11 @@ export default function AdminUsersPage() {
       <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-slate-100 mb-2">Пользователи</h1>
       <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm sm:text-base">Кто может заходить и редактировать. Роли: админ - всё; редактор - писать; читатель - только смотреть.</p>
 
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-6">
+      <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-4 mb-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <input value={tgId} onChange={e => setTgId(e.target.value)} placeholder="TG ID" className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
-          <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Имя / заметка" className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
-          <select value={role} onChange={e => setRole(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100">
+          <input value={tgId} onChange={e => setTgId(e.target.value)} placeholder="TG ID" className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
+          <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Имя / заметка" className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
+          <select value={role} onChange={e => setRole(e.target.value)} className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100">
             <option value="admin">Админ</option>
             <option value="editor">Редактор</option>
             <option value="viewer">Читатель</option>
@@ -48,7 +48,7 @@ export default function AdminUsersPage() {
       {/* Мобилка: карточки вместо таблицы */}
       <div className="space-y-3 sm:hidden">
         {users.map(u => (
-          <div key={u.tg_id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+          <div key={u.tg_id} className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
               <div className="font-medium text-slate-900 dark:text-slate-100">
                 {u.label || u.tg_first_name || u.tg_username || `id ${u.tg_id}`}
@@ -64,7 +64,7 @@ export default function AdminUsersPage() {
                 value={u.role}
                 disabled={u.is_self}
                 onChange={e => update.mutate({ tg_id: u.tg_id, p: { role: e.target.value } })}
-                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-700 dark:text-slate-300"
+                className="bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-700 dark:text-slate-300"
               >
                 <option value="admin">Админ</option>
                 <option value="editor">Редактор</option>
@@ -78,9 +78,9 @@ export default function AdminUsersPage() {
       </div>
 
       {/* Десктоп: таблица */}
-      <div className="hidden sm:block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto">
+      <div className="hidden sm:block bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl overflow-x-auto">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 dark:bg-slate-800/50">
+          <thead className="bg-slate-50 dark:bg-brand-900/50">
             <tr>
               <th className="text-left px-4 py-2 text-slate-700 dark:text-slate-300">TG ID</th>
               <th className="text-left px-4 py-2 text-slate-700 dark:text-slate-300">Имя</th>
@@ -91,7 +91,7 @@ export default function AdminUsersPage() {
           </thead>
           <tbody>
             {users.map(u => (
-              <tr key={u.tg_id} className="border-t border-slate-100 dark:border-slate-800">
+              <tr key={u.tg_id} className="border-t border-slate-100 dark:border-brand-900">
                 <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{u.tg_id}{u.is_self && <span className="ml-2 text-xs text-brand-600">(это ты)</span>}</td>
                 <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{u.label || u.tg_first_name || u.tg_username || '—'}</td>
                 <td className="px-4 py-2">

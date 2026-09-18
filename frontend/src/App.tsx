@@ -15,7 +15,7 @@ function ProtectedShell() {
     queryKey: ['me'],
     queryFn: authApi.me,
   })
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-950">Загрузка…</div>
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-brand-950">Загрузка…</div>
   if (isError || !data) return <Navigate to="/login" replace />
   return <WorkspacePage />
 }

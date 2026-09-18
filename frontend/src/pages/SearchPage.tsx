@@ -33,7 +33,7 @@ export default function SearchPage() {
           value={q}
           onChange={e => setQ(e.target.value)}
           placeholder="Что ищем?"
-          className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-4 py-2 text-slate-900 dark:text-slate-100 outline-none focus:border-brand-500"
+          className="flex-1 bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-lg px-4 py-2 text-slate-900 dark:text-slate-100 outline-none focus:border-brand-500"
         />
         <button className="bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 rounded-lg text-sm">Искать</button>
       </form>
@@ -43,7 +43,7 @@ export default function SearchPage() {
           <Link
             key={i}
             to={`/integrations?open=${h.id}`}
-            className="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 hover:border-brand-400"
+            className="block bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-4 hover:border-brand-400"
           >
             <div className="text-xs text-slate-400 mb-1">🤝 Интеграция</div>
             <div className="font-medium text-slate-900 dark:text-slate-100">{h.title}</div>

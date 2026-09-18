@@ -26,8 +26,8 @@ export default function WorkspacePage() {
 
   const sidebarContent = (
     <>
-      <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
-        <div className="w-8 h-8 rounded-lg bg-brand-600 text-white flex items-center justify-center font-bold shrink-0">И</div>
+      <div className="px-5 py-4 border-b border-slate-100 dark:border-brand-900 flex items-center gap-2">
+        <img src="/logo.svg" alt="" className="w-9 h-9 rounded-lg shrink-0" />
         <div className="font-semibold text-slate-900 dark:text-slate-100">CRM-influence</div>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
@@ -41,7 +41,7 @@ export default function WorkspacePage() {
               className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition ${
                 active
                   ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 font-medium'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-brand-900'
               }`}
             >
               <span>{it.icon}</span>
@@ -50,10 +50,10 @@ export default function WorkspacePage() {
           )
         })}
       </nav>
-      <div className="px-3 py-3 border-t border-slate-100 dark:border-slate-800 space-y-1">
+      <div className="px-3 py-3 border-t border-slate-100 dark:border-brand-900 space-y-1">
         <button
           onClick={toggle}
-          className="w-full px-3 py-2 text-sm text-left text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg flex items-center gap-3"
+          className="w-full px-3 py-2 text-sm text-left text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-brand-900 rounded-lg flex items-center gap-3"
         >
           <span>{theme === 'dark' ? '☀️' : '🌙'}</span>
           <span>{theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}</span>
@@ -62,14 +62,14 @@ export default function WorkspacePage() {
           <Link
             to="/admin/users"
             onClick={() => setMenuOpen(false)}
-            className="block px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg"
+            className="block px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-brand-900 rounded-lg"
           >
             ⚙️ Пользователи
           </Link>
         )}
         <button
           onClick={logout}
-          className="w-full px-3 py-2 text-sm text-left text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg flex items-center gap-3"
+          className="w-full px-3 py-2 text-sm text-left text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-brand-900 rounded-lg flex items-center gap-3"
         >
           <span>🚪</span>
           <span>Выйти ({me?.first_name ?? me?.username ?? me?.tg_id ?? 'dev'})</span>
@@ -79,9 +79,9 @@ export default function WorkspacePage() {
   )
 
   return (
-    <div className="min-h-screen flex bg-slate-50 dark:bg-slate-950">
+    <div className="min-h-screen flex bg-slate-50 dark:bg-brand-950">
       {/* Десктоп: сайдбар всегда виден */}
-      <aside className="hidden md:flex w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col shrink-0">
+      <aside className="hidden md:flex w-64 bg-white dark:bg-brand-950 border-r border-slate-200 dark:border-brand-900 flex-col shrink-0">
         {sidebarContent}
       </aside>
 
@@ -89,7 +89,7 @@ export default function WorkspacePage() {
       {menuOpen && (
         <div className="md:hidden fixed inset-0 z-40 bg-black/40" onClick={() => setMenuOpen(false)}>
           <aside
-            className="w-64 h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col"
+            className="w-64 h-full bg-white dark:bg-brand-950 border-r border-slate-200 dark:border-brand-900 flex flex-col"
             onClick={e => e.stopPropagation()}
           >
             {sidebarContent}
@@ -98,10 +98,10 @@ export default function WorkspacePage() {
       )}
 
       <main className="flex-1 flex flex-col overflow-hidden text-slate-800 dark:text-slate-200 min-w-0">
-        <header className="border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur sticky top-0 z-30 px-3 sm:px-6 py-3 flex items-center gap-3">
+        <header className="border-b border-slate-200 dark:border-brand-900 bg-white/70 dark:bg-brand-950/60 backdrop-blur sticky top-0 z-30 px-3 sm:px-6 py-3 flex items-center gap-3">
           <button
             onClick={() => setMenuOpen(true)}
-            className="md:hidden shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="md:hidden shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900"
             aria-label="Меню"
           >
             ☰

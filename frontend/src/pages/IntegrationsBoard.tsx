@@ -6,7 +6,7 @@ import type { ContentStatus, Integration, Payment, PaymentStatus, Stage, Streame
 import { streamerProfilesApi } from '../api/streamerProfiles'
 
 const PAYMENT_COLORS: Record<PaymentStatus, string> = {
-  not_invoiced: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+  not_invoiced: 'bg-slate-100 text-slate-600 dark:bg-brand-900 dark:text-slate-300',
   invoiced: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   partial: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
   paid: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
@@ -71,7 +71,7 @@ export default function IntegrationsBoard() {
       draggable
       onDragStart={() => { dragData.current = { id: c.id, stage: c.stage } }}
       onClick={() => setEditing({ streamer: c, brand: c.brand })}
-      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 cursor-pointer hover:border-brand-400 shadow-sm"
+      className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-lg p-3 cursor-pointer hover:border-brand-400 shadow-sm"
     >
       <div className="text-xs text-slate-400">{c.brand}</div>
       <div className="font-medium text-sm text-slate-900 dark:text-slate-100">{c.streamer_name}</div>
@@ -124,7 +124,7 @@ export default function IntegrationsBoard() {
               className={`shrink-0 px-3 py-1.5 rounded-full text-sm border ${
                 mobileStage === s.key
                   ? 'bg-brand-600 border-brand-600 text-white'
-                  : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                  : 'border-slate-200 dark:border-brand-800 text-slate-600 dark:text-slate-300'
               }`}
             >
               {s.label} ({byStage(s.key).length})
@@ -150,9 +150,9 @@ export default function IntegrationsBoard() {
             onDragOver={e => { e.preventDefault(); setDragOverStage(s.key) }}
             onDragLeave={() => setDragOverStage(null)}
             onDrop={() => onDrop(s.key)}
-            className={`w-72 shrink-0 rounded-xl border ${dragOverStage === s.key ? 'border-brand-400 bg-brand-50/50 dark:bg-brand-900/10' : 'border-slate-200 dark:border-slate-800'} bg-slate-50 dark:bg-slate-900/40`}
+            className={`w-72 shrink-0 rounded-xl border ${dragOverStage === s.key ? 'border-brand-400 bg-brand-50/50 dark:bg-brand-900/10' : 'border-slate-200 dark:border-brand-900'} bg-slate-50 dark:bg-brand-950/40`}
           >
-            <div className="px-3 py-2 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
+            <div className="px-3 py-2 flex items-center justify-between border-b border-slate-200 dark:border-brand-900">
               <div className="text-sm font-medium text-slate-700 dark:text-slate-300">{s.label}</div>
               <div className="text-xs text-slate-400">{byStage(s.key).length}</div>
             </div>
@@ -225,19 +225,19 @@ function BrandPickerModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
         <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-slate-100">Какой бренд?</h2>
         <div className="flex gap-2 mb-4">
           <button
             onClick={() => setMode('existing')}
             disabled={integrations.length === 0}
-            className={`flex-1 text-sm px-3 py-2 rounded-lg border ${mode === 'existing' ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'} disabled:opacity-40`}
+            className={`flex-1 text-sm px-3 py-2 rounded-lg border ${mode === 'existing' ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300' : 'border-slate-200 dark:border-brand-800 text-slate-600 dark:text-slate-300'} disabled:opacity-40`}
           >
             Существующий
           </button>
           <button
             onClick={() => setMode('new')}
-            className={`flex-1 text-sm px-3 py-2 rounded-lg border ${mode === 'new' ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`}
+            className={`flex-1 text-sm px-3 py-2 rounded-lg border ${mode === 'new' ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300' : 'border-slate-200 dark:border-brand-800 text-slate-600 dark:text-slate-300'}`}
           >
             Новый бренд
           </button>
@@ -247,7 +247,7 @@ function BrandPickerModal({
           <select
             value={selectedId}
             onChange={e => setSelectedId(Number(e.target.value))}
-            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+            className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
           >
             <option value="">— выбери бренд —</option>
             {integrations.map(it => (
@@ -259,12 +259,12 @@ function BrandPickerModal({
             value={newBrand}
             onChange={e => setNewBrand(e.target.value)}
             placeholder="Название бренда"
-            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+            className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
           />
         )}
 
         <div className="flex justify-end gap-2 mt-6">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Отмена</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 rounded-lg">Отмена</button>
           <button
             onClick={() => {
               if (mode === 'existing') {
@@ -346,22 +346,22 @@ function BulkStreamersModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="text-xs text-slate-400 mb-1">{brand}</div>
         <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-slate-100">Добавить стримеров</h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <div>
             <label className="text-xs text-slate-500 dark:text-slate-400">Общий дедлайн</label>
-            <input type="date" value={commonDeadline} onChange={e => setCommonDeadline(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
+            <input type="date" value={commonDeadline} onChange={e => setCommonDeadline(e.target.value)} className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
           </div>
           <div>
             <label className="text-xs text-slate-500 dark:text-slate-400">Комиссия, %</label>
-            <input type="number" value={commonCommission} onChange={e => setCommonCommission(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
+            <input type="number" value={commonCommission} onChange={e => setCommonCommission(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
           </div>
           <div>
             <label className="text-xs text-slate-500 dark:text-slate-400">Налог стримера, %</label>
-            <input type="number" value={commonTax} onChange={e => setCommonTax(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
+            <input type="number" value={commonTax} onChange={e => setCommonTax(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
           </div>
         </div>
         <p className="text-xs text-slate-400 mb-4">Сумму, стадию и статус контента каждому стримеру выставишь отдельно в его карточке — они у всех разные.</p>
@@ -373,11 +373,11 @@ function BulkStreamersModal({
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Поиск по имени…"
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 mb-2"
+              className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 mb-2"
             />
-            <div className="border border-slate-200 dark:border-slate-800 rounded-lg max-h-48 overflow-y-auto">
+            <div className="border border-slate-200 dark:border-brand-900 rounded-lg max-h-48 overflow-y-auto">
               {filteredProfiles.map(p => (
-                <label key={p.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 last:border-0 cursor-pointer">
+                <label key={p.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-brand-900/50 border-b border-slate-100 dark:border-brand-900 last:border-0 cursor-pointer">
                   <input type="checkbox" checked={selectedProfiles.has(p.id)} onChange={() => toggleProfile(p.id)} className="w-4 h-4" />
                   <span className="text-slate-700 dark:text-slate-300">{p.name}</span>
                   {p.category && <span className="text-xs text-slate-400">· {p.category}</span>}
@@ -398,14 +398,14 @@ function BulkStreamersModal({
             onChange={e => setManualNames(e.target.value)}
             rows={3}
             placeholder="Стример1, Стример2, ..."
-            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+            className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
           />
         </div>
 
         <div className="flex justify-between items-center mt-6">
           <div className="text-xs text-slate-400">Выбрано: {totalSelected}</div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Отмена</button>
+            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 rounded-lg">Отмена</button>
             <button
               onClick={() => addBulk.mutate()}
               disabled={totalSelected === 0 || addBulk.isPending}
@@ -513,7 +513,7 @@ function StreamerModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="text-xs text-slate-400 mb-1">{brand}</div>
         <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-slate-100">
           {isNew ? 'Новый стример' : form.streamer_name}
@@ -528,10 +528,10 @@ function StreamerModal({
                 onChange={e => { setForm({ ...form, streamer_name: e.target.value }); setNameOpen(true) }}
                 onFocus={() => setNameOpen(true)}
                 onBlur={() => setTimeout(() => setNameOpen(false), 150)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               />
               {nameOpen && nameSuggestions.length > 0 && (
-                <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xl max-h-40 overflow-auto z-10">
+                <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-lg shadow-xl max-h-40 overflow-auto z-10">
                   {nameSuggestions.map(n => (
                     <button
                       key={n}
@@ -550,7 +550,7 @@ function StreamerModal({
                 value={form.contact}
                 onChange={e => setForm({ ...form, contact: e.target.value })}
                 placeholder="TG / email / телефон"
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               />
             </div>
           </div>
@@ -561,7 +561,7 @@ function StreamerModal({
               <select
                 value={form.stage}
                 onChange={e => setForm({ ...form, stage: e.target.value as Stage })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               >
                 {STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
               </select>
@@ -571,7 +571,7 @@ function StreamerModal({
               <select
                 value={form.payment_status}
                 onChange={e => setForm({ ...form, payment_status: e.target.value as PaymentStatus })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               >
                 {Object.entries(PAYMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
@@ -582,7 +582,7 @@ function StreamerModal({
                 type="date"
                 value={form.deadline ? form.deadline.slice(0, 10) : ''}
                 onChange={e => setForm({ ...form, deadline: e.target.value || null })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               />
             </div>
           </div>
@@ -592,7 +592,7 @@ function StreamerModal({
             <select
               value={form.content_status ?? ''}
               onChange={e => setForm({ ...form, content_status: (e.target.value || null) as ContentStatus | null })}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+              className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
             >
               <option value="">— не задан —</option>
               {Object.entries(CONTENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -606,7 +606,7 @@ function StreamerModal({
                 type="number"
                 value={form.amount ?? ''}
                 onChange={e => setForm({ ...form, amount: e.target.value === '' ? null : Number(e.target.value) })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               />
             </div>
             <div>
@@ -614,7 +614,7 @@ function StreamerModal({
               <input
                 value={form.currency}
                 onChange={e => setForm({ ...form, currency: e.target.value })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               />
             </div>
           </div>
@@ -626,7 +626,7 @@ function StreamerModal({
                 type="number"
                 value={form.commission_percent}
                 onChange={e => setForm({ ...form, commission_percent: Number(e.target.value) })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               />
             </div>
             <div>
@@ -635,13 +635,13 @@ function StreamerModal({
                 type="number"
                 value={form.streamer_tax_percent}
                 onChange={e => setForm({ ...form, streamer_tax_percent: Number(e.target.value) })}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               />
             </div>
           </div>
 
           {form.amount != null && (
-            <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-sm space-y-1">
+            <div className="bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg p-3 text-sm space-y-1">
               {(() => {
                 const commission = round2(form.amount! * form.commission_percent / 100)
                 const tax = round2(form.amount! * form.streamer_tax_percent / 100)
@@ -651,7 +651,7 @@ function StreamerModal({
                     <div className="flex justify-between"><span className="text-slate-500 dark:text-slate-400">Цена для клиента</span><span className="text-slate-900 dark:text-slate-100">{form.amount!.toLocaleString('ru-RU')} {form.currency}</span></div>
                     <div className="flex justify-between"><span className="text-slate-500 dark:text-slate-400">Моя комиссия (трясти со стримера)</span><span className="text-brand-600 dark:text-brand-400 font-medium">{commission.toLocaleString('ru-RU')} {form.currency}</span></div>
                     <div className="flex justify-between"><span className="text-slate-500 dark:text-slate-400">Налог стримера ({form.streamer_tax_percent}%)</span><span className="text-slate-600 dark:text-slate-300">{tax.toLocaleString('ru-RU')} {form.currency}</span></div>
-                    <div className="flex justify-between border-t border-slate-200 dark:border-slate-700 pt-1"><span className="text-slate-500 dark:text-slate-400">Стримеру на руки</span><span className="text-emerald-600 dark:text-emerald-400 font-semibold">{net.toLocaleString('ru-RU')} {form.currency}</span></div>
+                    <div className="flex justify-between border-t border-slate-200 dark:border-brand-800 pt-1"><span className="text-slate-500 dark:text-slate-400">Стримеру на руки</span><span className="text-emerald-600 dark:text-emerald-400 font-semibold">{net.toLocaleString('ru-RU')} {form.currency}</span></div>
                   </>
                 )
               })()}
@@ -664,11 +664,11 @@ function StreamerModal({
               value={form.description}
               onChange={e => setForm({ ...form, description: e.target.value })}
               rows={3}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+              className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
             />
           </div>
 
-          <div className="border border-slate-200 dark:border-slate-800 rounded-lg p-3">
+          <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3">
             <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Договор</div>
             {form.contract_file_name ? (
               <div className="flex items-center justify-between text-sm">
@@ -686,7 +686,7 @@ function StreamerModal({
             )}
           </div>
 
-          <div className="border border-slate-200 dark:border-slate-800 rounded-lg p-3">
+          <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3">
             <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">История оплат</div>
             <div className="space-y-1 mb-2">
               {payments.map((p: Payment) => (
@@ -706,13 +706,13 @@ function StreamerModal({
                 value={paymentAmount}
                 onChange={e => setPaymentAmount(e.target.value)}
                 placeholder="Сумма"
-                className="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
+                className="w-24 bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
               />
               <input
                 value={paymentComment}
                 onChange={e => setPaymentComment(e.target.value)}
                 placeholder="Комментарий"
-                className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
+                className="flex-1 bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
               />
               <button
                 onClick={() => {
@@ -735,7 +735,7 @@ function StreamerModal({
             <button onClick={() => confirm('Удалить стримера из интеграции?') && remove.mutate()} className="text-red-500 hover:text-red-700 text-sm">Удалить</button>
           </div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Отмена</button>
+            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 rounded-lg">Отмена</button>
             <button onClick={save} className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Сохранить</button>
           </div>
         </div>

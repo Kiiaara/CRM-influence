@@ -73,7 +73,7 @@ export default function StreamerProfilesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
         <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-slate-100">База стримеров</h1>
         <div className="flex flex-wrap gap-2">
-          <label className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer">
+          <label className="bg-slate-100 dark:bg-brand-900 hover:bg-slate-200 dark:hover:bg-brand-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer">
             📤 Импорт из Excel
             <input
               type="file"
@@ -84,7 +84,7 @@ export default function StreamerProfilesPage() {
           </label>
           <a
             href={streamerProfilesApi.exportUrl(selected.size > 0 ? [...selected] : undefined)}
-            className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-sm font-medium"
+            className="bg-slate-100 dark:bg-brand-900 hover:bg-slate-200 dark:hover:bg-brand-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-sm font-medium"
           >
             📥 {selected.size > 0 ? `Скачать КП (${selected.size})` : 'Скачать всё'}
           </a>
@@ -104,7 +104,7 @@ export default function StreamerProfilesPage() {
       {/* Мобилка: карточки */}
       <div className="space-y-3 sm:hidden">
         {profiles.map(p => (
-          <div key={p.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+          <div key={p.id} className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-4">
             <div className="flex items-start gap-3">
               <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} className="mt-1 w-4 h-4 shrink-0" />
               <div className="flex-1 min-w-0" onClick={() => setEditing(p)}>
@@ -125,9 +125,9 @@ export default function StreamerProfilesPage() {
       </div>
 
       {/* Десктоп: таблица */}
-      <div className="hidden sm:block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto">
+      <div className="hidden sm:block bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl overflow-x-auto">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 dark:bg-slate-800/50">
+          <thead className="bg-slate-50 dark:bg-brand-900/50">
             <tr>
               <th className="px-3 py-2"><input type="checkbox" checked={selected.size === profiles.length && profiles.length > 0} onChange={toggleAll} className="w-4 h-4" /></th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Имя</th>
@@ -142,7 +142,7 @@ export default function StreamerProfilesPage() {
           </thead>
           <tbody>
             {profiles.map(p => (
-              <tr key={p.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/30">
+              <tr key={p.id} className="border-t border-slate-100 dark:border-brand-900 hover:bg-slate-50 dark:hover:bg-brand-900/30">
                 <td className="px-3 py-2"><input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} className="w-4 h-4" /></td>
                 <td className="px-3 py-2 text-slate-900 dark:text-slate-100 cursor-pointer" onClick={() => setEditing(p)}>{p.name}</td>
                 <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.category}</td>
@@ -178,7 +178,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-const inputCls = "w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+const inputCls = "w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
 
 function ProfileModal({ profile, onClose }: { profile: StreamerProfile; onClose: () => void }) {
   const qc = useQueryClient()
@@ -206,7 +206,7 @@ function ProfileModal({ profile, onClose }: { profile: StreamerProfile; onClose:
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-slate-100">{isNew ? 'Новый стример' : form.name}</h2>
 
         <div className="space-y-3">
@@ -249,7 +249,7 @@ function ProfileModal({ profile, onClose }: { profile: StreamerProfile; onClose:
             Твич партнёр
           </label>
 
-          <div className="border-t border-slate-200 dark:border-slate-800 pt-3">
+          <div className="border-t border-slate-200 dark:border-brand-900 pt-3">
             <div className="text-xs text-slate-500 dark:text-slate-400 mb-2 font-medium">Прайс-лист</div>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <Field label="Стоимость поста"><input type="number" value={form.post_price ?? ''} onChange={e => set('post_price', num(e.target.value))} className={inputCls} /></Field>
@@ -270,7 +270,7 @@ function ProfileModal({ profile, onClose }: { profile: StreamerProfile; onClose:
         <div className="flex justify-between mt-6">
           <div />
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Отмена</button>
+            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 rounded-lg">Отмена</button>
             <button onClick={save} className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Сохранить</button>
           </div>
         </div>

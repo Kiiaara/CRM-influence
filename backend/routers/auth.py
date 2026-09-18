@@ -6,8 +6,8 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Cookie
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -48,8 +48,96 @@ def _verify_tg_signature(data: dict, bot_token: str) -> bool:
 
 @router.get("/config")
 def auth_config():
-    """Фронту нужен username бота, чтобы поднять Login Widget."""
-    return {"bot_username": settings.auth_bot_username}
+    """Фронту нужен username бота и VK app id, чтобы поднять виджеты входа."""
+    return {
+        "bot_username": settings.auth_bot_username,
+        "vk_app_id": settings.vk_app_id or None,
+    }
+
+
+def _issue_session(response: Response, db: Session, user: User) -> str:
+    token = secrets.token_hex(32)
+    expires = datetime.now() + timedelta(days=settings.session_ttl_days)
+    db.add(AuthSession(token=token, tg_id=user.tg_id, expires_at=expires))
+    db.commit()
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=settings.session_ttl_days * 86400,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        path="/",
+    )
+    return token
+
+
+@router.post("/vk")
+async def vk_login(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Вход через VK ID. Фронт присылает code + device_id от VKID SDK,
+    бэк меняет их на access_token и профиль пользователя."""
+    if not settings.vk_app_id or not settings.vk_client_secret:
+        raise HTTPException(500, "VK_APP_ID / VK_CLIENT_SECRET не настроены")
+
+    body = await request.json()
+    code = body.get("code")
+    device_id = body.get("device_id")
+    code_verifier = body.get("code_verifier")
+    if not code or not device_id:
+        raise HTTPException(400, "Нужны code и device_id")
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        token_resp = await client.post(
+            "https://id.vk.com/oauth2/auth",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "code_verifier": code_verifier or "",
+                "client_id": settings.vk_app_id,
+                "client_secret": settings.vk_client_secret,
+                "device_id": device_id,
+                "redirect_uri": settings.public_url,
+            },
+        )
+        token_data = token_resp.json()
+        if "access_token" not in token_data:
+            raise HTTPException(401, f"VK не выдал токен: {token_data.get('error_description') or token_data}")
+
+        info_resp = await client.post(
+            "https://id.vk.com/oauth2/user_info",
+            data={"client_id": settings.vk_app_id, "access_token": token_data["access_token"]},
+        )
+        info = info_resp.json().get("user") or {}
+
+    vk_id = int(info.get("user_id") or token_data.get("user_id") or 0)
+    if not vk_id:
+        raise HTTPException(401, "VK не вернул user_id")
+
+    user = db.query(User).filter(User.vk_id == vk_id).first()
+    if not user:
+        has_anyone = db.query(User).first() is not None
+        if has_anyone:
+            raise HTTPException(
+                403,
+                f"Доступ запрещён. Твой VK ID: {vk_id}. Попроси админа привязать его к твоему аккаунту.",
+            )
+        # самый первый юзер - админ; tg_id пока отрицательный-заглушка, привяжется при входе через TG
+        user = User(tg_id=-vk_id, vk_id=vk_id, role="admin", label=info.get("first_name") or "owner")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    if info.get("first_name") and not user.tg_first_name:
+        user.tg_first_name = info.get("first_name")
+        db.commit()
+
+    _issue_session(response, db, user)
+    return {
+        "ok": True,
+        "vk_id": vk_id,
+        "first_name": user.tg_first_name,
+        "role": user.role,
+    }
 
 
 @router.post("/telegram")
@@ -89,20 +177,7 @@ async def telegram_login(request: Request, response: Response, db: Session = Dep
     db.commit()
     db.refresh(user)
 
-    token = secrets.token_hex(32)
-    expires = datetime.now() + timedelta(days=settings.session_ttl_days)
-    db.add(AuthSession(token=token, tg_id=tg_id, expires_at=expires))
-    db.commit()
-
-    response.set_cookie(
-        SESSION_COOKIE,
-        token,
-        max_age=settings.session_ttl_days * 86400,
-        httponly=True,
-        secure=False,  # для локалки; на VPS поставим True (через переменную)
-        samesite="lax",
-        path="/",
-    )
+    _issue_session(response, db, user)
     return {
         "ok": True,
         "tg_id": tg_id,

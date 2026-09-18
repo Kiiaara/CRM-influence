@@ -3,16 +3,17 @@
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-brand-50:  #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-200: #bfdbfe;
-  --color-brand-300: #93c5fd;
-  --color-brand-400: #60a5fa;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8;
-  --color-brand-800: #1e40af;
-  --color-brand-900: #1e3a8a;
+  --color-brand-50:  #ecfdf7;
+  --color-brand-100: #d1faec;
+  --color-brand-200: #a3f3db;
+  --color-brand-300: #6ce6c8;
+  --color-brand-400: #3dd0ae;
+  --color-brand-500: #1fb491;
+  --color-brand-600: #159075;
+  --color-brand-700: #14735f;
+  --color-brand-800: #145c4d;
+  --color-brand-900: #0a2e26;
+  --color-brand-950: #051a15;
   --font-sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -25,7 +26,7 @@
 .dark {
   color-scheme: dark;
   color: #e2e8f0;
-  background: #0b1220;
+  background: #071410;
 }
 
 body { margin: 0; }
