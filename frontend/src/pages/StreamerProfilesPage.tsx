@@ -38,35 +38,11 @@ export default function StreamerProfilesPage() {
   const qc = useQueryClient()
   const { data: profiles = [] } = useQuery({ queryKey: ['streamer-profiles'], queryFn: streamerProfilesApi.list })
   const [editing, setEditing] = useState<StreamerProfile | null>(null)
-  const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [importResult, setImportResult] = useState<string | null>(null)
 
   const remove = useMutation({
     mutationFn: (id: number) => streamerProfilesApi.remove(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['streamer-profiles'] }),
   })
-
-  const importFile = useMutation({
-    mutationFn: (file: File) => streamerProfilesApi.importFile(file),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['streamer-profiles'] })
-      setImportResult(`Импортировано: ${res.created} новых, ${res.updated} обновлено`)
-    },
-    onError: () => setImportResult('Ошибка импорта — проверь формат файла'),
-  })
-
-  const toggleSelect = (id: number) => {
-    setSelected(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const toggleAll = () => {
-    setSelected(prev => prev.size === profiles.length ? new Set() : new Set(profiles.map(p => p.id)))
-  }
 
   return (
     <div className="p-4 sm:p-10">
@@ -81,21 +57,6 @@ export default function StreamerProfilesPage() {
           >
             🧮 Таблица расчёта
           </a>
-          <label className="bg-slate-100 dark:bg-brand-900 hover:bg-slate-200 dark:hover:bg-brand-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer">
-            📤 Импорт из Excel
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={e => e.target.files?.[0] && importFile.mutate(e.target.files[0])}
-            />
-          </label>
-          <a
-            href={streamerProfilesApi.exportUrl(selected.size > 0 ? [...selected] : undefined)}
-            className="bg-slate-100 dark:bg-brand-900 hover:bg-slate-200 dark:hover:bg-brand-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-sm font-medium"
-          >
-            📥 {selected.size > 0 ? `Скачать КП (${selected.size})` : 'Скачать всё'}
-          </a>
           <button
             onClick={() => setEditing(emptyProfile())}
             className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
@@ -104,9 +65,8 @@ export default function StreamerProfilesPage() {
           </button>
         </div>
       </div>
-      {importResult && <div className="text-sm text-slate-500 dark:text-slate-400 mb-4">{importResult}</div>}
       <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
-        Отметь галочками нужных стримеров и скачай подборку как таблицу для клиента.
+        Расчёт цен и подборок — в таблице выше.
       </p>
 
       {/* Мобилка: карточки */}
@@ -114,22 +74,16 @@ export default function StreamerProfilesPage() {
         {profiles.map(p => (
           <div key={p.id} className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-4">
             <div className="flex items-start gap-3">
-              <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} className="mt-1 w-4 h-4 shrink-0" />
               <div className="flex-1 min-w-0" onClick={() => setEditing(p)}>
                 <div className="font-medium text-slate-900 dark:text-slate-100">{p.name}</div>
-                <div className="text-xs text-slate-400">{p.category} {p.geo && `· ${p.geo}`}</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  {p.subscribers != null && <>👥 {p.subscribers.toLocaleString('ru-RU')} </>}
-                  {p.avg_online != null && <>· 🟢 {p.avg_online.toLocaleString('ru-RU')} онлайн</>}
-                </div>
-                {p.post_price != null && (
-                  <div className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">Пост: {p.post_price.toLocaleString('ru-RU')} ₽</div>
-                )}
+                <div className="text-xs text-slate-400">{p.category}</div>
+                {p.twitch_url && <div className="text-xs text-brand-600 truncate mt-1">{p.twitch_url}</div>}
+                {p.social_links && <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{p.social_links}</div>}
               </div>
             </div>
           </div>
         ))}
-        {profiles.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Стримеров нет — импортируй файл или добавь вручную</div>}
+        {profiles.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Стримеров нет — добавь вручную</div>}
       </div>
 
       {/* Десктоп: таблица */}
@@ -137,77 +91,31 @@ export default function StreamerProfilesPage() {
         <table className="min-w-full text-sm">
           <thead className="bg-slate-50 dark:bg-brand-900/50">
             <tr>
-              <th className="px-3 py-2"><input type="checkbox" checked={selected.size === profiles.length && profiles.length > 0} onChange={toggleAll} className="w-4 h-4" /></th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Имя</th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Ссылка на Twitch</th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Категория</th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Соц. сети</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Гео</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Подписчики</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Ср. онлайн</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Просмотров/мес</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Просмотры/стрим</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Подп. Telegram</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Telegram охват</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Стоимость поста</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Реестр КНД</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Твич партнёр</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Статистика</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Обновлено статы</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Менеджер</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Брендинг 1 нед</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Брендинг 2 нед</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Брендинг 3 нед</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Брендинг 1 мес</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Спецстрим</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Голосовая интеграция</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {profiles.map(p => {
-              const money = (v: number | null) => v != null ? `${Math.round(v).toLocaleString('ru-RU')} ₽` : '—'
-              const num = (v: number | null) => v != null ? v.toLocaleString('ru-RU') : '—'
-              return (
+            {profiles.map(p => (
               <tr key={p.id} className="border-t border-slate-100 dark:border-brand-900 hover:bg-slate-50 dark:hover:bg-brand-900/30">
-                <td className="px-3 py-2"><input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} className="w-4 h-4" /></td>
                 <td className="px-3 py-2 text-slate-900 dark:text-slate-100 cursor-pointer whitespace-nowrap" onClick={() => setEditing(p)}>{p.name}</td>
                 <td className="px-3 py-2 text-slate-600 dark:text-slate-300 max-w-[200px] truncate">
                   {p.twitch_url ? <a href={p.twitch_url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">{p.twitch_url}</a> : '—'}
                 </td>
                 <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{p.category || '—'}</td>
                 <td className="px-3 py-2 text-slate-600 dark:text-slate-300 max-w-[180px] truncate">{p.social_links || '—'}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{p.geo || '—'}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{num(p.subscribers)}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{num(p.avg_online)}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{num(p.views_per_month)}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{num(p.views_per_stream)}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{num(p.telegram_subscribers)}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{num(p.telegram_reach)}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.post_price)}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 max-w-[160px] truncate">{p.knd_registry || '—'}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{p.twitch_partner ? 'Да' : 'Нет'}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 max-w-[160px] truncate">
-                  {p.stats_url ? <a href={p.stats_url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">ссылка</a> : '—'}
-                </td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{p.stats_updated_at ? p.stats_updated_at.slice(0, 10) : '—'}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{p.manager || '—'}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.branding_price_1w)}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.branding_price_2w)}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.branding_price_3w)}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.branding_price_1m)}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.special_stream_price)}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{money(p.voice_integration_price)}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
                   <button onClick={() => setEditing(p)} className="text-brand-600 hover:text-brand-700 text-xs mr-2">править</button>
                   <button onClick={() => confirm('Удалить стримера из базы?') && remove.mutate(p.id)} className="text-red-500 hover:text-red-700 text-xs">удалить</button>
                 </td>
               </tr>
-              )
-            })}
+            ))}
           </tbody>
         </table>
-        {profiles.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Стримеров нет — импортируй файл или добавь вручную</div>}
+        {profiles.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Стримеров нет — добавь вручную</div>}
       </div>
 
       {editing && (
