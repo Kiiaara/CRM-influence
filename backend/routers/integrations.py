@@ -11,12 +11,20 @@ from pydantic import BaseModel, computed_field
 from sqlalchemy.orm import Session
 
 from database import get_db
-from deps import get_current_user
+from deps import get_current_user, get_current_workspace
 from models.integration import Integration
 from models.integration_streamer import IntegrationStreamer
 from models.integration_payment import IntegrationPayment
 from models.case_study import CaseStudy
 from models.user import User
+from models.workspace import Workspace
+
+
+def _get_integration_or_404(db: Session, ws: Workspace, integration_id: int) -> Integration:
+    it = db.get(Integration, integration_id)
+    if not it or it.workspace_id != ws.id:
+        raise HTTPException(404)
+    return it
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
@@ -203,8 +211,13 @@ class CaseStudyUpdate(BaseModel):
 # ---------- сделки (бренды) ----------
 
 @router.get("", response_model=List[IntegrationOut])
-def list_integrations(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return db.query(Integration).order_by(Integration.updated_at.desc()).all()
+def list_integrations(db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    return (
+        db.query(Integration)
+        .filter(Integration.workspace_id == ws.id)
+        .order_by(Integration.updated_at.desc())
+        .all()
+    )
 
 
 @router.get("/streamer-names")
@@ -215,8 +228,8 @@ def suggest_streamer_names(db: Session = Depends(get_db), user: User = Depends(g
 
 
 @router.post("", response_model=IntegrationOut, status_code=201)
-def create_integration(data: IntegrationCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    it = Integration(workspace_id=1, brand=data.brand, description=data.description)
+def create_integration(data: IntegrationCreate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    it = Integration(workspace_id=ws.id, brand=data.brand, description=data.description)
     db.add(it)
     db.commit()
     db.refresh(it)
@@ -224,18 +237,13 @@ def create_integration(data: IntegrationCreate, db: Session = Depends(get_db), u
 
 
 @router.get("/{integration_id}", response_model=IntegrationOut)
-def get_integration(integration_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    it = db.get(Integration, integration_id)
-    if not it:
-        raise HTTPException(404)
-    return it
+def get_integration(integration_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    return _get_integration_or_404(db, ws, integration_id)
 
 
 @router.patch("/{integration_id}", response_model=IntegrationOut)
-def update_integration(integration_id: int, data: IntegrationUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    it = db.get(Integration, integration_id)
-    if not it:
-        raise HTTPException(404)
+def update_integration(integration_id: int, data: IntegrationUpdate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    it = _get_integration_or_404(db, ws, integration_id)
     for k, v in data.model_dump(exclude_unset=True).items():
         setattr(it, k, v)
     db.commit()
@@ -244,10 +252,8 @@ def update_integration(integration_id: int, data: IntegrationUpdate, db: Session
 
 
 @router.delete("/{integration_id}")
-def delete_integration(integration_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    it = db.get(Integration, integration_id)
-    if not it:
-        raise HTTPException(404)
+def delete_integration(integration_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    it = _get_integration_or_404(db, ws, integration_id)
     for s in it.streamers:
         if s.contract_file_path and os.path.exists(s.contract_file_path):
             os.remove(s.contract_file_path)
@@ -259,9 +265,8 @@ def delete_integration(integration_id: int, db: Session = Depends(get_db), user:
 # ---------- стримеры внутри сделки ----------
 
 @router.get("/{integration_id}/streamers", response_model=List[StreamerOut])
-def list_streamers(integration_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not db.get(Integration, integration_id):
-        raise HTTPException(404)
+def list_streamers(integration_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_integration_or_404(db, ws, integration_id)
     return (
         db.query(IntegrationStreamer)
         .filter(IntegrationStreamer.integration_id == integration_id)
@@ -271,9 +276,8 @@ def list_streamers(integration_id: int, db: Session = Depends(get_db), user: Use
 
 
 @router.post("/{integration_id}/streamers", response_model=StreamerOut, status_code=201)
-def create_streamer(integration_id: int, data: StreamerCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not db.get(Integration, integration_id):
-        raise HTTPException(404)
+def create_streamer(integration_id: int, data: StreamerCreate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_integration_or_404(db, ws, integration_id)
     _validate_stage(data.stage)
     _validate_payment_status(data.payment_status)
     _validate_content_status(data.content_status)

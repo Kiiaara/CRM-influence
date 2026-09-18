@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from database import get_db
-from deps import get_current_user
+from deps import get_current_user, get_current_workspace
 from models.task import Task
 from models.user import User
+from models.workspace import Workspace
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -47,9 +48,9 @@ def list_tasks(
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    ws: Workspace = Depends(get_current_workspace),
 ):
-    q = db.query(Task)
+    q = db.query(Task).filter(Task.workspace_id == ws.id)
     if start:
         q = q.filter(Task.due_at >= start)
     if end:
@@ -58,9 +59,9 @@ def list_tasks(
 
 
 @router.post("", response_model=TaskOut, status_code=201)
-def create_task(data: TaskCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_task(data: TaskCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user), ws: Workspace = Depends(get_current_workspace)):
     t = Task(
-        workspace_id=1,
+        workspace_id=ws.id,
         title=data.title,
         description=data.description,
         due_at=data.due_at,
@@ -76,9 +77,9 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db), user: User = De
 
 
 @router.patch("/{task_id}", response_model=TaskOut)
-def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
     t = db.get(Task, task_id)
-    if not t:
+    if not t or t.workspace_id != ws.id:
         raise HTTPException(404)
     old_due = t.due_at
     old_assignee = t.assignee_tg_id
@@ -96,9 +97,9 @@ def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db), u
 
 
 @router.delete("/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def delete_task(task_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
     t = db.get(Task, task_id)
-    if not t:
+    if not t or t.workspace_id != ws.id:
         raise HTTPException(404)
     db.delete(t)
     db.commit()

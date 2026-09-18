@@ -11,7 +11,19 @@ from database import SessionLocal
 from models.integration import Integration
 from models.integration_streamer import IntegrationStreamer
 from models.user import User
+from models.workspace import WorkspaceMember
 from notifier import send_message
+
+
+def _resolve_workspace_id(db: Session, tg_id: int) -> Optional[int]:
+    """Пространство, в которое создаём сделку из бота - первое, где юзер состоит участником."""
+    member = (
+        db.query(WorkspaceMember)
+        .filter_by(user_tg_id=tg_id)
+        .order_by(WorkspaceMember.joined_at.asc())
+        .first()
+    )
+    return member.workspace_id if member else None
 
 log = logging.getLogger(__name__)
 
@@ -107,9 +119,18 @@ async def handle_message(tg_id: int, text: str) -> bool:
 async def _finish(tg_id: int, data: dict):
     db: Session = SessionLocal()
     try:
-        integration = db.query(Integration).filter(Integration.brand == data["brand"]).order_by(Integration.created_at.desc()).first()
+        workspace_id = _resolve_workspace_id(db, tg_id)
+        if workspace_id is None:
+            await send_message(tg_id, "У тебя нет доступа ни к одному пространству, обратись к админу.")
+            return
+        integration = (
+            db.query(Integration)
+            .filter(Integration.brand == data["brand"], Integration.workspace_id == workspace_id)
+            .order_by(Integration.created_at.desc())
+            .first()
+        )
         if not integration:
-            integration = Integration(workspace_id=1, brand=data["brand"])
+            integration = Integration(workspace_id=workspace_id, brand=data["brand"])
             db.add(integration)
             db.flush()
 

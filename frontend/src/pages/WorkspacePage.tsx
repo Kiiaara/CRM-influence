@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { authApi } from '../api/auth'
 import { useTheme } from '../theme'
 import TopSearch from '../components/TopSearch'
+import WorkspaceSelector from '../components/WorkspaceSelector'
 
 const navItems = [
   { to: '/', label: 'Главная', icon: '🏠' },
@@ -29,6 +30,9 @@ export default function WorkspacePage() {
       <div className="px-5 py-4 border-b border-slate-100 dark:border-brand-900 flex items-center gap-2">
         <img src="/logo.svg" alt="" className="w-9 h-9 rounded-lg shrink-0" />
         <div className="font-semibold text-slate-900 dark:text-slate-100">CRM-influence</div>
+      </div>
+      <div className="px-3 pt-3">
+        <WorkspaceSelector />
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navItems.map(it => {
