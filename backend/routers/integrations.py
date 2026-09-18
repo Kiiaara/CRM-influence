@@ -21,6 +21,7 @@ router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
 STAGES = ("negotiation", "agreed", "awaiting_contract", "awaiting_payment", "done", "cancelled")
 PAYMENT_STATUSES = ("not_invoiced", "invoiced", "partial", "paid")
+CONTENT_STATUSES = ("awaiting_brief", "filming", "filmed")
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "contracts")
 
@@ -35,6 +36,11 @@ def _validate_payment_status(status: str):
         raise HTTPException(400, f"payment_status должен быть одним из: {', '.join(PAYMENT_STATUSES)}")
 
 
+def _validate_content_status(status: Optional[str]):
+    if status is not None and status not in CONTENT_STATUSES:
+        raise HTTPException(400, f"content_status должен быть одним из: {', '.join(CONTENT_STATUSES)}")
+
+
 # ---------- схемы ----------
 
 class StreamerOut(BaseModel):
@@ -44,6 +50,7 @@ class StreamerOut(BaseModel):
     contact: str
     stage: str
     payment_status: str
+    content_status: Optional[str] = None
     amount: Optional[float] = None
     currency: str
     commission_percent: float
@@ -77,6 +84,7 @@ class StreamerCreate(BaseModel):
     contact: str = ""
     stage: str = "negotiation"
     payment_status: str = "not_invoiced"
+    content_status: Optional[str] = None
     amount: Optional[float] = None
     currency: str = "RUB"
     commission_percent: float = 15
@@ -90,6 +98,7 @@ class StreamerUpdate(BaseModel):
     contact: Optional[str] = None
     stage: Optional[str] = None
     payment_status: Optional[str] = None
+    content_status: Optional[str] = None
     amount: Optional[float] = None
     currency: Optional[str] = None
     commission_percent: Optional[float] = None
@@ -221,6 +230,7 @@ def create_streamer(integration_id: int, data: StreamerCreate, db: Session = Dep
         raise HTTPException(404)
     _validate_stage(data.stage)
     _validate_payment_status(data.payment_status)
+    _validate_content_status(data.content_status)
     max_pos = (
         db.query(IntegrationStreamer)
         .filter(IntegrationStreamer.integration_id == integration_id, IntegrationStreamer.stage == data.stage)
@@ -233,6 +243,7 @@ def create_streamer(integration_id: int, data: StreamerCreate, db: Session = Dep
         contact=data.contact,
         stage=data.stage,
         payment_status=data.payment_status,
+        content_status=data.content_status,
         amount=data.amount,
         currency=data.currency,
         commission_percent=data.commission_percent,
@@ -256,6 +267,8 @@ def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depend
         _validate_stage(data.stage)
     if data.payment_status is not None:
         _validate_payment_status(data.payment_status)
+    if data.content_status is not None:
+        _validate_content_status(data.content_status)
     for k, v in data.model_dump(exclude_unset=True).items():
         setattr(s, k, v)
     db.commit()

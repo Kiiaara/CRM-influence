@@ -8,6 +8,7 @@ import TopSearch from '../components/TopSearch'
 const navItems = [
   { to: '/', label: 'Главная', icon: '🏠' },
   { to: '/integrations', label: 'Интеграции', icon: '🤝' },
+  { to: '/streamers', label: 'База стримеров', icon: '📋' },
   { to: '/calendar', label: 'Задачи', icon: '📅' },
 ]
 

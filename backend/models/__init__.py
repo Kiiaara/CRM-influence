@@ -6,3 +6,4 @@ from .task import Task                 # noqa: F401
 from .integration import Integration           # noqa: F401
 from .integration_streamer import IntegrationStreamer  # noqa: F401
 from .integration_payment import IntegrationPayment  # noqa: F401
+from .streamer_profile import StreamerProfile  # noqa: F401

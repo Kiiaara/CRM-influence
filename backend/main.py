@@ -8,7 +8,7 @@ from database import engine, Base, SessionLocal
 import models  # регистрирует все ORM-классы
 from models.workspace import Workspace
 from routers import auth as auth_router
-from routers import search, tasks, users, integrations
+from routers import search, tasks, users, integrations, streamer_profiles
 from scheduler import start_scheduler, stop_scheduler
 
 
@@ -24,10 +24,23 @@ def _migrate_users_add_pinned():
             conn.execute(text("ALTER TABLE users ADD COLUMN pinned_pages VARCHAR(2048) DEFAULT '[]'"))
 
 
+def _migrate_streamers_add_content_status():
+    """Добавляем колонку content_status в integration_streamers если её нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "integration_streamers" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("integration_streamers")]
+    if "content_status" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN content_status VARCHAR(32)"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _migrate_users_add_pinned()
+    _migrate_streamers_add_content_status()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство
     db = SessionLocal()
@@ -86,3 +99,4 @@ app.include_router(search.router)
 app.include_router(tasks.router)
 app.include_router(users.router)
 app.include_router(integrations.router)
+app.include_router(streamer_profiles.router)

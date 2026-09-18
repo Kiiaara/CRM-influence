@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { integrationsApi, STAGES, PAYMENT_LABELS } from '../api/integrations'
-import type { Integration, Payment, PaymentStatus, Stage, Streamer } from '../api/integrations'
+import { integrationsApi, STAGES, PAYMENT_LABELS, CONTENT_LABELS } from '../api/integrations'
+import type { ContentStatus, Integration, Payment, PaymentStatus, Stage, Streamer } from '../api/integrations'
+import { streamerProfilesApi } from '../api/streamerProfiles'
 
 const PAYMENT_COLORS: Record<PaymentStatus, string> = {
   not_invoiced: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
@@ -20,34 +21,13 @@ interface Card extends Streamer {
   brand: string
 }
 
-function emptyStreamer(integrationId: number): Streamer {
-  return {
-    id: 0,
-    integration_id: integrationId,
-    streamer_name: '',
-    contact: '',
-    stage: 'negotiation',
-    payment_status: 'not_invoiced',
-    amount: null,
-    currency: 'RUB',
-    commission_percent: 15,
-    streamer_tax_percent: 6,
-    commission_amount: null,
-    streamer_net_amount: null,
-    deadline: null,
-    description: '',
-    contract_file_name: null,
-    position: 0,
-    created_at: '',
-    updated_at: '',
-  }
-}
-
 export default function IntegrationsBoard() {
   const qc = useQueryClient()
   const [editing, setEditing] = useState<{ streamer: Streamer; brand: string } | null>(null)
   const [pickingBrand, setPickingBrand] = useState(false)
+  const [bulkFor, setBulkFor] = useState<number | null>(null)
   const [dragOverStage, setDragOverStage] = useState<Stage | null>(null)
+  const [mobileStage, setMobileStage] = useState<Stage>('negotiation')
   const [searchParams, setSearchParams] = useSearchParams()
   const dragData = useRef<{ id: number; stage: Stage } | null>(null)
 
@@ -85,6 +65,43 @@ export default function IntegrationsBoard() {
     updateStreamer.mutate({ id: raw.id, p: { stage } })
   }
 
+  const renderCard = (c: Card) => (
+    <div
+      key={c.id}
+      draggable
+      onDragStart={() => { dragData.current = { id: c.id, stage: c.stage } }}
+      onClick={() => setEditing({ streamer: c, brand: c.brand })}
+      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 cursor-pointer hover:border-brand-400 shadow-sm"
+    >
+      <div className="text-xs text-slate-400">{c.brand}</div>
+      <div className="font-medium text-sm text-slate-900 dark:text-slate-100">{c.streamer_name}</div>
+      <div className="flex items-center justify-between mt-2 gap-2 flex-wrap">
+        <span className={`text-[11px] px-1.5 py-0.5 rounded ${PAYMENT_COLORS[c.payment_status]}`}>
+          {PAYMENT_LABELS[c.payment_status]}
+        </span>
+        {c.content_status && (
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+            {CONTENT_LABELS[c.content_status]}
+          </span>
+        )}
+        {c.amount != null && (
+          <span className="text-xs text-slate-500 dark:text-slate-400">{c.amount.toLocaleString('ru-RU')} {c.currency}</span>
+        )}
+      </div>
+      {c.commission_amount != null && (
+        <div className="text-[11px] text-brand-600 dark:text-brand-400 mt-1">
+          трясти со стримера: {c.commission_amount.toLocaleString('ru-RU')} {c.currency}
+        </div>
+      )}
+      {c.deadline && (
+        <div className="text-[11px] text-slate-400 mt-1">до {new Date(c.deadline).toLocaleDateString('ru-RU')}</div>
+      )}
+      {c.contract_file_name && (
+        <div className="text-[11px] text-brand-500 mt-1">📎 договор</div>
+      )}
+    </div>
+  )
+
   return (
     <div className="p-4 sm:p-10">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
@@ -93,11 +110,40 @@ export default function IntegrationsBoard() {
           onClick={() => setPickingBrand(true)}
           className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto"
         >
-          + Новый стример
+          + Стримеры на бренд
         </button>
       </div>
 
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      {/* Мобилка: табы по стадиям + список карточек одной колонки */}
+      <div className="sm:hidden">
+        <div className="flex gap-2 overflow-x-auto pb-2 mb-3 -mx-4 px-4">
+          {STAGES.map(s => (
+            <button
+              key={s.key}
+              onClick={() => setMobileStage(s.key)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-sm border ${
+                mobileStage === s.key
+                  ? 'bg-brand-600 border-brand-600 text-white'
+                  : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              {s.label} ({byStage(s.key).length})
+            </button>
+          ))}
+        </div>
+        {totalAmount(mobileStage) > 0 && (
+          <div className="text-xs text-slate-400 mb-2">Σ {totalAmount(mobileStage).toLocaleString('ru-RU')} ₽</div>
+        )}
+        <div className="space-y-2">
+          {byStage(mobileStage).map(renderCard)}
+          {byStage(mobileStage).length === 0 && (
+            <div className="text-sm text-slate-400 text-center py-8">Пусто</div>
+          )}
+        </div>
+      </div>
+
+      {/* Десктоп: полноценный канбан с drag&drop */}
+      <div className="hidden sm:flex gap-4 overflow-x-auto pb-4">
         {STAGES.map(s => (
           <div
             key={s.key}
@@ -116,37 +162,7 @@ export default function IntegrationsBoard() {
               </div>
             )}
             <div className="p-2 space-y-2 min-h-[80px]">
-              {byStage(s.key).map(c => (
-                <div
-                  key={c.id}
-                  draggable
-                  onDragStart={() => { dragData.current = { id: c.id, stage: c.stage } }}
-                  onClick={() => setEditing({ streamer: c, brand: c.brand })}
-                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 cursor-pointer hover:border-brand-400 shadow-sm"
-                >
-                  <div className="text-xs text-slate-400">{c.brand}</div>
-                  <div className="font-medium text-sm text-slate-900 dark:text-slate-100">{c.streamer_name}</div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className={`text-[11px] px-1.5 py-0.5 rounded ${PAYMENT_COLORS[c.payment_status]}`}>
-                      {PAYMENT_LABELS[c.payment_status]}
-                    </span>
-                    {c.amount != null && (
-                      <span className="text-xs text-slate-500 dark:text-slate-400">{c.amount.toLocaleString('ru-RU')} {c.currency}</span>
-                    )}
-                  </div>
-                  {c.commission_amount != null && (
-                    <div className="text-[11px] text-brand-600 dark:text-brand-400 mt-1">
-                      трясти со стримера: {c.commission_amount.toLocaleString('ru-RU')} {c.currency}
-                    </div>
-                  )}
-                  {c.deadline && (
-                    <div className="text-[11px] text-slate-400 mt-1">до {new Date(c.deadline).toLocaleDateString('ru-RU')}</div>
-                  )}
-                  {c.contract_file_name && (
-                    <div className="text-[11px] text-brand-500 mt-1">📎 договор</div>
-                  )}
-                </div>
-              ))}
+              {byStage(s.key).map(renderCard)}
             </div>
           </div>
         ))}
@@ -156,9 +172,20 @@ export default function IntegrationsBoard() {
         <BrandPickerModal
           integrations={integrations}
           onClose={() => setPickingBrand(false)}
-          onPicked={(integrationId, brand) => {
+          onPicked={(integrationId) => {
             setPickingBrand(false)
-            setEditing({ streamer: emptyStreamer(integrationId), brand })
+            setBulkFor(integrationId)
+          }}
+        />
+      )}
+
+      {bulkFor != null && (
+        <BulkStreamersModal
+          integrationId={bulkFor}
+          brand={integrations.find(i => i.id === bulkFor)?.brand ?? ''}
+          onClose={() => {
+            setBulkFor(null)
+            qc.invalidateQueries({ queryKey: ['integrations'] })
           }}
         />
       )}
@@ -181,7 +208,7 @@ function BrandPickerModal({
 }: {
   integrations: Integration[]
   onClose: () => void
-  onPicked: (integrationId: number, brand: string) => void
+  onPicked: (integrationId: number) => void
 }) {
   const qc = useQueryClient()
   const [mode, setMode] = useState<'existing' | 'new'>(integrations.length ? 'existing' : 'new')
@@ -192,7 +219,7 @@ function BrandPickerModal({
     mutationFn: (brand: string) => integrationsApi.create({ brand }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['integrations'] })
-      onPicked(data.id, data.brand)
+      onPicked(data.id)
     },
   })
 
@@ -242,8 +269,7 @@ function BrandPickerModal({
             onClick={() => {
               if (mode === 'existing') {
                 if (!selectedId) return
-                const it = integrations.find(i => i.id === selectedId)
-                if (it) onPicked(it.id, it.brand)
+                onPicked(Number(selectedId))
               } else {
                 if (!newBrand.trim()) return
                 createIntegration.mutate(newBrand.trim())
@@ -253,6 +279,141 @@ function BrandPickerModal({
           >
             Далее
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BulkStreamersModal({
+  integrationId,
+  brand,
+  onClose,
+}: {
+  integrationId: number
+  brand: string
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const { data: profiles = [] } = useQuery({ queryKey: ['streamer-profiles'], queryFn: streamerProfilesApi.list })
+  const { data: legacyNames = [] } = useQuery({ queryKey: ['streamer-names'], queryFn: integrationsApi.streamerNames })
+
+  const [selectedProfiles, setSelectedProfiles] = useState<Set<number>>(new Set())
+  const [manualNames, setManualNames] = useState('')
+  const [search, setSearch] = useState('')
+
+  const [commonDeadline, setCommonDeadline] = useState('')
+  const [commonCommission, setCommonCommission] = useState(15)
+  const [commonTax, setCommonTax] = useState(6)
+
+  const filteredProfiles = profiles.filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
+
+  const toggleProfile = (id: number) => {
+    setSelectedProfiles(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const addBulk = useMutation({
+    mutationFn: async () => {
+      const names = [
+        ...profiles.filter(p => selectedProfiles.has(p.id)).map(p => p.name),
+        ...manualNames.split(/[,\n]/).map(s => s.trim()).filter(Boolean),
+      ]
+      const uniqueNames = [...new Set(names)]
+      for (const name of uniqueNames) {
+        const profile = profiles.find(p => p.name === name)
+        await integrationsApi.addStreamer(integrationId, {
+          streamer_name: name,
+          contact: profile?.social_links ?? '',
+          amount: profile?.post_price ?? null,
+          commission_percent: commonCommission,
+          streamer_tax_percent: commonTax,
+          deadline: commonDeadline || null,
+        })
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['integrations'] })
+      onClose()
+    },
+  })
+
+  const totalSelected = selectedProfiles.size + manualNames.split(/[,\n]/).map(s => s.trim()).filter(Boolean).length
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="text-xs text-slate-400 mb-1">{brand}</div>
+        <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-slate-100">Добавить стримеров</h2>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <div>
+            <label className="text-xs text-slate-500 dark:text-slate-400">Общий дедлайн</label>
+            <input type="date" value={commonDeadline} onChange={e => setCommonDeadline(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 dark:text-slate-400">Комиссия, %</label>
+            <input type="number" value={commonCommission} onChange={e => setCommonCommission(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 dark:text-slate-400">Налог стримера, %</label>
+            <input type="number" value={commonTax} onChange={e => setCommonTax(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
+          </div>
+        </div>
+        <p className="text-xs text-slate-400 mb-4">Сумму, стадию и статус контента каждому стримеру выставишь отдельно в его карточке — они у всех разные.</p>
+
+        {profiles.length > 0 && (
+          <div className="mb-4">
+            <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Выбери из базы стримеров</div>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Поиск по имени…"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 mb-2"
+            />
+            <div className="border border-slate-200 dark:border-slate-800 rounded-lg max-h-48 overflow-y-auto">
+              {filteredProfiles.map(p => (
+                <label key={p.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 last:border-0 cursor-pointer">
+                  <input type="checkbox" checked={selectedProfiles.has(p.id)} onChange={() => toggleProfile(p.id)} className="w-4 h-4" />
+                  <span className="text-slate-700 dark:text-slate-300">{p.name}</span>
+                  {p.category && <span className="text-xs text-slate-400">· {p.category}</span>}
+                  {p.post_price != null && <span className="text-xs text-slate-400 ml-auto">{p.post_price.toLocaleString('ru-RU')} ₽</span>}
+                </label>
+              ))}
+              {filteredProfiles.length === 0 && <div className="px-3 py-4 text-sm text-slate-400 text-center">Ничего не найдено</div>}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="text-xs text-slate-500 dark:text-slate-400">
+            Или впиши новых стримеров (через запятую или с новой строки){legacyNames.length > 0 && ' — уже вводили: ' + legacyNames.slice(0, 5).join(', ')}
+          </label>
+          <textarea
+            value={manualNames}
+            onChange={e => setManualNames(e.target.value)}
+            rows={3}
+            placeholder="Стример1, Стример2, ..."
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+          />
+        </div>
+
+        <div className="flex justify-between items-center mt-6">
+          <div className="text-xs text-slate-400">Выбрано: {totalSelected}</div>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Отмена</button>
+            <button
+              onClick={() => addBulk.mutate()}
+              disabled={totalSelected === 0 || addBulk.isPending}
+              className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            >
+              {addBulk.isPending ? 'Добавляю…' : `Добавить (${totalSelected})`}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -282,14 +443,6 @@ function StreamerModal({
     queryKey: ['streamers', streamer.id, 'payments'],
     queryFn: () => integrationsApi.payments(streamer.id),
     enabled: !isNew,
-  })
-
-  const create = useMutation({
-    mutationFn: (p: Partial<Streamer>) => integrationsApi.addStreamer(streamer.integration_id, p),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['integrations'] })
-      onClose()
-    },
   })
 
   const update = useMutation({
@@ -347,6 +500,7 @@ function StreamerModal({
       contact: form.contact,
       stage: form.stage,
       payment_status: form.payment_status,
+      content_status: form.content_status,
       amount: form.amount,
       currency: form.currency,
       commission_percent: form.commission_percent,
@@ -354,8 +508,7 @@ function StreamerModal({
       deadline: form.deadline,
       description: form.description,
     }
-    if (isNew) create.mutate(payload)
-    else update.mutate(payload)
+    update.mutate(payload)
   }
 
   return (
@@ -434,6 +587,18 @@ function StreamerModal({
             </div>
           </div>
 
+          <div>
+            <label className="text-xs text-slate-500 dark:text-slate-400">Статус контента</label>
+            <select
+              value={form.content_status ?? ''}
+              onChange={e => setForm({ ...form, content_status: (e.target.value || null) as ContentStatus | null })}
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+            >
+              <option value="">— не задан —</option>
+              {Object.entries(CONTENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-500 dark:text-slate-400">Сумма</label>
@@ -503,77 +668,71 @@ function StreamerModal({
             />
           </div>
 
-          {!isNew && (
-            <div className="border border-slate-200 dark:border-slate-800 rounded-lg p-3">
-              <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Договор</div>
-              {form.contract_file_name ? (
-                <div className="flex items-center justify-between text-sm">
-                  <a href={integrationsApi.contractUrl(streamer.id)} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">
-                    📎 {form.contract_file_name}
-                  </a>
-                  <button onClick={() => removeContract.mutate()} className="text-xs text-red-500 hover:text-red-700">Удалить</button>
-                </div>
-              ) : (
-                <input
-                  type="file"
-                  onChange={e => e.target.files?.[0] && uploadContract.mutate(e.target.files[0])}
-                  className="text-sm text-slate-600 dark:text-slate-300"
-                />
-              )}
-            </div>
-          )}
+          <div className="border border-slate-200 dark:border-slate-800 rounded-lg p-3">
+            <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Договор</div>
+            {form.contract_file_name ? (
+              <div className="flex items-center justify-between text-sm">
+                <a href={integrationsApi.contractUrl(streamer.id)} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">
+                  📎 {form.contract_file_name}
+                </a>
+                <button onClick={() => removeContract.mutate()} className="text-xs text-red-500 hover:text-red-700">Удалить</button>
+              </div>
+            ) : (
+              <input
+                type="file"
+                onChange={e => e.target.files?.[0] && uploadContract.mutate(e.target.files[0])}
+                className="text-sm text-slate-600 dark:text-slate-300"
+              />
+            )}
+          </div>
 
-          {!isNew && (
-            <div className="border border-slate-200 dark:border-slate-800 rounded-lg p-3">
-              <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">История оплат</div>
-              <div className="space-y-1 mb-2">
-                {payments.map((p: Payment) => (
-                  <div key={p.id} className="flex items-center justify-between text-sm">
-                    <span className="text-slate-700 dark:text-slate-300">
-                      {p.amount.toLocaleString('ru-RU')} {p.currency} — {new Date(p.paid_at).toLocaleDateString('ru-RU')}
-                      {p.comment && <span className="text-slate-400"> ({p.comment})</span>}
-                    </span>
-                    <button onClick={() => removePayment.mutate(p.id)} className="text-slate-300 hover:text-red-500 text-xs">×</button>
-                  </div>
-                ))}
-                {payments.length === 0 && <div className="text-xs text-slate-400">Оплат ещё не было</div>}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  value={paymentAmount}
-                  onChange={e => setPaymentAmount(e.target.value)}
-                  placeholder="Сумма"
-                  className="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
-                />
-                <input
-                  value={paymentComment}
-                  onChange={e => setPaymentComment(e.target.value)}
-                  placeholder="Комментарий"
-                  className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
-                />
-                <button
-                  onClick={() => {
-                    const amount = Number(paymentAmount)
-                    if (!amount) return
-                    addPayment.mutate({ amount, comment: paymentComment })
-                    setPaymentAmount('')
-                    setPaymentComment('')
-                  }}
-                  className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg"
-                >
-                  + Оплата
-                </button>
-              </div>
+          <div className="border border-slate-200 dark:border-slate-800 rounded-lg p-3">
+            <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">История оплат</div>
+            <div className="space-y-1 mb-2">
+              {payments.map((p: Payment) => (
+                <div key={p.id} className="flex items-center justify-between text-sm">
+                  <span className="text-slate-700 dark:text-slate-300">
+                    {p.amount.toLocaleString('ru-RU')} {p.currency} — {new Date(p.paid_at).toLocaleDateString('ru-RU')}
+                    {p.comment && <span className="text-slate-400"> ({p.comment})</span>}
+                  </span>
+                  <button onClick={() => removePayment.mutate(p.id)} className="text-slate-300 hover:text-red-500 text-xs">×</button>
+                </div>
+              ))}
+              {payments.length === 0 && <div className="text-xs text-slate-400">Оплат ещё не было</div>}
             </div>
-          )}
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={paymentAmount}
+                onChange={e => setPaymentAmount(e.target.value)}
+                placeholder="Сумма"
+                className="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
+              />
+              <input
+                value={paymentComment}
+                onChange={e => setPaymentComment(e.target.value)}
+                placeholder="Комментарий"
+                className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
+              />
+              <button
+                onClick={() => {
+                  const amount = Number(paymentAmount)
+                  if (!amount) return
+                  addPayment.mutate({ amount, comment: paymentComment })
+                  setPaymentAmount('')
+                  setPaymentComment('')
+                }}
+                className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg"
+              >
+                + Оплата
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="flex justify-between mt-6">
           <div>
-            {!isNew && (
-              <button onClick={() => confirm('Удалить стримера из интеграции?') && remove.mutate()} className="text-red-500 hover:text-red-700 text-sm">Удалить</button>
-            )}
+            <button onClick={() => confirm('Удалить стримера из интеграции?') && remove.mutate()} className="text-red-500 hover:text-red-700 text-sm">Удалить</button>
           </div>
           <div className="flex gap-2">
             <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Отмена</button>

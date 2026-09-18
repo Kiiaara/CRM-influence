@@ -2,6 +2,7 @@ import { api } from './client'
 
 export type Stage = 'negotiation' | 'agreed' | 'awaiting_contract' | 'awaiting_payment' | 'done' | 'cancelled'
 export type PaymentStatus = 'not_invoiced' | 'invoiced' | 'partial' | 'paid'
+export type ContentStatus = 'awaiting_brief' | 'filming' | 'filmed'
 
 export const STAGES: { key: Stage; label: string }[] = [
   { key: 'negotiation', label: 'На согласовании' },
@@ -19,6 +20,12 @@ export const PAYMENT_LABELS: Record<PaymentStatus, string> = {
   paid: 'Оплачен',
 }
 
+export const CONTENT_LABELS: Record<ContentStatus, string> = {
+  awaiting_brief: 'Ждём ТЗ',
+  filming: 'Снимает контент',
+  filmed: 'Снят контент',
+}
+
 export interface Streamer {
   id: number
   integration_id: number
@@ -26,6 +33,7 @@ export interface Streamer {
   contact: string
   stage: Stage
   payment_status: PaymentStatus
+  content_status: ContentStatus | null
   amount: number | null
   currency: string
   commission_percent: number

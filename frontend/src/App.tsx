@@ -5,6 +5,7 @@ import WorkspacePage from './pages/WorkspacePage'
 import HomePage from './pages/HomePage'
 import CalendarPage from './pages/CalendarPage'
 import IntegrationsBoard from './pages/IntegrationsBoard'
+import StreamerProfilesPage from './pages/StreamerProfilesPage'
 import SearchPage from './pages/SearchPage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import { authApi } from './api/auth'
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/integrations" element={<IntegrationsBoard />} />
+        <Route path="/streamers" element={<StreamerProfilesPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/admin/users" element={<AdminUsersPage />} />
       </Route>

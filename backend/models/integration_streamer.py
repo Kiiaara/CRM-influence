@@ -8,6 +8,7 @@ class IntegrationStreamer(Base):
     """Стример внутри интеграции с брендом. Каждый со своими сроками, суммой и статусом.
     stage: negotiation | agreed | awaiting_contract | awaiting_payment | done | cancelled
     payment_status: not_invoiced | invoiced | partial | paid
+    content_status: awaiting_brief | filming | filmed
     """
     __tablename__ = "integration_streamers"
 
@@ -19,6 +20,7 @@ class IntegrationStreamer(Base):
 
     stage: Mapped[str] = mapped_column(String(32), default="negotiation", index=True)
     payment_status: Mapped[str] = mapped_column(String(32), default="not_invoiced")
+    content_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str] = mapped_column(String(8), default="RUB")
