@@ -876,11 +876,14 @@ export function StreamerModal({
                 <button onClick={() => removeContract.mutate()} className="text-xs text-red-500 hover:text-red-700">Удалить</button>
               </div>
             ) : (
-              <input
-                type="file"
-                onChange={e => e.target.files?.[0] && uploadContract.mutate(e.target.files[0])}
-                className="text-sm text-slate-600 dark:text-slate-300"
-              />
+              <label className="inline-flex items-center gap-1.5 cursor-pointer text-sm bg-slate-100 dark:bg-brand-900 hover:bg-slate-200 dark:hover:bg-brand-800 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg w-fit">
+                <span>📎 Выберите файл</span>
+                <input
+                  type="file"
+                  onChange={e => e.target.files?.[0] && uploadContract.mutate(e.target.files[0])}
+                  className="hidden"
+                />
+              </label>
             )}
 
             <div>
