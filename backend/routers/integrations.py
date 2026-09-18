@@ -80,6 +80,18 @@ class StreamerOut(BaseModel):
         tax = float(self.amount) * float(self.streamer_tax_percent) / 100
         return round(float(self.amount) - self.commission_amount - tax, 2)
 
+    @computed_field
+    @property
+    def paid_percent(self) -> Optional[float]:
+        """Сколько % от суммы уже фактически оплачено (по истории платежей)."""
+        if not self.amount:
+            return None
+        payments = getattr(self, "payments", None) or []
+        paid = sum(float(p.amount) for p in payments)
+        if paid <= 0:
+            return None
+        return round(min(paid / float(self.amount) * 100, 100), 1)
+
 
 class StreamerCreate(BaseModel):
     streamer_name: str

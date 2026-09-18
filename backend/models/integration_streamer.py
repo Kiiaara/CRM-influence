@@ -42,3 +42,4 @@ class IntegrationStreamer(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     integration: Mapped["Integration"] = relationship(back_populates="streamers")
+    payments: Mapped[list["IntegrationPayment"]] = relationship(cascade="all, delete-orphan")

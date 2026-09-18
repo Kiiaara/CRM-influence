@@ -40,6 +40,7 @@ export interface Streamer {
   streamer_tax_percent: number
   commission_amount: number | null
   streamer_net_amount: number | null
+  paid_percent: number | null
   deadline: string | null
   description: string
   contract_file_name: string | null

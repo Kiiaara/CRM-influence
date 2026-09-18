@@ -77,7 +77,7 @@ export default function IntegrationsBoard() {
       <div className="font-medium text-sm text-slate-900 dark:text-slate-100">{c.streamer_name}</div>
       <div className="flex items-center justify-between mt-2 gap-2 flex-wrap">
         <span className={`text-[11px] px-1.5 py-0.5 rounded ${PAYMENT_COLORS[c.payment_status]}`}>
-          {PAYMENT_LABELS[c.payment_status]}
+          {PAYMENT_LABELS[c.payment_status]}{c.paid_percent != null && ` · ${c.paid_percent}%`}
         </span>
         {c.content_status && (
           <span className="text-[11px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
@@ -478,7 +478,7 @@ function StreamerModal({
   })
 
   const addPayment = useMutation({
-    mutationFn: (p: { amount: number; comment: string }) => integrationsApi.addPayment(streamer.id, p),
+    mutationFn: (p: { amount: number; currency: string; comment: string }) => integrationsApi.addPayment(streamer.id, p),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'payments'] })
       qc.invalidateQueries({ queryKey: ['integrations'] })
@@ -759,7 +759,7 @@ function StreamerModal({
                 onClick={() => {
                   const amount = Number(paymentAmount)
                   if (!amount) return
-                  addPayment.mutate({ amount, comment: paymentComment })
+                  addPayment.mutate({ amount, currency: form.currency, comment: paymentComment })
                   setPaymentAmount('')
                   setPaymentComment('')
                 }}
