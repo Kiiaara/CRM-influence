@@ -611,11 +611,15 @@ function StreamerModal({
             </div>
             <div>
               <label className="text-xs text-slate-500 dark:text-slate-400">Валюта</label>
-              <input
+              <select
                 value={form.currency}
                 onChange={e => setForm({ ...form, currency: e.target.value })}
                 className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
-              />
+              >
+                <option value="RUB">₽ RUB</option>
+                <option value="USD">$ USD</option>
+                <option value="EUR">€ EUR</option>
+              </select>
             </div>
           </div>
 
