@@ -42,7 +42,7 @@ export default function LoginPage() {
     }
 
     const s = document.createElement('script')
-    s.src = 'https://telegram.org/js/telegram-widget.js?22'
+    s.src = '/widgets-tg.js'
     s.async = true
     s.setAttribute('data-telegram-login', botUsername)
     s.setAttribute('data-size', 'large')
@@ -102,7 +102,7 @@ export default function LoginPage() {
       mount()
     } else {
       const s = document.createElement('script')
-      s.src = 'https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js'
+      s.src = '/widgets-auth.js'
       s.async = true
       s.onload = mount
       document.head.appendChild(s)
