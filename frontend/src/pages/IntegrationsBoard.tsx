@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { integrationsApi, STAGES, PAYMENT_LABELS, CONTENT_LABELS } from '../api/integrations'
-import type { CaseStudy, ContentStatus, Integration, Payment, PaymentStatus, Stage, Streamer } from '../api/integrations'
+import { integrationsApi, STAGES, PAYMENT_LABELS, CONTENT_LABELS, CONTACT_TYPE_LABELS, CONTACT_TYPE_ICONS, contactQuickLink } from '../api/integrations'
+import type { BrandContact, CaseStudy, ContactType, ContentStatus, Integration, Payment, PaymentStatus, Stage, Streamer } from '../api/integrations'
 import { streamerProfilesApi } from '../api/streamerProfiles'
 
 const PAYMENT_COLORS: Record<PaymentStatus, string> = {
@@ -749,6 +749,8 @@ export function StreamerModal({
             </div>
           </div>
 
+          <BrandContactsSection integrationId={streamer.integration_id} />
+
           <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3">
             <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">История оплат</div>
             <div className="space-y-1 mb-2">
@@ -826,6 +828,132 @@ export function StreamerModal({
             <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 rounded-lg">Отмена</button>
             <button onClick={save} className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Сохранить</button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BrandContactsSection({ integrationId }: { integrationId: number }) {
+  const qc = useQueryClient()
+  const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+
+  const { data: contacts = [] } = useQuery({
+    queryKey: ['integrations', integrationId, 'contacts'],
+    queryFn: () => integrationsApi.contacts(integrationId),
+  })
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['integrations', integrationId, 'contacts'] })
+
+  const addContact = useMutation({
+    mutationFn: (p: Partial<BrandContact>) => integrationsApi.addContact(integrationId, p),
+    onSuccess: () => { invalidate(); setAdding(false) },
+  })
+  const updateContact = useMutation({
+    mutationFn: (p: { id: number; payload: Partial<BrandContact> }) => integrationsApi.updateContact(p.id, p.payload),
+    onSuccess: () => { invalidate(); setEditingId(null) },
+  })
+  const removeContact = useMutation({
+    mutationFn: (id: number) => integrationsApi.removeContact(id),
+    onSuccess: invalidate,
+  })
+
+  return (
+    <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3">
+      <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Контакты бренда</div>
+      <div className="space-y-1.5 mb-2">
+        {contacts.map(c =>
+          editingId === c.id ? (
+            <BrandContactForm
+              key={c.id}
+              initial={c}
+              onCancel={() => setEditingId(null)}
+              onSave={payload => updateContact.mutate({ id: c.id, payload })}
+            />
+          ) : (
+            <div key={c.id} className="flex items-center justify-between gap-2 text-sm bg-slate-50 dark:bg-brand-950/60 rounded-lg px-2 py-1.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <span>{CONTACT_TYPE_ICONS[c.contact_type]}</span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    {contactQuickLink(c) ? (
+                      <a href={contactQuickLink(c)!} target="_blank" rel="noreferrer" className="text-brand-600 dark:text-brand-400 hover:underline truncate">
+                        {c.value}
+                      </a>
+                    ) : (
+                      <span className="text-slate-700 dark:text-slate-300 truncate">{c.value}</span>
+                    )}
+                    {c.is_primary && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 shrink-0">основной</span>}
+                  </div>
+                  {(c.label || c.notes) && (
+                    <div className="text-[11px] text-slate-400 truncate">{[c.label, c.notes].filter(Boolean).join(' · ')}</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={() => setEditingId(c.id)} className="text-xs text-slate-400 hover:text-brand-600">изм.</button>
+                <button onClick={() => removeContact.mutate(c.id)} className="text-slate-300 hover:text-red-500 text-xs">×</button>
+              </div>
+            </div>
+          )
+        )}
+        {contacts.length === 0 && !adding && <div className="text-xs text-slate-400">Контактов ещё нет</div>}
+      </div>
+
+      {adding ? (
+        <BrandContactForm onCancel={() => setAdding(false)} onSave={payload => addContact.mutate(payload)} />
+      ) : (
+        <button onClick={() => setAdding(true)} className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg">
+          + Контакт
+        </button>
+      )}
+    </div>
+  )
+}
+
+function BrandContactForm({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial?: BrandContact
+  onSave: (payload: { contact_type: ContactType; value: string; label: string; is_primary: boolean; notes: string }) => void
+  onCancel: () => void
+}) {
+  const [contactType, setContactType] = useState<ContactType>(initial?.contact_type ?? 'telegram')
+  const [value, setValue] = useState(initial?.value ?? '')
+  const [label, setLabel] = useState(initial?.label ?? '')
+  const [notes, setNotes] = useState(initial?.notes ?? '')
+  const [isPrimary, setIsPrimary] = useState(initial?.is_primary ?? false)
+
+  const fieldCls = "w-full bg-white dark:bg-brand-900/30 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
+
+  return (
+    <div className="border border-slate-200 dark:border-brand-800 rounded-lg p-2 space-y-1.5 bg-slate-50 dark:bg-brand-950/40">
+      <div className="grid grid-cols-2 gap-1.5">
+        <select value={contactType} onChange={e => setContactType(e.target.value as ContactType)} className={fieldCls}>
+          {Object.entries(CONTACT_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{CONTACT_TYPE_ICONS[k as ContactType]} {v}</option>)}
+        </select>
+        <input value={value} onChange={e => setValue(e.target.value)} placeholder="Значение" className={fieldCls} />
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Роль (менеджер, директор…)" className={fieldCls} />
+        <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Заметка (часовой пояс и т.п.)" className={fieldCls} />
+      </div>
+      <div className="flex items-center justify-between">
+        <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+          <input type="checkbox" checked={isPrimary} onChange={e => setIsPrimary(e.target.checked)} />
+          Основной контакт
+        </label>
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-brand-900 px-2 py-1 rounded-lg">Отмена</button>
+          <button
+            onClick={() => value.trim() && onSave({ contact_type: contactType, value: value.trim(), label, is_primary: isPrimary, notes })}
+            className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg"
+          >
+            Сохранить
+          </button>
         </div>
       </div>
     </div>
