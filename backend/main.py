@@ -3,12 +3,15 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from datetime import datetime
+
 from config import settings
 from database import engine, Base, SessionLocal
 import models  # регистрирует все ORM-классы
-from models.workspace import Workspace
+from models.workspace import Workspace, WorkspaceMember
+from models.user import User
 from routers import auth as auth_router
-from routers import search, tasks, users, integrations, streamer_profiles
+from routers import search, tasks, users, integrations, streamer_profiles, workspaces as workspaces_router
 from scheduler import start_scheduler, stop_scheduler
 
 
@@ -61,6 +64,62 @@ def _migrate_streamers_add_contract_valid_until():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN contract_valid_until DATETIME"))
 
 
+def _migrate_workspaces_add_owner():
+    """Добавляем owner_tg_id и updated_at в workspaces если их нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "workspaces" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("workspaces")]
+    with engine.begin() as conn:
+        if "owner_tg_id" not in cols:
+            conn.execute(text("ALTER TABLE workspaces ADD COLUMN owner_tg_id BIGINT"))
+        if "updated_at" not in cols:
+            conn.execute(text("ALTER TABLE workspaces ADD COLUMN updated_at DATETIME"))
+
+
+def _backfill_workspace_owners_and_members():
+    """Для существующих workspace без owner_tg_id проставляем первого админа
+    и создаём workspace_members на основе уже существующих юзеров."""
+    db = SessionLocal()
+    try:
+        first_admin = (
+            db.query(User).filter(User.role == "admin").order_by(User.created_at).first()
+        )
+        if not first_admin:
+            return
+        workspaces_to_fix = db.query(Workspace).filter(Workspace.owner_tg_id.is_(None)).all()
+        all_users = db.query(User).all()
+        for ws in workspaces_to_fix:
+            ws.owner_tg_id = first_admin.tg_id
+            ws.updated_at = ws.updated_at or datetime.now()
+            for u in all_users:
+                exists = (
+                    db.query(WorkspaceMember)
+                    .filter_by(workspace_id=ws.id, user_tg_id=u.tg_id)
+                    .first()
+                )
+                if exists:
+                    continue
+                if u.tg_id == first_admin.tg_id:
+                    role = "owner"
+                elif u.role == "editor":
+                    role = "lead"
+                else:
+                    role = "viewer"
+                db.add(
+                    WorkspaceMember(
+                        workspace_id=ws.id,
+                        user_tg_id=u.tg_id,
+                        role=role,
+                        joined_at=datetime.now(),
+                    )
+                )
+        db.commit()
+    finally:
+        db.close()
+
+
 def _migrate_streamers_add_integration_date():
     """Добавляем колонку integration_date и флаги напоминаний бота, если их нет."""
     from sqlalchemy import text, inspect
@@ -87,15 +146,23 @@ async def lifespan(app: FastAPI):
     _migrate_streamers_add_content_status()
     _migrate_streamers_add_contract_valid_until()
     _migrate_streamers_add_integration_date()
+    _migrate_workspaces_add_owner()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство
     db = SessionLocal()
     try:
         if not db.query(Workspace).first():
-            db.add(Workspace(title="Главное пространство"))
+            first_admin = db.query(User).filter(User.role == "admin").order_by(User.created_at).first()
+            ws = Workspace(title="Главное пространство", owner_tg_id=first_admin.tg_id if first_admin else None)
+            db.add(ws)
             db.commit()
+            db.refresh(ws)
+            if first_admin:
+                db.add(WorkspaceMember(workspace_id=ws.id, user_tg_id=first_admin.tg_id, role="owner", joined_at=datetime.now()))
+                db.commit()
     finally:
         db.close()
+    _backfill_workspace_owners_and_members()
     if settings.auth_bot_token:
         from notifier import set_my_commands
         await set_my_commands()
@@ -149,3 +216,4 @@ app.include_router(tasks.router)
 app.include_router(users.router)
 app.include_router(integrations.router)
 app.include_router(streamer_profiles.router)
+app.include_router(workspaces_router.router)

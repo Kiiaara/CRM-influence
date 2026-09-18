@@ -9,6 +9,7 @@ import StreamerProfilesPage from './pages/StreamerProfilesPage'
 import SearchPage from './pages/SearchPage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import { authApi } from './api/auth'
+import { WorkspaceProvider } from './workspaceContext'
 
 function ProtectedShell() {
   const { data, isLoading, isError } = useQuery({
@@ -17,7 +18,11 @@ function ProtectedShell() {
   })
   if (isLoading) return <div className="min-h-screen flex items-center justify-center text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-brand-950">Загрузка…</div>
   if (isError || !data) return <Navigate to="/login" replace />
-  return <WorkspacePage />
+  return (
+    <WorkspaceProvider>
+      <WorkspacePage />
+    </WorkspaceProvider>
+  )
 }
 
 export default function App() {
