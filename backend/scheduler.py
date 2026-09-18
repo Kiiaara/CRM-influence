@@ -7,12 +7,16 @@ import logging
 from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy.orm import joinedload
 
 from config import settings
 from database import SessionLocal
 from models.task import Task
 from models.user import User
+from models.integration_streamer import IntegrationStreamer
 from notifier import send_message
+import bot_dialog
 import httpx
 
 log = logging.getLogger(__name__)
@@ -87,6 +91,95 @@ async def _notify_assigned():
         db.close()
 
 
+async def _notify_admins(text: str):
+    """Шлёт сообщение всем админам, которые уже писали боту /start."""
+    db = SessionLocal()
+    try:
+        admins = db.query(User).filter(User.role == "admin", User.tg_chat_ready == True).all()
+        for u in admins:
+            await send_message(u.tg_id, text)
+    finally:
+        db.close()
+
+
+def _day_bounds(offset_days: int) -> tuple[datetime, datetime]:
+    day = (datetime.now() + timedelta(days=offset_days)).date()
+    start = datetime(day.year, day.month, day.day)
+    return start, start + timedelta(days=1)
+
+
+async def _check_branding_reminders():
+    """За день до интеграции: 'повесили брендинг?'"""
+    db = SessionLocal()
+    try:
+        start, end = _day_bounds(1)
+        rows = (
+            db.query(IntegrationStreamer)
+            .options(joinedload(IntegrationStreamer.integration))
+            .filter(
+                IntegrationStreamer.integration_date >= start,
+                IntegrationStreamer.integration_date < end,
+                IntegrationStreamer.notified_branding_check == False,
+                IntegrationStreamer.stage != "cancelled",
+            )
+            .all()
+        )
+        for s in rows:
+            await _notify_admins(f"🎨 Завтра интеграция с <b>{s.streamer_name}</b>. Повесили брендинг по РК {s.integration.brand}?")
+            s.notified_branding_check = True
+        db.commit()
+    finally:
+        db.close()
+
+
+async def _check_screenshot_reminders():
+    """В день интеграции (утром): 'сделала скриншот?'"""
+    db = SessionLocal()
+    try:
+        start, end = _day_bounds(0)
+        rows = (
+            db.query(IntegrationStreamer)
+            .options(joinedload(IntegrationStreamer.integration))
+            .filter(
+                IntegrationStreamer.integration_date >= start,
+                IntegrationStreamer.integration_date < end,
+                IntegrationStreamer.notified_screenshot == False,
+                IntegrationStreamer.stage != "cancelled",
+            )
+            .all()
+        )
+        for s in rows:
+            await _notify_admins(f"📸 Сегодня интеграция с <b>{s.streamer_name}</b> ({s.integration.brand}). Ты сделала скриншот РК?")
+            s.notified_screenshot = True
+        db.commit()
+    finally:
+        db.close()
+
+
+async def _check_report_reminders():
+    """В конце дня интеграции: 'отдала клиенту отчёт?'"""
+    db = SessionLocal()
+    try:
+        start, end = _day_bounds(0)
+        rows = (
+            db.query(IntegrationStreamer)
+            .options(joinedload(IntegrationStreamer.integration))
+            .filter(
+                IntegrationStreamer.integration_date >= start,
+                IntegrationStreamer.integration_date < end,
+                IntegrationStreamer.notified_report == False,
+                IntegrationStreamer.stage != "cancelled",
+            )
+            .all()
+        )
+        for s in rows:
+            await _notify_admins(f"📋 Интеграция с <b>{s.streamer_name}</b> ({s.integration.brand}) сегодня. Отдала клиенту отчёт?")
+            s.notified_report = True
+        db.commit()
+    finally:
+        db.close()
+
+
 # ── Long-polling listener для /start ────────────────────────
 _tg_offset = 0
 
@@ -116,6 +209,10 @@ async def _poll_telegram_updates():
                 if text.startswith("/start"):
                     _mark_chat_ready(tg_id, from_)
                     await send_message(tg_id, "Привет 👋 Я буду присылать тебе уведомления о задачах из «Заметочницы».")
+                    continue
+                if await bot_dialog.handle_command(tg_id, text):
+                    continue
+                await bot_dialog.handle_message(tg_id, text)
     except Exception:
         log.exception("Ошибка getUpdates")
 
@@ -145,6 +242,10 @@ def start_scheduler():
     _scheduler.add_job(_check_deadlines, "interval", seconds=interval, id="deadlines")
     _scheduler.add_job(_notify_assigned, "interval", seconds=30, id="assigned")
     _scheduler.add_job(_poll_telegram_updates, "interval", seconds=2, id="tg_poll", max_instances=1, coalesce=True)
+    # напоминания по интеграциям: за день утром, в день утром (скрин), в день вечером (отчёт)
+    _scheduler.add_job(_check_branding_reminders, CronTrigger(hour=10, minute=0), id="branding_reminder")
+    _scheduler.add_job(_check_screenshot_reminders, CronTrigger(hour=10, minute=5), id="screenshot_reminder")
+    _scheduler.add_job(_check_report_reminders, CronTrigger(hour=19, minute=0), id="report_reminder")
     _scheduler.start()
     log.info("Scheduler started")
 

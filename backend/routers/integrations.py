@@ -58,6 +58,7 @@ class StreamerOut(BaseModel):
     commission_percent: float
     streamer_tax_percent: float
     deadline: Optional[datetime] = None
+    integration_date: Optional[datetime] = None
     description: str
     contract_file_name: Optional[str] = None
     contract_valid_until: Optional[datetime] = None
@@ -105,6 +106,7 @@ class StreamerCreate(BaseModel):
     commission_percent: float = 15
     streamer_tax_percent: float = 6
     deadline: Optional[datetime] = None
+    integration_date: Optional[datetime] = None
     description: str = ""
 
 
@@ -119,6 +121,7 @@ class StreamerUpdate(BaseModel):
     commission_percent: Optional[float] = None
     streamer_tax_percent: Optional[float] = None
     deadline: Optional[datetime] = None
+    integration_date: Optional[datetime] = None
     description: Optional[str] = None
     contract_valid_until: Optional[datetime] = None
     position: Optional[int] = None
@@ -292,6 +295,7 @@ def create_streamer(integration_id: int, data: StreamerCreate, db: Session = Dep
         commission_percent=data.commission_percent,
         streamer_tax_percent=data.streamer_tax_percent,
         deadline=data.deadline,
+        integration_date=data.integration_date,
         description=data.description,
         position=(max_pos.position + 1) if max_pos else 0,
     )

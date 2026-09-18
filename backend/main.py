@@ -61,6 +61,24 @@ def _migrate_streamers_add_contract_valid_until():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN contract_valid_until DATETIME"))
 
 
+def _migrate_streamers_add_integration_date():
+    """Добавляем колонку integration_date и флаги напоминаний бота, если их нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "integration_streamers" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("integration_streamers")]
+    with engine.begin() as conn:
+        if "integration_date" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN integration_date DATETIME"))
+        if "notified_branding_check" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN notified_branding_check BOOLEAN DEFAULT 0"))
+        if "notified_screenshot" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN notified_screenshot BOOLEAN DEFAULT 0"))
+        if "notified_report" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN notified_report BOOLEAN DEFAULT 0"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -68,6 +86,7 @@ async def lifespan(app: FastAPI):
     _migrate_users_add_vk_id()
     _migrate_streamers_add_content_status()
     _migrate_streamers_add_contract_valid_until()
+    _migrate_streamers_add_integration_date()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство
     db = SessionLocal()

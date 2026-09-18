@@ -30,6 +30,7 @@ class IntegrationStreamer(Base):
     streamer_tax_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=6)
 
     deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    integration_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     description: Mapped[str] = mapped_column(Text, default="")
 
     contract_file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -38,6 +39,11 @@ class IntegrationStreamer(Base):
 
     # позиция карточки внутри колонки канбана (для сортировки внутри stage)
     position: Mapped[int] = mapped_column(Integer, default=0)
+
+    # флаги напоминаний бота по integration_date (чтобы не слать повторно)
+    notified_branding_check: Mapped[bool] = mapped_column(default=False)
+    notified_screenshot: Mapped[bool] = mapped_column(default=False)
+    notified_report: Mapped[bool] = mapped_column(default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

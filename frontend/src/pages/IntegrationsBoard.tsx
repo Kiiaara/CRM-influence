@@ -96,6 +96,9 @@ export default function IntegrationsBoard() {
       {c.deadline && (
         <div className="text-[11px] text-slate-400 mt-1">до {new Date(c.deadline).toLocaleDateString('ru-RU')}</div>
       )}
+      {c.integration_date && (
+        <div className="text-[11px] text-violet-500 mt-1">🎬 {new Date(c.integration_date).toLocaleDateString('ru-RU')}</div>
+      )}
       {c.contract_file_name && (
         <div className="text-[11px] text-brand-500 mt-1">
           📎 договор{c.contract_valid_until && ` до ${new Date(c.contract_valid_until).toLocaleDateString('ru-RU')}`}
@@ -541,6 +544,7 @@ export function StreamerModal({
       commission_percent: form.commission_percent,
       streamer_tax_percent: form.streamer_tax_percent,
       deadline: form.deadline,
+      integration_date: form.integration_date,
       description: form.description,
       contract_valid_until: form.contract_valid_until,
     }
@@ -621,6 +625,16 @@ export function StreamerModal({
                 className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500 dark:text-slate-400">Дата интеграции (день выхода)</label>
+            <input
+              type="date"
+              value={form.integration_date ? form.integration_date.slice(0, 10) : ''}
+              onChange={e => setForm({ ...form, integration_date: e.target.value || null })}
+              className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+            />
           </div>
 
           <div>

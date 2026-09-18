@@ -42,6 +42,7 @@ export interface Streamer {
   streamer_net_amount: number | null
   paid_percent: number | null
   deadline: string | null
+  integration_date: string | null
   description: string
   contract_file_name: string | null
   contract_valid_until: string | null
