@@ -81,6 +81,53 @@ export interface CaseStudy {
   updated_at: string
 }
 
+export type ContactType = 'email' | 'telegram' | 'whatsapp' | 'phone' | 'other'
+
+export const CONTACT_TYPE_LABELS: Record<ContactType, string> = {
+  email: 'Email',
+  telegram: 'Telegram',
+  whatsapp: 'WhatsApp',
+  phone: 'Телефон',
+  other: 'Другое',
+}
+
+export const CONTACT_TYPE_ICONS: Record<ContactType, string> = {
+  email: '📧',
+  telegram: '📱',
+  whatsapp: '📲',
+  phone: '📞',
+  other: '🔗',
+}
+
+export interface BrandContact {
+  id: number
+  integration_id: number
+  contact_type: ContactType
+  value: string
+  label: string
+  is_primary: boolean
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+export function contactQuickLink(c: Pick<BrandContact, 'contact_type' | 'value'>): string | null {
+  const v = c.value.trim()
+  if (!v) return null
+  switch (c.contact_type) {
+    case 'email':
+      return `mailto:${v}`
+    case 'telegram':
+      return `https://t.me/${v.replace(/^@/, '')}`
+    case 'whatsapp':
+      return `https://wa.me/${v.replace(/[^\d]/g, '')}`
+    case 'phone':
+      return `tel:${v.replace(/[^\d+]/g, '')}`
+    default:
+      return null
+  }
+}
+
 export const integrationsApi = {
   async list() {
     const { data } = await api.get<Integration[]>('/integrations')
@@ -173,5 +220,21 @@ export const integrationsApi = {
   },
   async removeCasePhoto(caseId: number) {
     await api.delete(`/integrations/cases/${caseId}/photo`)
+  },
+
+  async contacts(integrationId: number) {
+    const { data } = await api.get<BrandContact[]>(`/integrations/${integrationId}/contacts`)
+    return data
+  },
+  async addContact(integrationId: number, payload: Partial<Pick<BrandContact, 'contact_type' | 'value' | 'label' | 'is_primary' | 'notes'>>) {
+    const { data } = await api.post<BrandContact>(`/integrations/${integrationId}/contacts`, payload)
+    return data
+  },
+  async updateContact(contactId: number, payload: Partial<Pick<BrandContact, 'contact_type' | 'value' | 'label' | 'is_primary' | 'notes'>>) {
+    const { data } = await api.patch<BrandContact>(`/integrations/contacts/${contactId}`, payload)
+    return data
+  },
+  async removeContact(contactId: number) {
+    await api.delete(`/integrations/contacts/${contactId}`)
   },
 }

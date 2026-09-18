@@ -16,6 +16,7 @@ from models.integration import Integration
 from models.integration_streamer import IntegrationStreamer
 from models.integration_payment import IntegrationPayment
 from models.case_study import CaseStudy
+from models.brand_contact import BrandContact
 from models.user import User
 from models.workspace import Workspace
 
@@ -31,6 +32,7 @@ router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 STAGES = ("negotiation", "agreed", "awaiting_contract", "awaiting_payment", "done", "cancelled")
 PAYMENT_STATUSES = ("not_invoiced", "invoiced", "partial", "paid")
 CONTENT_STATUSES = ("awaiting_brief", "filming", "filmed")
+CONTACT_TYPES = ("email", "telegram", "whatsapp", "phone", "other")
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "contracts")
 CASE_PHOTO_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "case_photos")
@@ -208,6 +210,35 @@ class CaseStudyUpdate(BaseModel):
     result: Optional[str] = None
 
 
+class BrandContactOut(BaseModel):
+    id: int
+    integration_id: int
+    contact_type: str
+    value: str
+    label: str
+    is_primary: bool
+    notes: str
+    created_at: datetime
+    updated_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class BrandContactCreate(BaseModel):
+    contact_type: str
+    value: str
+    label: str = ""
+    is_primary: bool = False
+    notes: str = ""
+
+
+class BrandContactUpdate(BaseModel):
+    contact_type: Optional[str] = None
+    value: Optional[str] = None
+    label: Optional[str] = None
+    is_primary: Optional[bool] = None
+    notes: Optional[str] = None
+
+
 # ---------- сделки (бренды) ----------
 
 @router.get("", response_model=List[IntegrationOut])
@@ -263,6 +294,21 @@ def delete_integration(integration_id: int, db: Session = Depends(get_db), ws: W
 
 
 # ---------- стримеры внутри сделки ----------
+
+def _validate_contact_type(contact_type: str):
+    if contact_type not in CONTACT_TYPES:
+        raise HTTPException(400, f"contact_type должен быть одним из: {', '.join(CONTACT_TYPES)}")
+
+
+def _get_contact_or_404(db: Session, ws: Workspace, contact_id: int) -> BrandContact:
+    c = db.get(BrandContact, contact_id)
+    if not c:
+        raise HTTPException(404)
+    it = db.get(Integration, c.integration_id)
+    if not it or it.workspace_id != ws.id:
+        raise HTTPException(404)
+    return c
+
 
 @router.get("/{integration_id}/streamers", response_model=List[StreamerOut])
 def list_streamers(integration_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
@@ -516,6 +562,63 @@ def download_case_photo(case_id: int, db: Session = Depends(get_db), user: User 
     if not c or not c.photo_path or not os.path.exists(c.photo_path):
         raise HTTPException(404, "Фото не найдено")
     return FileResponse(c.photo_path, filename=c.photo_name or "photo")
+
+
+# ---------- контакты бренда/рекламодателя ----------
+
+@router.get("/{integration_id}/contacts", response_model=List[BrandContactOut])
+def list_contacts(integration_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_integration_or_404(db, ws, integration_id)
+    return (
+        db.query(BrandContact)
+        .filter(BrandContact.integration_id == integration_id)
+        .order_by(BrandContact.is_primary.desc(), BrandContact.created_at.asc())
+        .all()
+    )
+
+
+@router.post("/{integration_id}/contacts", response_model=BrandContactOut, status_code=201)
+def create_contact(integration_id: int, data: BrandContactCreate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_integration_or_404(db, ws, integration_id)
+    _validate_contact_type(data.contact_type)
+    if data.is_primary:
+        db.query(BrandContact).filter(BrandContact.integration_id == integration_id).update({"is_primary": False})
+    c = BrandContact(
+        integration_id=integration_id,
+        contact_type=data.contact_type,
+        value=data.value,
+        label=data.label,
+        is_primary=data.is_primary,
+        notes=data.notes,
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@router.patch("/contacts/{contact_id}", response_model=BrandContactOut)
+def update_contact(contact_id: int, data: BrandContactUpdate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    c = _get_contact_or_404(db, ws, contact_id)
+    if data.contact_type is not None:
+        _validate_contact_type(data.contact_type)
+    if data.is_primary:
+        db.query(BrandContact).filter(
+            BrandContact.integration_id == c.integration_id, BrandContact.id != contact_id
+        ).update({"is_primary": False})
+    for k, v in data.model_dump(exclude_unset=True).items():
+        setattr(c, k, v)
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@router.delete("/contacts/{contact_id}")
+def delete_contact(contact_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    c = _get_contact_or_404(db, ws, contact_id)
+    db.delete(c)
+    db.commit()
+    return {"ok": True}
 
 
 @router.delete("/cases/{case_id}/photo")

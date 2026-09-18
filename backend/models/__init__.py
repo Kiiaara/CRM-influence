@@ -8,3 +8,4 @@ from .integration_streamer import IntegrationStreamer  # noqa: F401
 from .integration_payment import IntegrationPayment  # noqa: F401
 from .streamer_profile import StreamerProfile  # noqa: F401
 from .case_study import CaseStudy  # noqa: F401
+from .brand_contact import BrandContact  # noqa: F401
