@@ -208,7 +208,8 @@ def _day_start(dt: datetime) -> datetime:
     return dt.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def _build_hot_tasks_text(db: Session, workspace_id: int) -> str:
+def compute_hot_tasks(db: Session, workspace_id: int) -> tuple[int, str]:
+    """Возвращает (кол-во горячих карточек, готовый текст сводки). total=0 -> "всё спокойно"."""
     now = datetime.now()
     today = _day_start(now)
     rows = (
@@ -246,7 +247,7 @@ def _build_hot_tasks_text(db: Session, workspace_id: int) -> str:
 
     total = sum(len(items) for _, items, _ in sections)
     if total == 0:
-        return "🔥 Горячих задач нет, всё спокойно ✅"
+        return 0, "🔥 Горячих задач нет, всё спокойно ✅"
 
     lines = [f"🔥 <b>Горячие задачи</b> ({total})", ""]
     for title, items, detail_fn in sections:
@@ -258,7 +259,7 @@ def _build_hot_tasks_text(db: Session, workspace_id: int) -> str:
         if len(items) > 8:
             lines.append(f"  и ещё {len(items) - 8}…")
         lines.append("")
-    return "\n".join(lines).strip()
+    return total, "\n".join(lines).strip()
 
 
 async def send_hot_tasks(tg_id: int):
@@ -268,10 +269,149 @@ async def send_hot_tasks(tg_id: int):
         if workspace_id is None:
             await send_message(tg_id, "У тебя нет доступа ни к одному пространству.")
             return
-        text = _build_hot_tasks_text(db, workspace_id)
+        _, text = compute_hot_tasks(db, workspace_id)
     finally:
         db.close()
     await send_message(tg_id, text)
+
+
+# ---------- настройки уведомлений: сводка "Горячие задачи" (интервал, тихие часы) ----------
+
+INTERVAL_CHOICES = (1, 2, 4, 6, 12, 24)
+_QUIET_HOURS_RE = re.compile(r"^(\d{1,2})\s*[-–—]\s*(\d{1,2})$")
+
+
+def in_quiet_hours(now: datetime, start: Optional[int], end: Optional[int]) -> bool:
+    if start is None or end is None or start == end:
+        return False
+    h = now.hour
+    if start < end:
+        return start <= h < end
+    return h >= start or h < end  # окно через полночь, например 22-8
+
+
+def _settings_keyboard(u: User) -> list:
+    hot_label = "🔔 Горячие задачи: Вкл" if u.notify_hot_tasks else "🔕 Горячие задачи: Выкл"
+    interval_label = f"⏱ Интервал: каждые {u.notify_interval_hours} ч"
+    if u.quiet_hours_start is not None and u.quiet_hours_end is not None:
+        qh_label = f"🌙 Тихие часы: {u.quiet_hours_start:02d}:00–{u.quiet_hours_end:02d}:00"
+    else:
+        qh_label = "🌙 Тихие часы: выключены"
+    return [
+        [{"text": hot_label, "callback_data": "s:toggle"}],
+        [{"text": interval_label, "callback_data": "s:ivl"}],
+        [{"text": qh_label, "callback_data": "s:qh"}],
+        [{"text": "✅ Готово", "callback_data": "s:done"}],
+    ]
+
+
+async def _show_settings(tg_id: int):
+    db = SessionLocal()
+    try:
+        u = db.get(User, tg_id)
+        if not u:
+            await send_message(tg_id, "Доступ запрещён.")
+            return
+        await send_message(
+            tg_id,
+            "<b>⚙️ Уведомления</b>\nКогда и как часто присылать сводку «Горячие задачи» (черновики, дедлайны, договоры, оплаты).",
+            inline_keyboard=_settings_keyboard(u),
+        )
+    finally:
+        db.close()
+
+
+async def _toggle_hot_tasks_setting(tg_id: int):
+    db = SessionLocal()
+    try:
+        u = db.get(User, tg_id)
+        if not u:
+            return
+        u.notify_hot_tasks = not u.notify_hot_tasks
+        db.commit()
+        await send_message(tg_id, "<b>⚙️ Уведомления</b>", inline_keyboard=_settings_keyboard(u))
+    finally:
+        db.close()
+
+
+async def _show_interval_picker(tg_id: int):
+    rows = [INTERVAL_CHOICES[i:i + 3] for i in range(0, len(INTERVAL_CHOICES), 3)]
+    keyboard = [[{"text": f"{h} ч", "callback_data": f"s:ivl:{h}"} for h in row] for row in rows]
+    keyboard.append([{"text": "⬅️ Назад", "callback_data": "s:back"}])
+    await send_message(tg_id, "Как часто присылать сводку (если в ней есть что показать)?", inline_keyboard=keyboard)
+
+
+async def _set_interval(tg_id: int, hours: int):
+    db = SessionLocal()
+    try:
+        u = db.get(User, tg_id)
+        if not u:
+            return
+        u.notify_interval_hours = hours
+        db.commit()
+        await send_message(tg_id, "<b>⚙️ Уведомления</b>", inline_keyboard=_settings_keyboard(u))
+    finally:
+        db.close()
+
+
+async def _prompt_quiet_hours(tg_id: int):
+    _sessions[tg_id] = {"mode": "edit_quiet_hours"}
+    await send_message(
+        tg_id,
+        "Тихие часы - в это время сводку не пришлём.\n"
+        "Напиши диапазон, например 22-8 (с 22:00 до 8:00), или «нет», чтобы отключить.",
+    )
+
+
+async def _apply_quiet_hours(tg_id: int, raw: str) -> bool:
+    raw = raw.strip().lower()
+    db = SessionLocal()
+    try:
+        u = db.get(User, tg_id)
+        if not u:
+            return True
+        if raw in ("нет", "-", "no", "выкл", "off"):
+            u.quiet_hours_start = None
+            u.quiet_hours_end = None
+        else:
+            m = _QUIET_HOURS_RE.match(raw)
+            start = int(m.group(1)) if m else -1
+            end = int(m.group(2)) if m else -1
+            if not m or not (0 <= start <= 23) or not (0 <= end <= 23):
+                await send_message(tg_id, "Не понял, формат ЧЧ-ЧЧ (например 22-8) или «нет».")
+                _sessions[tg_id] = {"mode": "edit_quiet_hours"}
+                return False
+            u.quiet_hours_start = start
+            u.quiet_hours_end = end
+        db.commit()
+        await send_message(tg_id, "<b>⚙️ Уведомления</b>", inline_keyboard=_settings_keyboard(u))
+    finally:
+        db.close()
+    return True
+
+
+async def _handle_settings_callback(tg_id: int, parts: list) -> bool:
+    action = parts[1] if len(parts) > 1 else ""
+    if action == "toggle":
+        await _toggle_hot_tasks_setting(tg_id)
+    elif action == "ivl":
+        if len(parts) > 2:
+            try:
+                await _set_interval(tg_id, int(parts[2]))
+            except ValueError:
+                return False
+        else:
+            await _show_interval_picker(tg_id)
+    elif action == "qh":
+        await _prompt_quiet_hours(tg_id)
+    elif action == "back":
+        await _show_settings(tg_id)
+    elif action == "done":
+        _sessions.pop(tg_id, None)
+        await send_message(tg_id, "Готово ✅")
+    else:
+        return False
+    return True
 
 
 async def start_edit_flow(tg_id: int):
@@ -573,6 +713,8 @@ async def handle_callback(tg_id: int, data: str) -> bool:
         return await _handle_edit_callback(tg_id, parts)
     if parts[0] == "n":
         return await _handle_new_callback(tg_id, parts)
+    if parts[0] == "s":
+        return await _handle_settings_callback(tg_id, parts)
     return False
 
 
@@ -624,6 +766,19 @@ async def handle_command(tg_id: int, text: str) -> bool:
         await send_hot_tasks(tg_id)
         return True
 
+    if text.startswith("/settings"):
+        db = SessionLocal()
+        try:
+            user = db.get(User, tg_id)
+        finally:
+            db.close()
+        if not user:
+            await send_message(tg_id, "Доступ запрещён.")
+            return True
+        _sessions.pop(tg_id, None)
+        await _show_settings(tg_id)
+        return True
+
     if text.startswith("/cancel"):
         if tg_id in _sessions:
             del _sessions[tg_id]
@@ -648,6 +803,12 @@ async def handle_message(tg_id: int, text: str) -> bool:
 
     if session.get("mode") == "edit_contract_file":
         await send_message(tg_id, "Жду именно файл договора (📎), не текст.")
+        return True
+
+    if session.get("mode") == "edit_quiet_hours":
+        ok = await _apply_quiet_hours(tg_id, text.strip())
+        if ok:
+            _sessions.pop(tg_id, None)
         return True
 
     step_name = STEPS[session["step"]]

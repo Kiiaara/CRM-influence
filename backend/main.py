@@ -42,6 +42,26 @@ def _migrate_users_add_vk_id():
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_vk_id ON users (vk_id)"))
 
 
+def _migrate_users_add_notification_settings():
+    """Добавляем настройки бот-уведомлений (интервал сводки, тихие часы) в users, если их нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "users" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("users")]
+    with engine.begin() as conn:
+        if "notify_hot_tasks" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN notify_hot_tasks BOOLEAN DEFAULT 1"))
+        if "notify_interval_hours" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN notify_interval_hours INTEGER DEFAULT 4"))
+        if "quiet_hours_start" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN quiet_hours_start INTEGER DEFAULT 22"))
+        if "quiet_hours_end" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN quiet_hours_end INTEGER DEFAULT 8"))
+        if "last_hot_tasks_notified_at" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN last_hot_tasks_notified_at DATETIME"))
+
+
 def _migrate_streamers_add_content_status():
     """Добавляем колонку content_status в integration_streamers если её нет."""
     from sqlalchemy import text, inspect
@@ -263,6 +283,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _migrate_users_add_pinned()
     _migrate_users_add_vk_id()
+    _migrate_users_add_notification_settings()
     _migrate_streamers_add_content_status()
     _migrate_streamers_add_contract_valid_until()
     _migrate_streamers_add_integration_date()
