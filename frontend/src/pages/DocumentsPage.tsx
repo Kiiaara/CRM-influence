@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   integrationsApi,
@@ -6,17 +6,19 @@ import {
   CONTRACT_STATUS_COLOR,
   CONTENT_LABELS,
 } from '../api/integrations'
-import type { ContentStatus, ContractStatus, Streamer } from '../api/integrations'
+import type { CaseStudy, ContentStatus, ContractStatus, Streamer } from '../api/integrations'
+import { CaseStudyCard } from './IntegrationsBoard'
 
 interface Row extends Streamer {
   brand: string
 }
 
-type Tab = 'contracts' | 'briefs'
+type Tab = 'contracts' | 'briefs' | 'cases'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'contracts', label: 'Договоры' },
   { key: 'briefs', label: 'ТЗ' },
+  { key: 'cases', label: 'Кейсы' },
 ]
 
 const selectCls = "bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-slate-100"
@@ -70,7 +72,7 @@ export default function DocumentsPage() {
         />
       </div>
       <p className="text-slate-500 dark:text-slate-400 mb-4 text-sm">
-        Договоры и ТЗ по всем сделкам. Изменения здесь сразу видны на канбане и наоборот.
+        Договоры, ТЗ и кейсы по всем сделкам. Изменения здесь сразу видны на канбане и наоборот.
       </p>
 
       <div className="flex gap-2 mb-4">
@@ -137,28 +139,13 @@ export default function DocumentsPage() {
                     </select>
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <input
-                      type="date"
-                      value={r.contract_sent_date ? r.contract_sent_date.slice(0, 10) : ''}
-                      onChange={e => update.mutate({ id: r.id, p: { contract_sent_date: e.target.value || null } })}
-                      className={selectCls}
-                    />
+                    <DateCell value={r.contract_sent_date} onSave={v => update.mutate({ id: r.id, p: { contract_sent_date: v } })} />
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <input
-                      type="date"
-                      value={r.contract_signed_date ? r.contract_signed_date.slice(0, 10) : ''}
-                      onChange={e => update.mutate({ id: r.id, p: { contract_signed_date: e.target.value || null } })}
-                      className={selectCls}
-                    />
+                    <DateCell value={r.contract_signed_date} onSave={v => update.mutate({ id: r.id, p: { contract_signed_date: v } })} />
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <input
-                      type="date"
-                      value={r.contract_valid_until ? r.contract_valid_until.slice(0, 10) : ''}
-                      onChange={e => update.mutate({ id: r.id, p: { contract_valid_until: e.target.value || null } })}
-                      className={selectCls}
-                    />
+                    <DateCell value={r.contract_valid_until} onSave={v => update.mutate({ id: r.id, p: { contract_valid_until: v } })} />
                   </td>
                 </tr>
               ))}
@@ -179,9 +166,39 @@ export default function DocumentsPage() {
           </div>
         )}
 
+        {tab === 'cases' && (
+          <div className="divide-y divide-slate-100 dark:divide-brand-900">
+            {filtered.map(r => (
+              <CaseGroupRow key={r.id} row={r} />
+            ))}
+          </div>
+        )}
+
         {filtered.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Ничего не найдено</div>}
       </div>
     </div>
+  )
+}
+
+// изолируем date-инпут от сети: коммитим на blur, а не на каждый onChange -
+// иначе промежуточные значения при посимвольном наборе (напр. "0001" для года) улетают
+// в API и сервер тут же перезаписывает контролируемый инпут поверх того, что печатает юзер
+function DateCell({ value, onSave }: { value: string | null; onSave: (v: string | null) => void }) {
+  const serverValue = value ? value.slice(0, 10) : ''
+  const [local, setLocal] = useState(serverValue)
+
+  useEffect(() => { setLocal(serverValue) }, [serverValue])
+
+  return (
+    <input
+      type="date"
+      value={local}
+      onChange={e => setLocal(e.target.value)}
+      onBlur={() => {
+        if (local !== serverValue) onSave(local || null)
+      }}
+      className={selectCls}
+    />
   )
 }
 
@@ -227,6 +244,64 @@ function BriefRow({
         placeholder="ТЗ ещё не заполнено"
         className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
       />
+    </div>
+  )
+}
+
+function CaseGroupRow({ row }: { row: Row }) {
+  const qc = useQueryClient()
+  const { data: cases = [] } = useQuery({
+    queryKey: ['streamers', row.id, 'cases'],
+    queryFn: () => integrationsApi.cases(row.id),
+  })
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['streamers', row.id, 'cases'] })
+
+  const addCase = useMutation({
+    mutationFn: () => integrationsApi.addCase(row.id, {}),
+    onSuccess: invalidate,
+  })
+  const updateCase = useMutation({
+    mutationFn: (p: { id: number; payload: Partial<Pick<CaseStudy, 'title' | 'description' | 'what_was_done' | 'result'>> }) =>
+      integrationsApi.updateCase(p.id, p.payload),
+    onSuccess: invalidate,
+  })
+  const removeCase = useMutation({
+    mutationFn: (id: number) => integrationsApi.removeCase(id),
+    onSuccess: invalidate,
+  })
+  const uploadCasePhoto = useMutation({
+    mutationFn: (p: { id: number; file: File }) => integrationsApi.uploadCasePhoto(p.id, p.file),
+    onSuccess: invalidate,
+  })
+  const removeCasePhoto = useMutation({
+    mutationFn: (id: number) => integrationsApi.removeCasePhoto(id),
+    onSuccess: invalidate,
+  })
+
+  return (
+    <div className="px-3 py-3">
+      <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+        <span className="text-sm text-slate-900 dark:text-slate-100">{row.brand} <span className="text-slate-400">· {row.streamer_name}</span></span>
+        <button
+          onClick={() => addCase.mutate()}
+          className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg"
+        >
+          + Новый кейс
+        </button>
+      </div>
+      <div className="space-y-3">
+        {cases.map((c: CaseStudy) => (
+          <CaseStudyCard
+            key={c.id}
+            caseStudy={c}
+            onSave={payload => updateCase.mutate({ id: c.id, payload })}
+            onRemove={() => confirm('Удалить кейс?') && removeCase.mutate(c.id)}
+            onUploadPhoto={file => uploadCasePhoto.mutate({ id: c.id, file })}
+            onRemovePhoto={() => removeCasePhoto.mutate(c.id)}
+          />
+        ))}
+        {cases.length === 0 && <div className="text-xs text-slate-400">Кейсов ещё нет</div>}
+      </div>
     </div>
   )
 }

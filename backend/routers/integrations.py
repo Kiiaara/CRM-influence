@@ -79,7 +79,7 @@ STAGES = ("negotiation", "agreed", "awaiting_contract", "awaiting_payment", "don
 PAYMENT_STATUSES = ("not_invoiced", "invoiced", "partial", "paid")
 CONTENT_STATUSES = ("awaiting_brief", "filming", "filmed")
 ORD_RESPONSIBLE = ("us", "client")
-ORD_STATUSES = ("todo", "done")
+ORD_STATUSES = ("todo", "done", "not_required")
 ORD_REPORTING_STATUSES = ("not_submitted", "submitted", "overdue")
 CONTRACT_STATUSES = (
     "not_sent",
@@ -168,6 +168,7 @@ class StreamerOut(BaseModel):
     ord_reporting_status: str
     position: int
     created_by_tg_id: Optional[int] = None
+    has_case: bool = False
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
@@ -524,6 +525,10 @@ def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depend
         s.notified_stream_start = False
         s.notified_screenshot = False
         s.notified_report = False
+
+    # если сделку вернули из "завершено" в другую стадию - при повторном завершении напомним о кейсе снова
+    if "stage" in changes and old_values.get("stage") == "done" and changes["stage"] != "done":
+        s.notified_case_reminder = False
 
     db.commit()
     db.refresh(s)
