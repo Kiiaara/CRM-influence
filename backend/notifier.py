@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 MAIN_KEYBOARD = {
     "keyboard": [
         [{"text": "➕ Новая интеграция"}, {"text": "✏️ Редактировать"}],
-        [{"text": "❌ Отменить диалог"}],
+        [{"text": "🔥 Горячие задачи"}, {"text": "❌ Отменить диалог"}],
     ],
     "resize_keyboard": True,
 }
@@ -101,6 +101,7 @@ async def set_my_commands():
     commands = [
         {"command": "new_integration", "description": "Добавить новую интеграцию"},
         {"command": "edit_integration", "description": "Редактировать существующую сделку"},
+        {"command": "hot_tasks", "description": "Горячие задачи (черновики, дедлайны, просрочки)"},
         {"command": "cancel", "description": "Отменить текущий диалог"},
         {"command": "start", "description": "Начать / привязать аккаунт"},
     ]

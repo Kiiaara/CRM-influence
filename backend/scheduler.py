@@ -310,6 +310,8 @@ async def _poll_telegram_updates():
                     text = "/new_integration"
                 elif text.strip() == "✏️ Редактировать":
                     text = "/edit_integration"
+                elif text.strip() == "🔥 Горячие задачи":
+                    text = "/hot_tasks"
                 if await bot_dialog.handle_command(tg_id, text):
                     continue
                 await bot_dialog.handle_message(tg_id, text)
