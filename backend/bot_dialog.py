@@ -6,7 +6,7 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
@@ -196,6 +196,82 @@ def _streamer_button_label(s: IntegrationStreamer) -> str:
     stage_label = STAGE_LABELS.get(s.stage, s.stage)
     label = f"{s.integration.brand} · {s.streamer_name} ({stage_label})"
     return label[:64]
+
+
+# ---------- горячие задачи (та же логика, что и AlertsPanel.tsx на сайте) ----------
+
+_ACTIVE_STAGES = ("negotiation", "agreed", "awaiting_contract", "awaiting_payment")
+_CONTRACT_PENDING = ("sent_to_streamer", "sent_to_brand")
+
+
+def _day_start(dt: datetime) -> datetime:
+    return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _build_hot_tasks_text(db: Session, workspace_id: int) -> str:
+    now = datetime.now()
+    today = _day_start(now)
+    rows = (
+        db.query(IntegrationStreamer)
+        .join(Integration)
+        .options(joinedload(IntegrationStreamer.integration))
+        .filter(Integration.workspace_id == workspace_id)
+        .all()
+    )
+
+    drafts = [s for s in rows if s.stage == "negotiation" and (s.amount is None or s.deadline is None)]
+    deadline_soon = [
+        s for s in rows
+        if s.deadline and s.stage in _ACTIVE_STAGES and today <= _day_start(s.deadline) <= today + timedelta(days=3)
+    ]
+    deadline_overdue = [
+        s for s in rows if s.deadline and s.stage in _ACTIVE_STAGES and _day_start(s.deadline) < today
+    ]
+    contract_overdue = [
+        s for s in rows
+        if s.contract_status in _CONTRACT_PENDING and s.contract_sent_date and (now - s.contract_sent_date).days > 5
+    ]
+    payment_overdue = [
+        s for s in rows
+        if s.payment_status not in ("paid", "not_invoiced") and s.deadline and s.stage != "cancelled" and _day_start(s.deadline) < today
+    ]
+
+    sections = [
+        ("📝 Черновики без суммы/даты", drafts, lambda s: "заполните карточку"),
+        ("📅 Дедлайн через 1-3 дня", deadline_soon, lambda s: s.deadline.strftime("%d.%m")),
+        ("⏰ Дедлайн просрочен", deadline_overdue, lambda s: s.deadline.strftime("%d.%m")),
+        ("✍️ Договор > 5 дней без ответа", contract_overdue, lambda s: f"отправлен {s.contract_sent_date.strftime('%d.%m')}"),
+        ("💰 Оплата просрочена", payment_overdue, lambda s: f"дедлайн {s.deadline.strftime('%d.%m')}"),
+    ]
+
+    total = sum(len(items) for _, items, _ in sections)
+    if total == 0:
+        return "🔥 Горячих задач нет, всё спокойно ✅"
+
+    lines = [f"🔥 <b>Горячие задачи</b> ({total})", ""]
+    for title, items, detail_fn in sections:
+        if not items:
+            continue
+        lines.append(f"<b>{title}</b> · {len(items)}")
+        for s in items[:8]:
+            lines.append(f"  {s.integration.brand} × {s.streamer_name} — {detail_fn(s)}")
+        if len(items) > 8:
+            lines.append(f"  и ещё {len(items) - 8}…")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+async def send_hot_tasks(tg_id: int):
+    db = SessionLocal()
+    try:
+        workspace_id = _resolve_workspace_id(db, tg_id)
+        if workspace_id is None:
+            await send_message(tg_id, "У тебя нет доступа ни к одному пространству.")
+            return
+        text = _build_hot_tasks_text(db, workspace_id)
+    finally:
+        db.close()
+    await send_message(tg_id, text)
 
 
 async def start_edit_flow(tg_id: int):
@@ -416,11 +492,25 @@ async def handle_document(tg_id: int, file_id: Optional[str], file_name: Optiona
     return True
 
 
-async def handle_callback(tg_id: int, data: str) -> bool:
-    """Обрабатывает нажатия инлайн-кнопок редактирования (callback_data вида 'e:...')."""
-    parts = data.split(":")
-    if not parts or parts[0] != "e":
-        return False
+async def _show_brand_picker(tg_id: int, workspace_id: int):
+    """Инлайн-список существующих рекламодателей + кнопка 'новый бренд' - первый шаг /new_integration."""
+    db = SessionLocal()
+    try:
+        advertisers = (
+            db.query(Advertiser)
+            .filter(Advertiser.workspace_id == workspace_id)
+            .order_by(Advertiser.updated_at.desc())
+            .limit(15)
+            .all()
+        )
+        keyboard = [[{"text": a.name, "callback_data": f"n:brand:{a.id}"}] for a in advertisers]
+        keyboard.append([{"text": "➕ Новый бренд", "callback_data": "n:newbrand"}])
+        await send_message(tg_id, f"Новая интеграция.\n{STEP_PROMPTS['brand']}", inline_keyboard=keyboard)
+    finally:
+        db.close()
+
+
+async def _handle_edit_callback(tg_id: int, parts: list) -> bool:
     action = parts[1] if len(parts) > 1 else ""
     try:
         if action == "cat":
@@ -439,9 +529,51 @@ async def handle_callback(tg_id: int, data: str) -> bool:
         else:
             return False
     except (IndexError, ValueError):
-        log.exception("Некорректный callback_data: %s", data)
+        log.exception("Некорректный callback_data: %s", parts)
         return False
     return True
+
+
+async def _handle_new_callback(tg_id: int, parts: list) -> bool:
+    action = parts[1] if len(parts) > 1 else ""
+    if action == "brand":
+        try:
+            aid = int(parts[2])
+        except (IndexError, ValueError):
+            return False
+        db = SessionLocal()
+        try:
+            adv = db.get(Advertiser, aid)
+        finally:
+            db.close()
+        if not adv:
+            await send_message(tg_id, "Рекламодатель не найден, напиши название текстом.")
+            return True
+        session = _sessions.get(tg_id) or {"step": 0, "data": {}}
+        session["data"]["brand"] = adv.name
+        session["step"] = 1
+        _sessions[tg_id] = session
+        await send_message(tg_id, f"Бренд: <b>{adv.name}</b>\n{STEP_PROMPTS[STEPS[1]]}")
+        return True
+    if action == "newbrand":
+        session = _sessions.get(tg_id) or {"step": 0, "data": {}}
+        session["step"] = 0
+        _sessions[tg_id] = session
+        await send_message(tg_id, STEP_PROMPTS["brand"])
+        return True
+    return False
+
+
+async def handle_callback(tg_id: int, data: str) -> bool:
+    """Обрабатывает нажатия инлайн-кнопок: 'e:...' - редактирование сделки, 'n:...' - выбор бренда при создании."""
+    parts = data.split(":")
+    if not parts:
+        return False
+    if parts[0] == "e":
+        return await _handle_edit_callback(tg_id, parts)
+    if parts[0] == "n":
+        return await _handle_new_callback(tg_id, parts)
+    return False
 
 
 def _cancel_text() -> str:
@@ -454,13 +586,17 @@ async def handle_command(tg_id: int, text: str) -> bool:
         db = SessionLocal()
         try:
             user = db.get(User, tg_id)
+            workspace_id = _resolve_workspace_id(db, tg_id) if user else None
         finally:
             db.close()
         if not user:
             await send_message(tg_id, "Доступ запрещён.")
             return True
         _sessions[tg_id] = {"step": 0, "data": {}}
-        await send_message(tg_id, f"Новая интеграция.\n{STEP_PROMPTS[STEPS[0]]}")
+        if workspace_id:
+            await _show_brand_picker(tg_id, workspace_id)
+        else:
+            await send_message(tg_id, f"Новая интеграция.\n{STEP_PROMPTS[STEPS[0]]}")
         return True
 
     if text.startswith("/edit_integration"):
@@ -474,6 +610,18 @@ async def handle_command(tg_id: int, text: str) -> bool:
             return True
         _sessions.pop(tg_id, None)
         await start_edit_flow(tg_id)
+        return True
+
+    if text.startswith("/hot_tasks"):
+        db = SessionLocal()
+        try:
+            user = db.get(User, tg_id)
+        finally:
+            db.close()
+        if not user:
+            await send_message(tg_id, "Доступ запрещён.")
+            return True
+        await send_hot_tasks(tg_id)
         return True
 
     if text.startswith("/cancel"):
