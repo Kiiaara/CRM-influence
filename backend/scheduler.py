@@ -251,6 +251,30 @@ async def _check_report_reminders():
         db.close()
 
 
+async def _check_case_reminders():
+    """Разово, когда сделка завершена (stage=done) и по ней ещё нет кейса для сайта - напоминаем добавить."""
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(IntegrationStreamer)
+            .options(joinedload(IntegrationStreamer.integration))
+            .filter(
+                IntegrationStreamer.stage == "done",
+                IntegrationStreamer.notified_case_reminder == False,
+            )
+            .all()
+        )
+        for s in rows:
+            if s.has_case:
+                s.notified_case_reminder = True
+                continue
+            await _notify_creator(db, s, f"🎬 Интеграция с <b>{s.streamer_name}</b> ({s.integration.brand}) завершена. Не забудь добавить кейс для сайта!")
+            s.notified_case_reminder = True
+        db.commit()
+    finally:
+        db.close()
+
+
 async def _check_hot_tasks_push():
     """Раз в N часов (свой интервал у каждого юзера) шлёт сводку «Горячие задачи»,
     если у юзера включена эта настройка, сейчас не тихие часы и есть что показать."""
@@ -377,6 +401,7 @@ def start_scheduler():
     _scheduler.add_job(_check_stream_start_reminders, "interval", minutes=1, id="stream_start_reminder")
     _scheduler.add_job(_check_screenshot_reminders, "interval", minutes=5, id="screenshot_reminder")
     _scheduler.add_job(_check_report_reminders, "interval", minutes=5, id="report_reminder")
+    _scheduler.add_job(_check_case_reminders, "interval", minutes=5, id="case_reminder")
     # персональная сводка "Горячие задачи" - каждому по своему интервалу/тихим часам (настройки в /settings)
     _scheduler.add_job(_check_hot_tasks_push, "interval", minutes=15, id="hot_tasks_push")
     _scheduler.start()

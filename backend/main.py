@@ -212,6 +212,18 @@ def _migrate_streamers_add_time_and_creator():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN created_by_tg_id BIGINT"))
 
 
+def _migrate_streamers_add_case_reminder():
+    """Добавляем флаг разового напоминания «добавь кейс» при завершении сделки, если его нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "integration_streamers" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("integration_streamers")]
+    if "notified_case_reminder" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN notified_case_reminder BOOLEAN DEFAULT 0"))
+
+
 def _migrate_integrations_add_advertiser():
     """Добавляем advertiser_id в integrations, если его нет."""
     from sqlalchemy import text, inspect
@@ -290,6 +302,7 @@ async def lifespan(app: FastAPI):
     _migrate_streamers_add_ord_marking()
     _migrate_streamers_add_contract_status()
     _migrate_streamers_add_time_and_creator()
+    _migrate_streamers_add_case_reminder()
     _migrate_integrations_add_advertiser()
     _migrate_brand_contacts_add_advertiser()
     _backfill_advertisers()

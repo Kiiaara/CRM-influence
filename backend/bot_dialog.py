@@ -236,6 +236,7 @@ def compute_hot_tasks(db: Session, workspace_id: int) -> tuple[int, str]:
         s for s in rows
         if s.payment_status not in ("paid", "not_invoiced") and s.deadline and s.stage != "cancelled" and _day_start(s.deadline) < today
     ]
+    case_missing = [s for s in rows if s.stage == "done" and not s.has_case]
 
     sections = [
         ("📝 Черновики без суммы/даты", drafts, lambda s: "заполните карточку"),
@@ -243,6 +244,7 @@ def compute_hot_tasks(db: Session, workspace_id: int) -> tuple[int, str]:
         ("⏰ Дедлайн просрочен", deadline_overdue, lambda s: s.deadline.strftime("%d.%m")),
         ("✍️ Договор > 5 дней без ответа", contract_overdue, lambda s: f"отправлен {s.contract_sent_date.strftime('%d.%m')}"),
         ("💰 Оплата просрочена", payment_overdue, lambda s: f"дедлайн {s.deadline.strftime('%d.%m')}"),
+        ("🎬 Завершено, нет кейса для сайта", case_missing, lambda s: "добавьте кейс"),
     ]
 
     total = sum(len(items) for _, items, _ in sections)
@@ -513,6 +515,8 @@ async def _apply_enum(tg_id: int, sid: int, field: str, raw_val: str):
         it = db.get(Integration, s.integration_id)
         if field in TRACKED_FIELDS and it:
             _log_audit(db, it, s, field, old, value, tg_id)
+        if field == "stage" and old == "done" and value != "done":
+            s.notified_case_reminder = False
         db.commit()
         await send_message(tg_id, "✅ Обновлено")
         await _show_field_menu(tg_id, sid, _category_of(field))
