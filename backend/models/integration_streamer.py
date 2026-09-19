@@ -63,6 +63,7 @@ class IntegrationStreamer(Base):
     notified_screenshot: Mapped[bool] = mapped_column(default=False)
     notified_report: Mapped[bool] = mapped_column(default=False)
     notified_stream_start: Mapped[bool] = mapped_column(default=False)
+    notified_case_reminder: Mapped[bool] = mapped_column(default=False)
 
     # кто добавил карточку в канбан - напоминания по ней таргетируются на этого юзера
     created_by_tg_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.tg_id", ondelete="SET NULL"), nullable=True)
@@ -72,3 +73,8 @@ class IntegrationStreamer(Base):
 
     integration: Mapped["Integration"] = relationship(back_populates="streamers")
     payments: Mapped[list["IntegrationPayment"]] = relationship(cascade="all, delete-orphan")
+    case_studies: Mapped[list["CaseStudy"]] = relationship(cascade="all, delete-orphan")
+
+    @property
+    def has_case(self) -> bool:
+        return len(self.case_studies) > 0

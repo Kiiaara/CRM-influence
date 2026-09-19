@@ -27,7 +27,7 @@ export const CONTENT_LABELS: Record<ContentStatus, string> = {
 }
 
 export type OrdResponsible = 'us' | 'client'
-export type OrdStatus = 'todo' | 'done'
+export type OrdStatus = 'todo' | 'done' | 'not_required'
 export type OrdReportingStatus = 'not_submitted' | 'submitted' | 'overdue'
 
 export const ORD_RESPONSIBLE_LABELS: Record<OrdResponsible, string> = {
@@ -38,6 +38,7 @@ export const ORD_RESPONSIBLE_LABELS: Record<OrdResponsible, string> = {
 export const ORD_STATUS_LABELS: Record<OrdStatus, string> = {
   todo: 'Сделать',
   done: 'Сделано',
+  not_required: 'Не требуется',
 }
 
 export const ORD_REPORTING_LABELS: Record<OrdReportingStatus, string> = {
@@ -107,6 +108,7 @@ export interface Streamer {
   ord_reporting_status: OrdReportingStatus
   position: number
   created_by_tg_id: number | null
+  has_case: boolean
   created_at: string
   updated_at: string
 }

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspacesApi, type Workspace } from './api/workspaces'
 import { getCurrentWorkspaceId, setCurrentWorkspaceId } from './api/client'
@@ -19,22 +19,29 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     queryFn: workspacesApi.list,
   })
 
+  // выбранный id держим в реальном React state, а не читаем localStorage прямо внутри useMemo -
+  // React Query возвращает тот же reference для workspaces при structural sharing (список не
+  // поменялся), так что useMemo от [workspaces] не пересчитывался бы при смене только выбора,
+  // и сайдбар не обновлялся бы после переключения
+  const [currentId, setCurrentId] = useState<number | null>(() => getCurrentWorkspaceId())
+
   const current = useMemo(() => {
     if (workspaces.length === 0) return null
-    const storedId = getCurrentWorkspaceId()
-    return workspaces.find(w => w.id === storedId) ?? workspaces[0]
-  }, [workspaces])
+    return workspaces.find(w => w.id === currentId) ?? workspaces[0]
+  }, [workspaces, currentId])
 
   // если сохранённый id больше не валиден (удалили пространство/вышли из него) - откатываемся на первое
   useEffect(() => {
-    if (current && current.id !== getCurrentWorkspaceId()) {
+    if (current && current.id !== currentId) {
+      setCurrentId(current.id)
       setCurrentWorkspaceId(current.id)
     }
-  }, [current])
+  }, [current, currentId])
 
   const switchWorkspace = (id: number) => {
-    if (id === current?.id) return
+    if (id === currentId) return
     setCurrentWorkspaceId(id)
+    setCurrentId(id)
     // почти все данные в приложении завязаны на workspace - проще инвалидировать всё разом
     queryClient.invalidateQueries()
   }

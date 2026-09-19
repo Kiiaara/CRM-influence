@@ -309,17 +309,22 @@ function BrandContactForm({
 
   const fieldCls = "w-full bg-white dark:bg-brand-900/30 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
 
+  const save = () => {
+    if (value.trim()) onSave({ contact_type: contactType, value: value.trim(), label, is_primary: isPrimary, notes })
+  }
+  const onEnter = (e: React.KeyboardEvent) => { if (e.key === 'Enter') save() }
+
   return (
     <div className="border border-slate-200 dark:border-brand-800 rounded-lg p-2 space-y-1.5 bg-slate-50 dark:bg-brand-950/40">
       <div className="grid grid-cols-2 gap-1.5">
         <select value={contactType} onChange={e => setContactType(e.target.value as ContactType)} className={fieldCls}>
           {Object.entries(CONTACT_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{CONTACT_TYPE_ICONS[k as ContactType]} {v}</option>)}
         </select>
-        <input value={value} onChange={e => setValue(e.target.value)} placeholder="Значение" className={fieldCls} />
+        <input value={value} onChange={e => setValue(e.target.value)} onKeyDown={onEnter} placeholder="Значение" className={fieldCls} />
       </div>
       <div className="grid grid-cols-2 gap-1.5">
-        <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Роль (менеджер, директор…)" className={fieldCls} />
-        <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Заметка (часовой пояс и т.п.)" className={fieldCls} />
+        <input value={label} onChange={e => setLabel(e.target.value)} onKeyDown={onEnter} placeholder="Роль (менеджер, директор…)" className={fieldCls} />
+        <input value={notes} onChange={e => setNotes(e.target.value)} onKeyDown={onEnter} placeholder="Заметка (часовой пояс и т.п.)" className={fieldCls} />
       </div>
       <div className="flex items-center justify-between">
         <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
@@ -329,7 +334,7 @@ function BrandContactForm({
         <div className="flex gap-2">
           <button onClick={onCancel} className="text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-brand-900 px-2 py-1 rounded-lg">Отмена</button>
           <button
-            onClick={() => value.trim() && onSave({ contact_type: contactType, value: value.trim(), label, is_primary: isPrimary, notes })}
+            onClick={save}
             className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg"
           >
             Сохранить
