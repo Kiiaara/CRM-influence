@@ -176,6 +176,22 @@ def _migrate_streamers_add_contract_status():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN brief TEXT DEFAULT ''"))
 
 
+def _migrate_streamers_add_time_and_creator():
+    """Добавляем точное время старта стрима, флаг напоминания о старте и создателя карточки, если их нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "integration_streamers" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("integration_streamers")]
+    with engine.begin() as conn:
+        if "integration_time" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN integration_time VARCHAR(5)"))
+        if "notified_stream_start" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN notified_stream_start BOOLEAN DEFAULT 0"))
+        if "created_by_tg_id" not in cols:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN created_by_tg_id BIGINT"))
+
+
 def _migrate_integrations_add_advertiser():
     """Добавляем advertiser_id в integrations, если его нет."""
     from sqlalchemy import text, inspect
@@ -252,6 +268,7 @@ async def lifespan(app: FastAPI):
     _migrate_streamers_add_integration_date()
     _migrate_streamers_add_ord_marking()
     _migrate_streamers_add_contract_status()
+    _migrate_streamers_add_time_and_creator()
     _migrate_integrations_add_advertiser()
     _migrate_brand_contacts_add_advertiser()
     _backfill_advertisers()

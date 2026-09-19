@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, DateTime, Integer, ForeignKey, Text, Numeric
+from sqlalchemy import String, DateTime, Integer, BigInteger, ForeignKey, Text, Numeric
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
@@ -35,6 +35,8 @@ class IntegrationStreamer(Base):
 
     deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     integration_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    # точное время старта стрима в формате "ЧЧ:ММ" - если известно; integration_date хранит только день
+    integration_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
     description: Mapped[str] = mapped_column(Text, default="")
 
     contract_file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -60,6 +62,10 @@ class IntegrationStreamer(Base):
     notified_branding_check: Mapped[bool] = mapped_column(default=False)
     notified_screenshot: Mapped[bool] = mapped_column(default=False)
     notified_report: Mapped[bool] = mapped_column(default=False)
+    notified_stream_start: Mapped[bool] = mapped_column(default=False)
+
+    # кто добавил карточку в канбан - напоминания по ней таргетируются на этого юзера
+    created_by_tg_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.tg_id", ondelete="SET NULL"), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

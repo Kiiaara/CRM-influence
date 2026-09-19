@@ -1,6 +1,7 @@
 """CRM интеграций: сделка с брендом (Integration) содержит пул стримеров
 (IntegrationStreamer), каждый со своим статусом/сроком/суммой/договором/оплатами."""
 import os
+import re
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -129,6 +130,14 @@ def _validate_contract_status(v: str):
         raise HTTPException(400, f"contract_status должен быть одним из: {', '.join(CONTRACT_STATUSES)}")
 
 
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _validate_integration_time(v: Optional[str]):
+    if v is not None and not _TIME_RE.match(v):
+        raise HTTPException(400, "integration_time должен быть в формате ЧЧ:ММ (например 18:30)")
+
+
 # ---------- схемы ----------
 
 class StreamerOut(BaseModel):
@@ -145,6 +154,7 @@ class StreamerOut(BaseModel):
     streamer_tax_percent: float
     deadline: Optional[datetime] = None
     integration_date: Optional[datetime] = None
+    integration_time: Optional[str] = None
     description: str
     contract_file_name: Optional[str] = None
     contract_valid_until: Optional[datetime] = None
@@ -157,6 +167,7 @@ class StreamerOut(BaseModel):
     ord_status: str
     ord_reporting_status: str
     position: int
+    created_by_tg_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
@@ -201,6 +212,7 @@ class StreamerCreate(BaseModel):
     streamer_tax_percent: float = 6
     deadline: Optional[datetime] = None
     integration_date: Optional[datetime] = None
+    integration_time: Optional[str] = None
     description: str = ""
     ord_responsible: str = "us"
     ord_status: str = "todo"
@@ -219,6 +231,7 @@ class StreamerUpdate(BaseModel):
     streamer_tax_percent: Optional[float] = None
     deadline: Optional[datetime] = None
     integration_date: Optional[datetime] = None
+    integration_time: Optional[str] = None
     description: Optional[str] = None
     contract_valid_until: Optional[datetime] = None
     contract_status: Optional[str] = None
@@ -439,6 +452,7 @@ def create_streamer(
     _validate_ord_responsible(data.ord_responsible)
     _validate_ord_status(data.ord_status)
     _validate_ord_reporting_status(data.ord_reporting_status)
+    _validate_integration_time(data.integration_time)
     max_pos = (
         db.query(IntegrationStreamer)
         .filter(IntegrationStreamer.integration_id == integration_id, IntegrationStreamer.stage == data.stage)
@@ -458,11 +472,13 @@ def create_streamer(
         streamer_tax_percent=data.streamer_tax_percent,
         deadline=data.deadline,
         integration_date=data.integration_date,
+        integration_time=data.integration_time,
         description=data.description,
         ord_responsible=data.ord_responsible,
         ord_status=data.ord_status,
         ord_reporting_status=data.ord_reporting_status,
         position=(max_pos.position + 1) if max_pos else 0,
+        created_by_tg_id=user.tg_id,
     )
     db.add(s)
     db.commit()
@@ -494,12 +510,21 @@ def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depend
         _validate_ord_reporting_status(data.ord_reporting_status)
     if data.contract_status is not None:
         _validate_contract_status(data.contract_status)
+    if "integration_time" in data.model_fields_set:
+        _validate_integration_time(data.integration_time)
 
     changes = data.model_dump(exclude_unset=True)
     old_values = {f: getattr(s, f) for f in TRACKED_FIELDS if f in changes}
 
     for k, v in changes.items():
         setattr(s, k, v)
+
+    # если время/дату интеграции поправили - пересчитываем цепочку напоминаний заново
+    if "integration_date" in changes or "integration_time" in changes:
+        s.notified_stream_start = False
+        s.notified_screenshot = False
+        s.notified_report = False
+
     db.commit()
     db.refresh(s)
 

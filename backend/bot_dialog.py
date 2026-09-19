@@ -160,6 +160,7 @@ async def _finish(tg_id: int, data: dict):
             streamer_tax_percent=data.get("streamer_tax_percent", 6),
             integration_date=data.get("integration_date"),
             position=(max_pos.position + 1) if max_pos else 0,
+            created_by_tg_id=tg_id,
         )
         db.add(streamer)
         db.commit()

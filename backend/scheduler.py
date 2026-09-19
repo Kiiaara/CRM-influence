@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, Session
 
 from config import settings
 from database import SessionLocal
@@ -102,10 +102,49 @@ async def _notify_admins(text: str):
         db.close()
 
 
+async def _notify_creator(db: Session, s: IntegrationStreamer, text: str):
+    """Шлём тому, кто добавил карточку стримера в канбан. Если создатель не
+    известен (старые записи) или ещё не подключил чат - фолбэк на рассылку
+    всем админам, как было раньше."""
+    creator = db.get(User, s.created_by_tg_id) if s.created_by_tg_id else None
+    if creator and creator.tg_chat_ready:
+        await send_message(creator.tg_id, text)
+        return
+    await _notify_admins(text)
+
+
 def _day_bounds(offset_days: int) -> tuple[datetime, datetime]:
     day = (datetime.now() + timedelta(days=offset_days)).date()
     start = datetime(day.year, day.month, day.day)
     return start, start + timedelta(days=1)
+
+
+def _stream_start_dt(s: IntegrationStreamer) -> datetime | None:
+    """Точное время старта стрима, если оно указано (integration_date - только день,
+    время времени старта хранится отдельно в integration_time как 'ЧЧ:ММ')."""
+    if not s.integration_date or not s.integration_time:
+        return None
+    try:
+        hh, mm = (int(x) for x in s.integration_time.split(":"))
+    except ValueError:
+        return None
+    return s.integration_date.replace(hour=hh, minute=mm, second=0, microsecond=0)
+
+
+def _screenshot_trigger_dt(s: IntegrationStreamer) -> datetime | None:
+    """Через 2 часа после старта стрима: либо если время не указано - в 15:00 того же дня."""
+    start = _stream_start_dt(s)
+    if start:
+        return start + timedelta(hours=2)
+    if s.integration_date:
+        return s.integration_date.replace(hour=15, minute=0, second=0, microsecond=0)
+    return None
+
+
+def _report_trigger_dt(s: IntegrationStreamer) -> datetime | None:
+    """Ещё через 20 минут после напоминания про скриншот."""
+    screenshot = _screenshot_trigger_dt(s)
+    return screenshot + timedelta(minutes=20) if screenshot else None
 
 
 async def _check_branding_reminders():
@@ -125,56 +164,87 @@ async def _check_branding_reminders():
             .all()
         )
         for s in rows:
-            await _notify_admins(f"🎨 Завтра интеграция с <b>{s.streamer_name}</b>. Повесили брендинг по РК {s.integration.brand}?")
+            await _notify_creator(db, s, f"🎨 Завтра интеграция с <b>{s.streamer_name}</b>. Повесили брендинг по РК {s.integration.brand}?")
             s.notified_branding_check = True
         db.commit()
     finally:
         db.close()
 
 
-async def _check_screenshot_reminders():
-    """В день интеграции (утром): 'сделала скриншот?'"""
+async def _check_stream_start_reminders():
+    """Ровно в момент старта стрима (если время указано): 'стрим начинается'."""
     db = SessionLocal()
     try:
-        start, end = _day_bounds(0)
+        now = datetime.now()
         rows = (
             db.query(IntegrationStreamer)
             .options(joinedload(IntegrationStreamer.integration))
             .filter(
-                IntegrationStreamer.integration_date >= start,
-                IntegrationStreamer.integration_date < end,
+                IntegrationStreamer.integration_date >= now - timedelta(days=1),
+                IntegrationStreamer.integration_date <= now + timedelta(days=1),
+                IntegrationStreamer.integration_time.isnot(None),
+                IntegrationStreamer.notified_stream_start == False,
+                IntegrationStreamer.stage != "cancelled",
+            )
+            .all()
+        )
+        for s in rows:
+            trigger = _stream_start_dt(s)
+            if trigger and now >= trigger:
+                await _notify_creator(db, s, f"🔴 Стрим начинается: <b>{s.streamer_name}</b> ({s.integration.brand})")
+                s.notified_stream_start = True
+        db.commit()
+    finally:
+        db.close()
+
+
+async def _check_screenshot_reminders():
+    """Через 2 часа после старта стрима (или в 15:00, если время не указано): 'сделала скриншот?'"""
+    db = SessionLocal()
+    try:
+        now = datetime.now()
+        rows = (
+            db.query(IntegrationStreamer)
+            .options(joinedload(IntegrationStreamer.integration))
+            .filter(
+                IntegrationStreamer.integration_date >= now - timedelta(days=2),
+                IntegrationStreamer.integration_date <= now,
                 IntegrationStreamer.notified_screenshot == False,
                 IntegrationStreamer.stage != "cancelled",
             )
             .all()
         )
         for s in rows:
-            await _notify_admins(f"📸 Сегодня интеграция с <b>{s.streamer_name}</b> ({s.integration.brand}). Ты сделала скриншот РК?")
-            s.notified_screenshot = True
+            trigger = _screenshot_trigger_dt(s)
+            if trigger and now >= trigger:
+                await _notify_creator(db, s, f"📸 Сегодня интеграция с <b>{s.streamer_name}</b> ({s.integration.brand}). Ты сделала скриншот РК?")
+                s.notified_screenshot = True
         db.commit()
     finally:
         db.close()
 
 
 async def _check_report_reminders():
-    """В конце дня интеграции: 'отдала клиенту отчёт?'"""
+    """Через 20 минут после напоминания про скриншот: 'отдала клиенту отчёт?'"""
     db = SessionLocal()
     try:
-        start, end = _day_bounds(0)
+        now = datetime.now()
         rows = (
             db.query(IntegrationStreamer)
             .options(joinedload(IntegrationStreamer.integration))
             .filter(
-                IntegrationStreamer.integration_date >= start,
-                IntegrationStreamer.integration_date < end,
+                IntegrationStreamer.integration_date >= now - timedelta(days=2),
+                IntegrationStreamer.integration_date <= now,
                 IntegrationStreamer.notified_report == False,
                 IntegrationStreamer.stage != "cancelled",
             )
             .all()
         )
         for s in rows:
-            await _notify_admins(f"📋 Интеграция с <b>{s.streamer_name}</b> ({s.integration.brand}) сегодня. Отдала клиенту отчёт?")
-            s.notified_report = True
+            trigger = _report_trigger_dt(s)
+            if trigger and now >= trigger:
+                await _notify_creator(db, s, f"📋 Интеграция с <b>{s.streamer_name}</b> ({s.integration.brand}) сегодня. Отдала клиенту отчёт?")
+                s.notified_report = True
         db.commit()
     finally:
         db.close()
@@ -251,10 +321,12 @@ def start_scheduler():
     _scheduler.add_job(_check_deadlines, "interval", seconds=interval, id="deadlines")
     _scheduler.add_job(_notify_assigned, "interval", seconds=30, id="assigned")
     _scheduler.add_job(_poll_telegram_updates, "interval", seconds=2, id="tg_poll", max_instances=1, coalesce=True)
-    # напоминания по интеграциям: за день утром, в день утром (скрин), в день вечером (отчёт)
+    # напоминания по интеграциям: за день утром (брендинг - фикс. время),
+    # дальше цепочка от времени старта стрима - старт / +2ч скриншот / +20мин отчёт
     _scheduler.add_job(_check_branding_reminders, CronTrigger(hour=10, minute=0), id="branding_reminder")
-    _scheduler.add_job(_check_screenshot_reminders, CronTrigger(hour=10, minute=5), id="screenshot_reminder")
-    _scheduler.add_job(_check_report_reminders, CronTrigger(hour=19, minute=0), id="report_reminder")
+    _scheduler.add_job(_check_stream_start_reminders, "interval", minutes=1, id="stream_start_reminder")
+    _scheduler.add_job(_check_screenshot_reminders, "interval", minutes=5, id="screenshot_reminder")
+    _scheduler.add_job(_check_report_reminders, "interval", minutes=5, id="report_reminder")
     _scheduler.start()
     log.info("Scheduler started")
 

@@ -93,6 +93,7 @@ export interface Streamer {
   paid_percent: number | null
   deadline: string | null
   integration_date: string | null
+  integration_time: string | null
   description: string
   contract_file_name: string | null
   contract_valid_until: string | null
@@ -105,6 +106,7 @@ export interface Streamer {
   ord_status: OrdStatus
   ord_reporting_status: OrdReportingStatus
   position: number
+  created_by_tg_id: number | null
   created_at: string
   updated_at: string
 }
