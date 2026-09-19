@@ -8,6 +8,7 @@ import HistoryPage from './pages/HistoryPage'
 import MarkingPage from './pages/MarkingPage'
 import AdvertisersPage from './pages/AdvertisersPage'
 import DocumentsPage from './pages/DocumentsPage'
+import AnalyticsPage from './pages/AnalyticsPage'
 import StreamerProfilesPage from './pages/StreamerProfilesPage'
 import SearchPage from './pages/SearchPage'
 import AdminUsersPage from './pages/AdminUsersPage'
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/marking" element={<MarkingPage />} />
         <Route path="/advertisers" element={<AdvertisersPage />} />
         <Route path="/documents" element={<DocumentsPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/streamers" element={<StreamerProfilesPage />} />
         <Route path="/search" element={<SearchPage />} />

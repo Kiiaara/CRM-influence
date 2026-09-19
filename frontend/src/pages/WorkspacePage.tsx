@@ -13,6 +13,7 @@ const navItems = [
   { to: '/marking', label: 'Маркировка', icon: '🏷️' },
   { to: '/documents', label: 'Документы', icon: '📄' },
   { to: '/advertisers', label: 'Рекламодатели', icon: '🏢' },
+  { to: '/analytics', label: 'Аналитика', icon: '📊' },
   { to: '/history', label: 'История', icon: '🗂️' },
   { to: '/streamers', label: 'База стримеров', icon: '📋' },
 ]
