@@ -16,6 +16,7 @@ from models.task import Task
 from models.user import User
 from models.integration_streamer import IntegrationStreamer
 from notifier import send_message
+import notifier
 import bot_dialog
 import httpx
 
@@ -255,7 +256,8 @@ _tg_offset = 0
 
 
 async def _poll_telegram_updates():
-    """Слушает getUpdates, если кто-то из whitelist пишет /start - отмечаем tg_chat_ready=True."""
+    """Слушает getUpdates: /start, текстовые команды/шаги диалога, нажатия инлайн-кнопок
+    редактирования (callback_query) и присланные документы (файл договора)."""
     global _tg_offset
     if not settings.auth_bot_token:
         return
@@ -263,25 +265,42 @@ async def _poll_telegram_updates():
         async with httpx.AsyncClient(timeout=35.0) as client:
             r = await client.get(
                 f"{settings.telegram_api_base}/bot{settings.auth_bot_token}/getUpdates",
-                params={"offset": _tg_offset, "timeout": 25, "allowed_updates": '["message"]'},
+                params={"offset": _tg_offset, "timeout": 25, "allowed_updates": '["message","callback_query"]'},
             )
             if r.status_code != 200:
                 return
             data = r.json()
             for upd in data.get("result", []):
                 _tg_offset = upd["update_id"] + 1
+
+                cq = upd.get("callback_query")
+                if cq:
+                    tg_id = (cq.get("from") or {}).get("id")
+                    cq_id = cq.get("id")
+                    if tg_id and cq_id:
+                        await notifier.answer_callback_query(cq_id)
+                        await bot_dialog.handle_callback(tg_id, cq.get("data") or "")
+                    continue
+
                 msg = upd.get("message") or {}
                 from_ = msg.get("from") or {}
                 tg_id = from_.get("id")
-                text = msg.get("text") or ""
                 if not tg_id:
                     continue
+
+                doc = msg.get("document")
+                if doc:
+                    await bot_dialog.handle_document(tg_id, doc.get("file_id"), doc.get("file_name"))
+                    continue
+
+                text = msg.get("text") or ""
                 if text.startswith("/start"):
                     _mark_chat_ready(tg_id, from_)
                     await send_message(
                         tg_id,
                         "Привет 👋 Я буду присылать тебе уведомления по интеграциям из CRM-influence.\n\n"
-                        "Жми кнопку ниже или пиши /new_integration, чтобы добавить интеграцию.",
+                        "Жми кнопку ниже или пиши /new_integration, чтобы добавить интеграцию, "
+                        "/edit_integration - чтобы отредактировать существующую.",
                         with_keyboard=True,
                     )
                     continue
@@ -289,6 +308,8 @@ async def _poll_telegram_updates():
                     text = "/cancel"
                 elif text.strip() == "➕ Новая интеграция":
                     text = "/new_integration"
+                elif text.strip() == "✏️ Редактировать":
+                    text = "/edit_integration"
                 if await bot_dialog.handle_command(tg_id, text):
                     continue
                 await bot_dialog.handle_message(tg_id, text)
