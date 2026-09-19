@@ -251,6 +251,31 @@ async def _check_report_reminders():
         db.close()
 
 
+async def _check_hot_tasks_push():
+    """Раз в N часов (свой интервал у каждого юзера) шлёт сводку «Горячие задачи»,
+    если у юзера включена эта настройка, сейчас не тихие часы и есть что показать."""
+    db = SessionLocal()
+    try:
+        now = datetime.now()
+        users = db.query(User).filter(User.tg_chat_ready == True, User.notify_hot_tasks == True).all()
+        for u in users:
+            if bot_dialog.in_quiet_hours(now, u.quiet_hours_start, u.quiet_hours_end):
+                continue
+            interval = max(1, u.notify_interval_hours or 4)
+            if u.last_hot_tasks_notified_at and (now - u.last_hot_tasks_notified_at) < timedelta(hours=interval):
+                continue
+            workspace_id = bot_dialog._resolve_workspace_id(db, u.tg_id)
+            u.last_hot_tasks_notified_at = now
+            if workspace_id is None:
+                continue
+            total, text = bot_dialog.compute_hot_tasks(db, workspace_id)
+            if total > 0:
+                await send_message(u.tg_id, text)
+        db.commit()
+    finally:
+        db.close()
+
+
 # ── Long-polling listener для /start ────────────────────────
 _tg_offset = 0
 
@@ -312,6 +337,8 @@ async def _poll_telegram_updates():
                     text = "/edit_integration"
                 elif text.strip() == "🔥 Горячие задачи":
                     text = "/hot_tasks"
+                elif text.strip() == "⚙️ Настройки":
+                    text = "/settings"
                 if await bot_dialog.handle_command(tg_id, text):
                     continue
                 await bot_dialog.handle_message(tg_id, text)
@@ -350,6 +377,8 @@ def start_scheduler():
     _scheduler.add_job(_check_stream_start_reminders, "interval", minutes=1, id="stream_start_reminder")
     _scheduler.add_job(_check_screenshot_reminders, "interval", minutes=5, id="screenshot_reminder")
     _scheduler.add_job(_check_report_reminders, "interval", minutes=5, id="report_reminder")
+    # персональная сводка "Горячие задачи" - каждому по своему интервалу/тихим часам (настройки в /settings)
+    _scheduler.add_job(_check_hot_tasks_push, "interval", minutes=15, id="hot_tasks_push")
     _scheduler.start()
     log.info("Scheduler started")
 

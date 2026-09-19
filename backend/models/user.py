@@ -20,4 +20,12 @@ class User(Base):
     tg_chat_ready: Mapped[bool] = mapped_column(Boolean, default=False)
     # закреплённые id страниц - JSON-массив. Хранится в виде строки "[1,2,3]"
     pinned_pages: Mapped[str] = mapped_column(String(2048), default="[]")
+
+    # настройки бот-уведомлений: сводка "Горячие задачи" (черновики/дедлайны/договоры/оплаты)
+    notify_hot_tasks: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_interval_hours: Mapped[int] = mapped_column(default=4)
+    quiet_hours_start: Mapped[int | None] = mapped_column(nullable=True, default=22)  # 0-23, None = тихие часы выключены
+    quiet_hours_end: Mapped[int | None] = mapped_column(nullable=True, default=8)
+    last_hot_tasks_notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
