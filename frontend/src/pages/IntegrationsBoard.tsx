@@ -740,7 +740,7 @@ export function StreamerModal({
 
           <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3">
             <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Маркировка (ОРД)</div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className={`grid grid-cols-1 ${form.ord_responsible === 'not_required' ? '' : 'sm:grid-cols-3'} gap-3`}>
               <div>
                 <label className="text-xs text-slate-500 dark:text-slate-400">Ответственный</label>
                 <select
@@ -751,26 +751,30 @@ export function StreamerModal({
                   {Object.entries(ORD_RESPONSIBLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
               </div>
-              <div>
-                <label className="text-xs text-slate-500 dark:text-slate-400">Маркировка</label>
-                <select
-                  value={form.ord_status}
-                  onChange={e => setForm({ ...form, ord_status: e.target.value as OrdStatus })}
-                  className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
-                >
-                  {Object.entries(ORD_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 dark:text-slate-400">Отчётность</label>
-                <select
-                  value={form.ord_reporting_status}
-                  onChange={e => setForm({ ...form, ord_reporting_status: e.target.value as OrdReportingStatus })}
-                  className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
-                >
-                  {Object.entries(ORD_REPORTING_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-              </div>
+              {form.ord_responsible !== 'not_required' && (
+                <>
+                  <div>
+                    <label className="text-xs text-slate-500 dark:text-slate-400">Маркировка</label>
+                    <select
+                      value={form.ord_status}
+                      onChange={e => setForm({ ...form, ord_status: e.target.value as OrdStatus })}
+                      className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                    >
+                      {Object.entries(ORD_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 dark:text-slate-400">Отчётность</label>
+                    <select
+                      value={form.ord_reporting_status}
+                      onChange={e => setForm({ ...form, ord_reporting_status: e.target.value as OrdReportingStatus })}
+                      className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+                    >
+                      {Object.entries(ORD_REPORTING_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

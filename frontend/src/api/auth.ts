@@ -29,4 +29,8 @@ export const authApi = {
     const { data } = await api.post('/auth/vk', payload)
     return data as Me
   },
+  async updateMe(label: string) {
+    const { data } = await api.patch('/users/me', { label })
+    return data as Me
+  },
 }

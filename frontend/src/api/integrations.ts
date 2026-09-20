@@ -26,13 +26,14 @@ export const CONTENT_LABELS: Record<ContentStatus, string> = {
   filmed: 'Снят контент',
 }
 
-export type OrdResponsible = 'us' | 'client'
+export type OrdResponsible = 'us' | 'client' | 'not_required'
 export type OrdStatus = 'todo' | 'done' | 'not_required'
 export type OrdReportingStatus = 'not_submitted' | 'submitted' | 'overdue'
 
 export const ORD_RESPONSIBLE_LABELS: Record<OrdResponsible, string> = {
   us: 'Мы',
   client: 'Клиент',
+  not_required: 'Не требуется',
 }
 
 export const ORD_STATUS_LABELS: Record<OrdStatus, string> = {

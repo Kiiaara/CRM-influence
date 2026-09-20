@@ -37,6 +37,29 @@ class UserUpdate(BaseModel):
     label: Optional[str] = None
 
 
+class MeUpdate(BaseModel):
+    label: str
+
+
+@router.patch("/me")
+def update_me(data: MeUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Юзер сам может поменять только своё отображаемое имя - роль назначает только админ."""
+    label = data.label.strip()
+    if not label:
+        raise HTTPException(400, "Имя не может быть пустым")
+    user.label = label
+    db.commit()
+    db.refresh(user)
+    return {
+        "tg_id": user.tg_id,
+        "username": user.tg_username,
+        "first_name": user.tg_first_name,
+        "role": user.role,
+        "label": user.label,
+        "tg_chat_ready": user.tg_chat_ready,
+    }
+
+
 @router.get("", response_model=List[UserOut])
 def list_users(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rows = db.query(User).order_by(User.created_at.asc()).all()

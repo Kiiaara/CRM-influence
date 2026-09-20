@@ -9,9 +9,11 @@ import MarkingPage from './pages/MarkingPage'
 import AdvertisersPage from './pages/AdvertisersPage'
 import DocumentsPage from './pages/DocumentsPage'
 import AnalyticsPage from './pages/AnalyticsPage'
+import CasesPage from './pages/CasesPage'
 import StreamerProfilesPage from './pages/StreamerProfilesPage'
 import SearchPage from './pages/SearchPage'
 import AdminUsersPage from './pages/AdminUsersPage'
+import ProfilePage from './pages/ProfilePage'
 import { authApi } from './api/auth'
 import { WorkspaceProvider } from './workspaceContext'
 
@@ -40,10 +42,12 @@ export default function App() {
         <Route path="/advertisers" element={<AdvertisersPage />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/cases" element={<CasesPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/streamers" element={<StreamerProfilesPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/admin/users" element={<AdminUsersPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

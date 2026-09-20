@@ -98,7 +98,7 @@ router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 STAGES = ("negotiation", "agreed", "awaiting_contract", "awaiting_payment", "done", "cancelled")
 PAYMENT_STATUSES = ("not_invoiced", "invoiced", "partial", "paid")
 CONTENT_STATUSES = ("awaiting_brief", "filming", "filmed")
-ORD_RESPONSIBLE = ("us", "client")
+ORD_RESPONSIBLE = ("us", "client", "not_required")
 ORD_STATUSES = ("todo", "done", "not_required")
 ORD_REPORTING_STATUSES = ("not_submitted", "submitted", "overdue")
 CONTRACT_STATUSES = (

@@ -120,22 +120,30 @@ export default function MarkingPage() {
                   </select>
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">
-                  <select
-                    value={r.ord_status}
-                    onChange={e => update.mutate({ id: r.id, p: { ord_status: e.target.value as OrdStatus } })}
-                    className={`${selectCls} ${STATUS_COLORS[r.ord_status]}`}
-                  >
-                    {Object.entries(ORD_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  {r.ord_responsible === 'not_required' ? (
+                    <span className="text-slate-400 text-xs">—</span>
+                  ) : (
+                    <select
+                      value={r.ord_status}
+                      onChange={e => update.mutate({ id: r.id, p: { ord_status: e.target.value as OrdStatus } })}
+                      className={`${selectCls} ${STATUS_COLORS[r.ord_status]}`}
+                    >
+                      {Object.entries(ORD_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  )}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">
-                  <select
-                    value={r.ord_reporting_status}
-                    onChange={e => update.mutate({ id: r.id, p: { ord_reporting_status: e.target.value as OrdReportingStatus } })}
-                    className={`${selectCls} ${REPORTING_COLORS[r.ord_reporting_status]}`}
-                  >
-                    {Object.entries(ORD_REPORTING_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
+                  {r.ord_responsible === 'not_required' ? (
+                    <span className="text-slate-400 text-xs">—</span>
+                  ) : (
+                    <select
+                      value={r.ord_reporting_status}
+                      onChange={e => update.mutate({ id: r.id, p: { ord_reporting_status: e.target.value as OrdReportingStatus } })}
+                      className={`${selectCls} ${REPORTING_COLORS[r.ord_reporting_status]}`}
+                    >
+                      {Object.entries(ORD_REPORTING_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  )}
                 </td>
               </tr>
             ))}

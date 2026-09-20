@@ -14,6 +14,7 @@ const navItems = [
   { to: '/documents', label: 'Документы', icon: '📄' },
   { to: '/advertisers', label: 'Рекламодатели', icon: '🏢' },
   { to: '/analytics', label: 'Аналитика', icon: '📊' },
+  { to: '/cases', label: 'Кейсы', icon: '🎬' },
   { to: '/history', label: 'История', icon: '🗂️' },
   { to: '/streamers', label: 'База стримеров', icon: '📋' },
 ]
@@ -63,6 +64,13 @@ export default function WorkspacePage() {
         <AlertsPanel onNavigate={() => setMenuOpen(false)} />
       </div>
       <div className="px-3 py-3 border-t border-slate-100 dark:border-brand-900 space-y-1">
+        <Link
+          to="/profile"
+          onClick={() => setMenuOpen(false)}
+          className="block px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-brand-900 rounded-lg"
+        >
+          👤 {me?.label ?? me?.first_name ?? me?.username ?? 'Профиль'}
+        </Link>
         <button
           onClick={toggle}
           className="w-full px-3 py-2 text-sm text-left text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-brand-900 rounded-lg flex items-center gap-3"
