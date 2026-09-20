@@ -215,6 +215,7 @@ function AdvertiserContacts({ advertiserId }: { advertiserId: number }) {
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const { data: contacts = [] } = useQuery({
     queryKey: ['advertisers', advertiserId, 'contacts'],
@@ -228,20 +229,24 @@ function AdvertiserContacts({ advertiserId }: { advertiserId: number }) {
 
   const addContact = useMutation({
     mutationFn: (p: Partial<BrandContact>) => advertisersApi.addContact(advertiserId, p),
-    onSuccess: () => { invalidate(); setAdding(false) },
+    onSuccess: () => { invalidate(); setAdding(false); setError(null) },
+    onError: (e: any) => setError(e?.response?.data?.detail ?? 'Не удалось сохранить контакт'),
   })
   const updateContact = useMutation({
     mutationFn: (p: { id: number; payload: Partial<BrandContact> }) => advertisersApi.updateContact(p.id, p.payload),
-    onSuccess: () => { invalidate(); setEditingId(null) },
+    onSuccess: () => { invalidate(); setEditingId(null); setError(null) },
+    onError: (e: any) => setError(e?.response?.data?.detail ?? 'Не удалось сохранить контакт'),
   })
   const removeContact = useMutation({
     mutationFn: (id: number) => advertisersApi.removeContact(id),
     onSuccess: invalidate,
+    onError: (e: any) => setError(e?.response?.data?.detail ?? 'Не удалось удалить контакт'),
   })
 
   return (
     <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3">
       <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Контакты</div>
+      {error && <div className="text-xs text-red-500 mb-2">{error}</div>}
       <div className="space-y-1.5 mb-2">
         {contacts.map(c =>
           editingId === c.id ? (
