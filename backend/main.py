@@ -248,6 +248,44 @@ def _migrate_brand_contacts_add_advertiser():
             conn.execute(text("ALTER TABLE brand_contacts ADD COLUMN advertiser_id INTEGER"))
 
 
+def _migrate_brand_contacts_drop_integration_not_null():
+    """Старая схема brand_contacts требовала integration_id NOT NULL - после
+    перехода на advertiser_id это ломает вставку новых контактов
+    (IntegrityError: NOT NULL constraint failed: brand_contacts.integration_id).
+    SQLite не умеет менять constraint через ALTER - пересоздаём таблицу."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "brand_contacts" not in insp.get_table_names():
+        return
+    cols = {c["name"]: c for c in insp.get_columns("brand_contacts")}
+    if "integration_id" not in cols:
+        return  # уже новая схема
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE brand_contacts_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                advertiser_id INTEGER REFERENCES advertisers(id) ON DELETE CASCADE,
+                contact_type VARCHAR(16) NOT NULL,
+                value VARCHAR(255) NOT NULL,
+                label VARCHAR(128) DEFAULT '',
+                is_primary BOOLEAN DEFAULT 0,
+                notes TEXT DEFAULT '',
+                created_at DATETIME,
+                updated_at DATETIME
+            )
+        """))
+        conn.execute(text("""
+            INSERT INTO brand_contacts_new
+                (id, advertiser_id, contact_type, value, label, is_primary, notes, created_at, updated_at)
+            SELECT id, advertiser_id, contact_type, value, label, is_primary, notes, created_at, updated_at
+            FROM brand_contacts
+            WHERE advertiser_id IS NOT NULL
+        """))
+        conn.execute(text("DROP TABLE brand_contacts"))
+        conn.execute(text("ALTER TABLE brand_contacts_new RENAME TO brand_contacts"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_brand_contacts_advertiser_id ON brand_contacts (advertiser_id)"))
+
+
 def _backfill_advertisers():
     """Создаём Advertiser по уникальным brand внутри каждого workspace,
     линкуем к ним существующие интеграции и переносим контакты бренда
@@ -306,6 +344,7 @@ async def lifespan(app: FastAPI):
     _migrate_integrations_add_advertiser()
     _migrate_brand_contacts_add_advertiser()
     _backfill_advertisers()
+    _migrate_brand_contacts_drop_integration_not_null()
     _migrate_workspaces_add_owner()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство
