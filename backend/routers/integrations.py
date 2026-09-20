@@ -31,6 +31,26 @@ def _get_integration_or_404(db: Session, ws: Workspace, integration_id: int) -> 
     return it
 
 
+def _get_streamer_or_404(db: Session, ws: Workspace, streamer_id: int) -> IntegrationStreamer:
+    """Достаём стримера, проверяя что его сделка принадлежит текущему workspace -
+    иначе любой залогиненный юзер мог бы читать/менять чужие сделки по id."""
+    s = db.get(IntegrationStreamer, streamer_id)
+    if not s:
+        raise HTTPException(404)
+    it = db.get(Integration, s.integration_id)
+    if not it or it.workspace_id != ws.id:
+        raise HTTPException(404)
+    return s
+
+
+def _get_case_or_404(db: Session, ws: Workspace, case_id: int) -> CaseStudy:
+    c = db.get(CaseStudy, case_id)
+    if not c:
+        raise HTTPException(404)
+    _get_streamer_or_404(db, ws, c.streamer_id)
+    return c
+
+
 # поля стримера, изменения которых пишем в журнал - только те, что важны для бизнеса
 TRACKED_FIELDS = (
     "stage",
@@ -361,9 +381,15 @@ def list_integrations(db: Session = Depends(get_db), ws: Workspace = Depends(get
 
 
 @router.get("/streamer-names")
-def suggest_streamer_names(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Уникальные ранее введённые имена стримеров - для автоподстановки."""
-    rows = db.query(IntegrationStreamer.streamer_name).distinct().all()
+def suggest_streamer_names(db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    """Уникальные ранее введённые имена стримеров в этом пространстве - для автоподстановки."""
+    rows = (
+        db.query(IntegrationStreamer.streamer_name)
+        .join(Integration, IntegrationStreamer.integration_id == Integration.id)
+        .filter(Integration.workspace_id == ws.id)
+        .distinct()
+        .all()
+    )
     return sorted({r[0] for r in rows if r[0]})
 
 
@@ -493,10 +519,8 @@ def create_streamer(
 
 
 @router.patch("/streamers/{streamer_id}", response_model=StreamerOut)
-def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    s = db.get(IntegrationStreamer, streamer_id)
-    if not s:
-        raise HTTPException(404)
+def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
+    s = _get_streamer_or_404(db, ws, streamer_id)
     if data.stage is not None:
         _validate_stage(data.stage)
     if data.payment_status is not None:
@@ -546,10 +570,8 @@ def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depend
 
 
 @router.delete("/streamers/{streamer_id}")
-def delete_streamer(streamer_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    s = db.get(IntegrationStreamer, streamer_id)
-    if not s:
-        raise HTTPException(404)
+def delete_streamer(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
+    s = _get_streamer_or_404(db, ws, streamer_id)
     it = db.get(Integration, s.integration_id)
     if it:
         _log_audit(
@@ -567,10 +589,8 @@ def delete_streamer(streamer_id: int, db: Session = Depends(get_db), user: User 
 # ---------- договор (файл) ----------
 
 @router.post("/streamers/{streamer_id}/contract", response_model=StreamerOut)
-async def upload_contract(streamer_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    s = db.get(IntegrationStreamer, streamer_id)
-    if not s:
-        raise HTTPException(404)
+async def upload_contract(streamer_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
+    s = _get_streamer_or_404(db, ws, streamer_id)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
     ext = os.path.splitext(file.filename or "")[1][:16]
@@ -600,18 +620,16 @@ async def upload_contract(streamer_id: int, file: UploadFile = File(...), db: Se
 
 
 @router.get("/streamers/{streamer_id}/contract")
-def download_contract(streamer_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    s = db.get(IntegrationStreamer, streamer_id)
-    if not s or not s.contract_file_path or not os.path.exists(s.contract_file_path):
+def download_contract(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    s = _get_streamer_or_404(db, ws, streamer_id)
+    if not s.contract_file_path or not os.path.exists(s.contract_file_path):
         raise HTTPException(404, "Договор не найден")
     return FileResponse(s.contract_file_path, filename=s.contract_file_name or "contract")
 
 
 @router.delete("/streamers/{streamer_id}/contract")
-def delete_contract(streamer_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    s = db.get(IntegrationStreamer, streamer_id)
-    if not s:
-        raise HTTPException(404)
+def delete_contract(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    s = _get_streamer_or_404(db, ws, streamer_id)
     if s.contract_file_path and os.path.exists(s.contract_file_path):
         os.remove(s.contract_file_path)
     s.contract_file_path = None
@@ -623,9 +641,8 @@ def delete_contract(streamer_id: int, db: Session = Depends(get_db), user: User 
 # ---------- платежи ----------
 
 @router.get("/streamers/{streamer_id}/payments", response_model=List[PaymentOut])
-def list_payments(streamer_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not db.get(IntegrationStreamer, streamer_id):
-        raise HTTPException(404)
+def list_payments(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_streamer_or_404(db, ws, streamer_id)
     return (
         db.query(IntegrationPayment)
         .filter(IntegrationPayment.streamer_id == streamer_id)
@@ -635,10 +652,8 @@ def list_payments(streamer_id: int, db: Session = Depends(get_db), user: User = 
 
 
 @router.post("/streamers/{streamer_id}/payments", response_model=PaymentOut, status_code=201)
-def create_payment(streamer_id: int, data: PaymentCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    s = db.get(IntegrationStreamer, streamer_id)
-    if not s:
-        raise HTTPException(404)
+def create_payment(streamer_id: int, data: PaymentCreate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
+    s = _get_streamer_or_404(db, ws, streamer_id)
     p = IntegrationPayment(
         streamer_id=streamer_id,
         amount=data.amount,
@@ -670,7 +685,8 @@ def create_payment(streamer_id: int, data: PaymentCreate, db: Session = Depends(
 
 
 @router.delete("/streamers/{streamer_id}/payments/{payment_id}")
-def delete_payment(streamer_id: int, payment_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def delete_payment(streamer_id: int, payment_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_streamer_or_404(db, ws, streamer_id)
     p = db.get(IntegrationPayment, payment_id)
     if not p or p.streamer_id != streamer_id:
         raise HTTPException(404)
@@ -682,9 +698,8 @@ def delete_payment(streamer_id: int, payment_id: int, db: Session = Depends(get_
 # ---------- кейсы для сайта (фото + результаты интеграции) ----------
 
 @router.get("/streamers/{streamer_id}/cases", response_model=List[CaseStudyOut])
-def list_cases(streamer_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not db.get(IntegrationStreamer, streamer_id):
-        raise HTTPException(404)
+def list_cases(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_streamer_or_404(db, ws, streamer_id)
     return (
         db.query(CaseStudy)
         .filter(CaseStudy.streamer_id == streamer_id)
@@ -694,9 +709,8 @@ def list_cases(streamer_id: int, db: Session = Depends(get_db), user: User = Dep
 
 
 @router.post("/streamers/{streamer_id}/cases", response_model=CaseStudyOut, status_code=201)
-def create_case(streamer_id: int, data: CaseStudyCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not db.get(IntegrationStreamer, streamer_id):
-        raise HTTPException(404)
+def create_case(streamer_id: int, data: CaseStudyCreate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_streamer_or_404(db, ws, streamer_id)
     c = CaseStudy(streamer_id=streamer_id, **data.model_dump())
     db.add(c)
     db.commit()
@@ -705,10 +719,8 @@ def create_case(streamer_id: int, data: CaseStudyCreate, db: Session = Depends(g
 
 
 @router.patch("/cases/{case_id}", response_model=CaseStudyOut)
-def update_case(case_id: int, data: CaseStudyUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    c = db.get(CaseStudy, case_id)
-    if not c:
-        raise HTTPException(404)
+def update_case(case_id: int, data: CaseStudyUpdate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    c = _get_case_or_404(db, ws, case_id)
     for k, v in data.model_dump(exclude_unset=True).items():
         setattr(c, k, v)
     db.commit()
@@ -717,10 +729,8 @@ def update_case(case_id: int, data: CaseStudyUpdate, db: Session = Depends(get_d
 
 
 @router.delete("/cases/{case_id}")
-def delete_case(case_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    c = db.get(CaseStudy, case_id)
-    if not c:
-        raise HTTPException(404)
+def delete_case(case_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    c = _get_case_or_404(db, ws, case_id)
     if c.photo_path and os.path.exists(c.photo_path):
         os.remove(c.photo_path)
     db.delete(c)
@@ -729,10 +739,8 @@ def delete_case(case_id: int, db: Session = Depends(get_db), user: User = Depend
 
 
 @router.post("/cases/{case_id}/photo", response_model=CaseStudyOut)
-async def upload_case_photo(case_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    c = db.get(CaseStudy, case_id)
-    if not c:
-        raise HTTPException(404)
+async def upload_case_photo(case_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    c = _get_case_or_404(db, ws, case_id)
     os.makedirs(CASE_PHOTO_DIR, exist_ok=True)
 
     ext = os.path.splitext(file.filename or "")[1][:16]
@@ -753,18 +761,16 @@ async def upload_case_photo(case_id: int, file: UploadFile = File(...), db: Sess
 
 
 @router.get("/cases/{case_id}/photo")
-def download_case_photo(case_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    c = db.get(CaseStudy, case_id)
-    if not c or not c.photo_path or not os.path.exists(c.photo_path):
+def download_case_photo(case_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    c = _get_case_or_404(db, ws, case_id)
+    if not c.photo_path or not os.path.exists(c.photo_path):
         raise HTTPException(404, "Фото не найдено")
     return FileResponse(c.photo_path, filename=c.photo_name or "photo")
 
 
 @router.delete("/cases/{case_id}/photo")
-def delete_case_photo(case_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    c = db.get(CaseStudy, case_id)
-    if not c:
-        raise HTTPException(404)
+def delete_case_photo(case_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    c = _get_case_or_404(db, ws, case_id)
     if c.photo_path and os.path.exists(c.photo_path):
         os.remove(c.photo_path)
     c.photo_path = None
@@ -785,9 +791,8 @@ def _author_label(db: Session, tg_id: Optional[int]) -> Optional[str]:
 
 
 @router.get("/streamers/{streamer_id}/discussion", response_model=List[DiscussionMessageOut])
-def list_discussion(streamer_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not db.get(IntegrationStreamer, streamer_id):
-        raise HTTPException(404)
+def list_discussion(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_streamer_or_404(db, ws, streamer_id)
     msgs = (
         db.query(DiscussionMessage)
         .filter(DiscussionMessage.streamer_id == streamer_id)
@@ -801,9 +806,8 @@ def list_discussion(streamer_id: int, db: Session = Depends(get_db), user: User 
 
 
 @router.post("/streamers/{streamer_id}/discussion", response_model=DiscussionMessageOut, status_code=201)
-def create_discussion_message(streamer_id: int, data: DiscussionMessageCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not db.get(IntegrationStreamer, streamer_id):
-        raise HTTPException(404)
+def create_discussion_message(streamer_id: int, data: DiscussionMessageCreate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
+    _get_streamer_or_404(db, ws, streamer_id)
     text = data.text.strip()
     if not text:
         raise HTTPException(400, "Сообщение не может быть пустым")
@@ -815,10 +819,11 @@ def create_discussion_message(streamer_id: int, data: DiscussionMessageCreate, d
 
 
 @router.delete("/discussion/{message_id}")
-def delete_discussion_message(message_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def delete_discussion_message(message_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
     m = db.get(DiscussionMessage, message_id)
     if not m:
         raise HTTPException(404)
+    _get_streamer_or_404(db, ws, m.streamer_id)
     if m.author_tg_id != user.tg_id and user.role != "admin":
         raise HTTPException(403, "Можно удалить только своё сообщение")
     db.delete(m)
@@ -829,9 +834,8 @@ def delete_discussion_message(message_id: int, db: Session = Depends(get_db), us
 # ---------- журнал изменений (кто когда что менял) ----------
 
 @router.get("/streamers/{streamer_id}/audit-log", response_model=List[AuditLogEntryOut])
-def streamer_audit_log(streamer_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not db.get(IntegrationStreamer, streamer_id):
-        raise HTTPException(404)
+def streamer_audit_log(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_streamer_or_404(db, ws, streamer_id)
     entries = (
         db.query(AuditLogEntry)
         .filter(AuditLogEntry.streamer_id == streamer_id)
