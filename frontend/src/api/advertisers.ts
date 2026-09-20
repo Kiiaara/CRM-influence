@@ -55,6 +55,7 @@ export interface Advertiser {
   updated_at: string
   deals_count: number
   contacts_count: number
+  contacts: BrandContact[]
 }
 
 export interface AdvertiserDeal {

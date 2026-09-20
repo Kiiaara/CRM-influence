@@ -98,7 +98,7 @@ export default function AdvertisersPage() {
             <tr>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Название</th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Сделок</th>
-              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Контактов</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Контакты</th>
             </tr>
           </thead>
           <tbody>
@@ -110,7 +110,9 @@ export default function AdvertisersPage() {
               >
                 <td className="px-3 py-2 text-slate-900 dark:text-slate-100 whitespace-nowrap">{a.name}</td>
                 <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.deals_count}</td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.contacts_count}</td>
+                <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                  <QuickContacts advertiserId={a.id} contacts={a.contacts} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -119,6 +121,69 @@ export default function AdvertisersPage() {
       </div>
 
       {opened && <AdvertiserModal advertiser={opened} onClose={() => setOpened(null)} />}
+    </div>
+  )
+}
+
+function QuickContacts({ advertiserId, contacts }: { advertiserId: number; contacts: BrandContact[] }) {
+  const qc = useQueryClient()
+  const [adding, setAdding] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const addContact = useMutation({
+    mutationFn: (p: Partial<BrandContact>) => advertisersApi.addContact(advertiserId, p),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['advertisers'] })
+      qc.invalidateQueries({ queryKey: ['advertisers', advertiserId, 'contacts'] })
+      setAdding(false)
+      setError(null)
+    },
+    onError: (e: any) => setError(e?.response?.data?.detail ?? 'Не удалось сохранить контакт'),
+  })
+
+  if (adding) {
+    return (
+      <div className="w-64">
+        <BrandContactForm
+          onCancel={() => { setAdding(false); setError(null) }}
+          onSave={payload => addContact.mutate(payload)}
+        />
+        {error && <div className="text-xs text-red-500 mt-1">{error}</div>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {contacts.map(c => {
+        const link = contactQuickLink(c)
+        return link ? (
+          <a
+            key={c.id}
+            href={link}
+            target="_blank"
+            rel="noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="text-xs bg-slate-100 dark:bg-brand-900 text-brand-600 dark:text-brand-400 hover:underline px-2 py-1 rounded-full whitespace-nowrap"
+          >
+            {CONTACT_TYPE_ICONS[c.contact_type]} {c.value}
+          </a>
+        ) : (
+          <span
+            key={c.id}
+            className="text-xs bg-slate-100 dark:bg-brand-900 text-slate-600 dark:text-slate-300 px-2 py-1 rounded-full whitespace-nowrap"
+          >
+            {CONTACT_TYPE_ICONS[c.contact_type]} {c.value}
+          </span>
+        )
+      })}
+      <button
+        onClick={() => setAdding(true)}
+        className="text-xs w-6 h-6 flex items-center justify-center rounded-full bg-brand-600 hover:bg-brand-700 text-white shrink-0"
+        title="Добавить контакт"
+      >
+        +
+      </button>
     </div>
   )
 }

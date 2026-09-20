@@ -41,37 +41,16 @@ def _get_contact_or_404(db: Session, ws: Workspace, contact_id: int) -> BrandCon
     return c
 
 
+def _list_contacts(db: Session, advertiser_id: int) -> list[BrandContact]:
+    return (
+        db.query(BrandContact)
+        .filter(BrandContact.advertiser_id == advertiser_id)
+        .order_by(BrandContact.is_primary.desc(), BrandContact.created_at.asc())
+        .all()
+    )
+
+
 # ---------- схемы ----------
-
-class AdvertiserOut(BaseModel):
-    id: int
-    name: str
-    notes: str
-    created_at: datetime
-    updated_at: datetime
-    deals_count: int = 0
-    contacts_count: int = 0
-    model_config = {"from_attributes": True}
-
-
-class AdvertiserCreate(BaseModel):
-    name: str
-    notes: str = ""
-
-
-class AdvertiserUpdate(BaseModel):
-    name: Optional[str] = None
-    notes: Optional[str] = None
-
-
-class AdvertiserDealOut(BaseModel):
-    id: int
-    description: str
-    created_at: datetime
-    updated_at: datetime
-    streamers_count: int = 0
-    model_config = {"from_attributes": True}
-
 
 class BrandContactOut(BaseModel):
     id: int
@@ -102,6 +81,37 @@ class BrandContactUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class AdvertiserOut(BaseModel):
+    id: int
+    name: str
+    notes: str
+    created_at: datetime
+    updated_at: datetime
+    deals_count: int = 0
+    contacts_count: int = 0
+    contacts: List[BrandContactOut] = []
+    model_config = {"from_attributes": True}
+
+
+class AdvertiserCreate(BaseModel):
+    name: str
+    notes: str = ""
+
+
+class AdvertiserUpdate(BaseModel):
+    name: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class AdvertiserDealOut(BaseModel):
+    id: int
+    description: str
+    created_at: datetime
+    updated_at: datetime
+    streamers_count: int = 0
+    model_config = {"from_attributes": True}
+
+
 # ---------- рекламодатели ----------
 
 @router.get("", response_model=List[AdvertiserOut])
@@ -110,8 +120,8 @@ def list_advertisers(db: Session = Depends(get_db), ws: Workspace = Depends(get_
     out = []
     for adv in rows:
         deals_count = db.query(Integration).filter(Integration.advertiser_id == adv.id).count()
-        contacts_count = db.query(BrandContact).filter(BrandContact.advertiser_id == adv.id).count()
-        out.append(AdvertiserOut.model_validate(adv).model_copy(update={"deals_count": deals_count, "contacts_count": contacts_count}))
+        contacts = _list_contacts(db, adv.id)
+        out.append(AdvertiserOut.model_validate(adv).model_copy(update={"deals_count": deals_count, "contacts_count": len(contacts), "contacts": contacts}))
     return out
 
 
@@ -134,8 +144,8 @@ def create_advertiser(data: AdvertiserCreate, db: Session = Depends(get_db), ws:
 def get_advertiser(advertiser_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
     adv = _get_advertiser_or_404(db, ws, advertiser_id)
     deals_count = db.query(Integration).filter(Integration.advertiser_id == adv.id).count()
-    contacts_count = db.query(BrandContact).filter(BrandContact.advertiser_id == adv.id).count()
-    return AdvertiserOut.model_validate(adv).model_copy(update={"deals_count": deals_count, "contacts_count": contacts_count})
+    contacts = _list_contacts(db, adv.id)
+    return AdvertiserOut.model_validate(adv).model_copy(update={"deals_count": deals_count, "contacts_count": len(contacts), "contacts": contacts})
 
 
 @router.patch("/{advertiser_id}", response_model=AdvertiserOut)
@@ -156,8 +166,8 @@ def update_advertiser(advertiser_id: int, data: AdvertiserUpdate, db: Session = 
     db.commit()
     db.refresh(adv)
     deals_count = db.query(Integration).filter(Integration.advertiser_id == adv.id).count()
-    contacts_count = db.query(BrandContact).filter(BrandContact.advertiser_id == adv.id).count()
-    return AdvertiserOut.model_validate(adv).model_copy(update={"deals_count": deals_count, "contacts_count": contacts_count})
+    contacts = _list_contacts(db, adv.id)
+    return AdvertiserOut.model_validate(adv).model_copy(update={"deals_count": deals_count, "contacts_count": len(contacts), "contacts": contacts})
 
 
 @router.delete("/{advertiser_id}")
