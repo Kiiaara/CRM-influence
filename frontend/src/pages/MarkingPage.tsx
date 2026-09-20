@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   integrationsApi,
@@ -26,6 +26,57 @@ const STATUS_COLORS: Record<OrdStatus, string> = {
   todo: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   done: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
   not_required: 'bg-slate-100 text-slate-500 dark:bg-brand-900 dark:text-slate-400',
+}
+
+// ячейка со ссылкой: показывает её кликабельной, по карандашу превращается в инпут
+function LinkCell({ label, value, onSave }: { label: string; value: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  // ссылку могли поменять из модалки на канбане - подхватываем свежее значение
+  useEffect(() => {
+    if (!editing) setDraft(value)
+  }, [value, editing])
+
+  const commit = () => {
+    setEditing(false)
+    if (draft.trim() !== value.trim()) onSave(draft.trim())
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="url"
+        value={draft}
+        placeholder="https://…"
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') commit()
+          if (e.key === 'Escape') { setDraft(value); setEditing(false) }
+        }}
+        className="w-full bg-slate-50 dark:bg-brand-950/60 border border-brand-400 rounded px-2 py-1 text-xs text-slate-900 dark:text-slate-100 outline-none"
+      />
+    )
+  }
+
+  const href = value.trim()
+  return (
+    <div className="flex items-center gap-1 text-xs">
+      <span className="text-slate-400 w-10 shrink-0">{label}</span>
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer" className="flex-1 truncate text-brand-600 dark:text-brand-400 hover:underline">
+          {href.replace(/^https?:\/\//, '')}
+        </a>
+      ) : (
+        <span className="flex-1 text-slate-300 dark:text-slate-600">не задана</span>
+      )}
+      <button onClick={() => setEditing(true)} className="text-slate-400 hover:text-brand-500 shrink-0" title="Изменить">
+        ✎
+      </button>
+    </div>
+  )
 }
 
 export default function MarkingPage() {
@@ -103,6 +154,7 @@ export default function MarkingPage() {
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Ответственный</th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Маркировка</th>
               <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Отчётность в ОРД</th>
+              <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Ссылки</th>
             </tr>
           </thead>
           <tbody>
@@ -143,6 +195,24 @@ export default function MarkingPage() {
                     >
                       {Object.entries(ORD_REPORTING_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  {r.ord_responsible === 'not_required' ? (
+                    <span className="text-slate-400 text-xs">—</span>
+                  ) : (
+                    <div className="flex flex-col gap-1 min-w-[200px]">
+                      <LinkCell
+                        label="ОРД"
+                        value={r.ord_link}
+                        onSave={v => update.mutate({ id: r.id, p: { ord_link: v } })}
+                      />
+                      <LinkCell
+                        label="Отчёт"
+                        value={r.ord_report_link}
+                        onSave={v => update.mutate({ id: r.id, p: { ord_report_link: v } })}
+                      />
+                    </div>
                   )}
                 </td>
               </tr>

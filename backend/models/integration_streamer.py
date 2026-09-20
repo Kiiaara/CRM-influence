@@ -57,6 +57,9 @@ class IntegrationStreamer(Base):
     ord_responsible: Mapped[str] = mapped_column(String(16), default="us")
     ord_status: Mapped[str] = mapped_column(String(16), default="todo")
     ord_reporting_status: Mapped[str] = mapped_column(String(16), default="not_submitted")
+    # ссылки в кабинет ОРД: где получен erid и где сдан отчёт по размещению
+    ord_link: Mapped[str] = mapped_column(String(512), default="")
+    ord_report_link: Mapped[str] = mapped_column(String(512), default="")
 
     # флаги напоминаний бота по integration_date (чтобы не слать повторно)
     notified_branding_check: Mapped[bool] = mapped_column(default=False)
@@ -74,6 +77,7 @@ class IntegrationStreamer(Base):
     integration: Mapped["Integration"] = relationship(back_populates="streamers")
     payments: Mapped[list["IntegrationPayment"]] = relationship(cascade="all, delete-orphan")
     case_studies: Mapped[list["CaseStudy"]] = relationship(cascade="all, delete-orphan")
+    brief_files: Mapped[list["BriefFile"]] = relationship(cascade="all, delete-orphan")
 
     @property
     def has_case(self) -> bool:

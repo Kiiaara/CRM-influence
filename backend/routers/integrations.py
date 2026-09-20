@@ -17,6 +17,7 @@ from models.integration import Integration
 from models.integration_streamer import IntegrationStreamer
 from models.integration_payment import IntegrationPayment
 from models.case_study import CaseStudy
+from models.brief_file import BriefFile
 from models.advertiser import Advertiser
 from models.discussion_message import DiscussionMessage
 from models.audit_log import AuditLogEntry
@@ -113,6 +114,10 @@ CONTRACT_STATUSES = (
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "contracts")
 CASE_PHOTO_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "case_photos")
+BRIEF_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "briefs")
+
+# ограничение на файл ТЗ - чтобы случайным перетаскиванием видоса не забить диск
+MAX_BRIEF_FILE_BYTES = 25 * 1024 * 1024
 
 
 def _validate_stage(stage: str):
@@ -186,6 +191,8 @@ class StreamerOut(BaseModel):
     ord_responsible: str
     ord_status: str
     ord_reporting_status: str
+    ord_link: str = ""
+    ord_report_link: str = ""
     position: int
     created_by_tg_id: Optional[int] = None
     has_case: bool = False
@@ -238,6 +245,8 @@ class StreamerCreate(BaseModel):
     ord_responsible: str = "us"
     ord_status: str = "todo"
     ord_reporting_status: str = "not_submitted"
+    ord_link: str = ""
+    ord_report_link: str = ""
 
 
 class StreamerUpdate(BaseModel):
@@ -263,6 +272,8 @@ class StreamerUpdate(BaseModel):
     ord_responsible: Optional[str] = None
     ord_status: Optional[str] = None
     ord_reporting_status: Optional[str] = None
+    ord_link: Optional[str] = None
+    ord_report_link: Optional[str] = None
     position: Optional[int] = None
 
 
@@ -310,6 +321,15 @@ class PaymentCreate(BaseModel):
     currency: str = "RUB"
     comment: str = ""
     paid_at: Optional[datetime] = None
+
+
+class BriefFileOut(BaseModel):
+    id: int
+    streamer_id: int
+    file_name: str
+    size_bytes: int
+    created_at: datetime
+    model_config = {"from_attributes": True}
 
 
 class CaseStudyOut(BaseModel):
@@ -504,6 +524,8 @@ def create_streamer(
         ord_responsible=data.ord_responsible,
         ord_status=data.ord_status,
         ord_reporting_status=data.ord_reporting_status,
+        ord_link=data.ord_link,
+        ord_report_link=data.ord_report_link,
         position=(max_pos.position + 1) if max_pos else 0,
         created_by_tg_id=user.tg_id,
     )
@@ -581,6 +603,10 @@ def delete_streamer(streamer_id: int, db: Session = Depends(get_db), ws: Workspa
         db.commit()
     if s.contract_file_path and os.path.exists(s.contract_file_path):
         os.remove(s.contract_file_path)
+    # cascade удалит строки brief_files, но сами файлы с диска надо убрать руками
+    for bf in db.query(BriefFile).filter(BriefFile.streamer_id == s.id).all():
+        if os.path.exists(bf.file_path):
+            os.remove(bf.file_path)
     db.delete(s)
     db.commit()
     return {"ok": True}
@@ -634,6 +660,71 @@ def delete_contract(streamer_id: int, db: Session = Depends(get_db), ws: Workspa
         os.remove(s.contract_file_path)
     s.contract_file_path = None
     s.contract_file_name = None
+    db.commit()
+    return {"ok": True}
+
+
+# ---------- файлы ТЗ ----------
+
+@router.get("/streamers/{streamer_id}/brief-files", response_model=List[BriefFileOut])
+def list_brief_files(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_streamer_or_404(db, ws, streamer_id)
+    return (
+        db.query(BriefFile)
+        .filter(BriefFile.streamer_id == streamer_id)
+        .order_by(BriefFile.created_at.asc())
+        .all()
+    )
+
+
+@router.post("/streamers/{streamer_id}/brief-files", response_model=BriefFileOut, status_code=201)
+async def upload_brief_file(streamer_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_streamer_or_404(db, ws, streamer_id)
+    os.makedirs(BRIEF_DIR, exist_ok=True)
+
+    content = await file.read()
+    if len(content) > MAX_BRIEF_FILE_BYTES:
+        raise HTTPException(400, f"Файл больше {MAX_BRIEF_FILE_BYTES // (1024 * 1024)} МБ")
+
+    ext = os.path.splitext(file.filename or "")[1][:16]
+    dest_path = os.path.join(BRIEF_DIR, f"{uuid.uuid4().hex}{ext}")
+    with open(dest_path, "wb") as f:
+        f.write(content)
+
+    bf = BriefFile(
+        streamer_id=streamer_id,
+        file_path=dest_path,
+        file_name=file.filename or "file",
+        size_bytes=len(content),
+    )
+    db.add(bf)
+    db.commit()
+    db.refresh(bf)
+    return bf
+
+
+def _get_brief_file_or_404(db: Session, ws: Workspace, file_id: int) -> BriefFile:
+    bf = db.get(BriefFile, file_id)
+    if not bf:
+        raise HTTPException(404)
+    _get_streamer_or_404(db, ws, bf.streamer_id)
+    return bf
+
+
+@router.get("/brief-files/{file_id}")
+def download_brief_file(file_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    bf = _get_brief_file_or_404(db, ws, file_id)
+    if not os.path.exists(bf.file_path):
+        raise HTTPException(404, "Файл не найден")
+    return FileResponse(bf.file_path, filename=bf.file_name)
+
+
+@router.delete("/brief-files/{file_id}")
+def delete_brief_file(file_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    bf = _get_brief_file_or_404(db, ws, file_id)
+    if os.path.exists(bf.file_path):
+        os.remove(bf.file_path)
+    db.delete(bf)
     db.commit()
     return {"ok": True}
 

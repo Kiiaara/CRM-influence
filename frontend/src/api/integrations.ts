@@ -107,6 +107,8 @@ export interface Streamer {
   ord_responsible: OrdResponsible
   ord_status: OrdStatus
   ord_reporting_status: OrdReportingStatus
+  ord_link: string
+  ord_report_link: string
   position: number
   created_by_tg_id: number | null
   has_case: boolean
@@ -231,6 +233,14 @@ export interface Payment {
   paid_at: string
 }
 
+export interface BriefFile {
+  id: number
+  streamer_id: number
+  file_name: string
+  size_bytes: number
+  created_at: string
+}
+
 export interface CaseStudy {
   id: number
   streamer_id: number
@@ -305,6 +315,25 @@ export const integrationsApi = {
   },
   async removePayment(streamerId: number, paymentId: number) {
     await api.delete(`/integrations/streamers/${streamerId}/payments/${paymentId}`)
+  },
+
+  async briefFiles(streamerId: number) {
+    const { data } = await api.get<BriefFile[]>(`/integrations/streamers/${streamerId}/brief-files`)
+    return data
+  },
+  async uploadBriefFile(streamerId: number, file: File) {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await api.post<BriefFile>(`/integrations/streamers/${streamerId}/brief-files`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  briefFileUrl(fileId: number) {
+    return `/api/integrations/brief-files/${fileId}`
+  },
+  async removeBriefFile(fileId: number) {
+    await api.delete(`/integrations/brief-files/${fileId}`)
   },
 
   async cases(streamerId: number) {

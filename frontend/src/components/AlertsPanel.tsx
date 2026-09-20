@@ -79,6 +79,34 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
 
     const caseMissing = rows.filter(r => r.stage === 'done' && !r.has_case)
 
+    // срок действия договора убрали с карточки канбана - ловим его здесь
+    const contractExpiring = rows.filter(r => {
+      if (!r.contract_valid_until || !ACTIVE_STAGES.includes(r.stage)) return false
+      const diff = dayjs(r.contract_valid_until).startOf('day').diff(now.startOf('day'), 'day')
+      return diff >= 0 && diff <= 7
+    })
+
+    const contractExpired = rows.filter(
+      r =>
+        !!r.contract_valid_until &&
+        r.stage !== 'cancelled' &&
+        r.stage !== 'done' &&
+        dayjs(r.contract_valid_until).startOf('day').isBefore(now.startOf('day'))
+    )
+
+    // маркировку надо получить до выхода рекламы, иначе штраф
+    const ordTodo = rows.filter(r => {
+      if (r.ord_responsible === 'not_required' || r.ord_status !== 'todo') return false
+      if (r.stage === 'cancelled') return false
+      if (!r.integration_date) return false
+      const diff = dayjs(r.integration_date).startOf('day').diff(now.startOf('day'), 'day')
+      return diff <= 2
+    })
+
+    const ordReportOverdue = rows.filter(
+      r => r.ord_responsible !== 'not_required' && r.ord_reporting_status === 'overdue' && r.stage !== 'cancelled'
+    )
+
     return [
       { key: 'drafts', title: 'Черновики без суммы/даты', items: toItems(drafts, () => 'заполните карточку') },
       { key: 'deadlineSoon', title: 'Дедлайн через 1-3 дня', items: toItems(deadlineSoon, r => dayjs(r.deadline).format('DD.MM')) },
@@ -89,6 +117,22 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
         items: toItems(contractOverdue, r => `отправлен ${dayjs(r.contract_sent_date).format('DD.MM')}`),
       },
       { key: 'paymentOverdue', title: 'Оплата просрочена', items: toItems(paymentOverdue, r => `дедлайн ${dayjs(r.deadline).format('DD.MM')}`) },
+      {
+        key: 'ordTodo',
+        title: 'Маркировка не готова, скоро эфир',
+        items: toItems(ordTodo, r => `эфир ${dayjs(r.integration_date).format('DD.MM')}`),
+      },
+      { key: 'ordReportOverdue', title: 'Отчётность в ОРД просрочена', items: toItems(ordReportOverdue, () => 'сдайте отчёт') },
+      {
+        key: 'contractExpiring',
+        title: 'Договор истекает в течение недели',
+        items: toItems(contractExpiring, r => `до ${dayjs(r.contract_valid_until).format('DD.MM')}`),
+      },
+      {
+        key: 'contractExpired',
+        title: 'Договор истёк',
+        items: toItems(contractExpired, r => `истёк ${dayjs(r.contract_valid_until).format('DD.MM')}`),
+      },
       { key: 'caseMissing', title: 'Завершено, нет кейса для сайта', items: toItems(caseMissing, () => 'добавьте кейс') },
     ].filter(g => g.items.length > 0)
   }, [rows])
