@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { streamerProfilesApi } from '../api/streamerProfiles'
+import { authApi } from '../api/auth'
 import type { StreamerProfile } from '../api/streamerProfiles'
 
 function emptyProfile(): StreamerProfile {
@@ -38,6 +39,10 @@ export default function StreamerProfilesPage() {
   const qc = useQueryClient()
   const { data: profiles = [] } = useQuery({ queryKey: ['streamer-profiles'], queryFn: streamerProfilesApi.list })
   const [editing, setEditing] = useState<StreamerProfile | null>(null)
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: authApi.me, retry: false })
+  // база общая на все пространства, поэтому менять её могут только свои
+  const canEdit = me?.role === 'admin' || me?.role === 'editor'
+  const canDelete = me?.role === 'admin'
 
   const remove = useMutation({
     mutationFn: (id: number) => streamerProfilesApi.remove(id),
@@ -57,12 +62,14 @@ export default function StreamerProfilesPage() {
           >
             🧮 Таблица расчёта
           </a>
-          <button
-            onClick={() => setEditing(emptyProfile())}
-            className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
-          >
-            + Стример
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => setEditing(emptyProfile())}
+              className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            >
+              + Стример
+            </button>
+          )}
         </div>
       </div>
       <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
@@ -108,8 +115,12 @@ export default function StreamerProfilesPage() {
                 <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{p.category || '—'}</td>
                 <td className="px-3 py-2 text-slate-600 dark:text-slate-300 max-w-[180px] truncate">{p.social_links || '—'}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
-                  <button onClick={() => setEditing(p)} className="text-brand-600 hover:text-brand-700 text-xs mr-2">править</button>
-                  <button onClick={() => confirm('Удалить стримера из базы?') && remove.mutate(p.id)} className="text-red-500 hover:text-red-700 text-xs">удалить</button>
+                  <button onClick={() => setEditing(p)} className="text-brand-600 hover:text-brand-700 text-xs mr-2">
+                    {canEdit ? 'править' : 'открыть'}
+                  </button>
+                  {canDelete && (
+                    <button onClick={() => confirm('Удалить стримера из базы?') && remove.mutate(p.id)} className="text-red-500 hover:text-red-700 text-xs">удалить</button>
+                  )}
                 </td>
               </tr>
             ))}

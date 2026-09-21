@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from deps import get_current_user
+from deps import get_current_user, require_role
 from models.user import User
 from models.workspace import Workspace, WorkspaceMember
 from models.integration import Integration
@@ -93,7 +93,9 @@ def list_workspaces(db: Session = Depends(get_db), user: User = Depends(get_curr
 
 
 @router.post("", response_model=WorkspaceOut, status_code=201)
-def create_workspace(data: WorkspaceCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_workspace(data: WorkspaceCreate, db: Session = Depends(get_db), user: User = Depends(require_role("admin"))):
+    """Новые пространства заводит только глобальный админ - иначе приглашённый
+    мог бы плодить себе проекты."""
     title = data.title.strip()
     if not title:
         raise HTTPException(400, "Название не может быть пустым")

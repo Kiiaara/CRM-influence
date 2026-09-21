@@ -46,7 +46,7 @@ async def _check_deadlines():
             user = db.get(User, t.assignee_tg_id) if t.assignee_tg_id else None
             if not user or not user.tg_chat_ready:
                 continue
-            link = f"{settings.public_url}/calendar"
+            link = f"{settings.public_url}/tasks"
             text = (
                 f"⏰ Скоро дедлайн: <b>{t.title}</b>\n"
                 f"Срок: {t.due_at.strftime('%d.%m.%Y %H:%M')}\n"
@@ -77,7 +77,7 @@ async def _notify_assigned():
             user = db.get(User, t.assignee_tg_id) if t.assignee_tg_id else None
             if not user or not user.tg_chat_ready:
                 continue
-            link = f"{settings.public_url}/calendar"
+            link = f"{settings.public_url}/tasks"
             due = t.due_at.strftime('%d.%m.%Y %H:%M') if t.due_at else 'без срока'
             text = (
                 f"📌 Тебе поставили задачу: <b>{t.title}</b>\n"

@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useWorkspace } from '../workspaceContext'
 import { workspacesApi, ROLE_LABELS } from '../api/workspaces'
+import { authApi } from '../api/auth'
 
 export default function WorkspaceSelector() {
   const { workspaces, current, switchWorkspace } = useWorkspace()
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: authApi.me, retry: false })
+  // пространства заводит только админ - бэк это тоже проверяет
+  const isAdmin = me?.role === 'admin'
   const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -138,6 +142,7 @@ export default function WorkspaceSelector() {
               </div>
             ))}
           </div>
+          {isAdmin && (
           <div className="border-t border-slate-100 dark:border-brand-900 p-2">
             {creating ? (
               <div className="space-y-2">
@@ -177,6 +182,7 @@ export default function WorkspaceSelector() {
               </button>
             )}
           </div>
+          )}
         </div>
       )}
     </div>

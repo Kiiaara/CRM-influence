@@ -10,6 +10,7 @@ import AdvertisersPage from './pages/AdvertisersPage'
 import DocumentsPage from './pages/DocumentsPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import CasesPage from './pages/CasesPage'
+import TasksPage from './pages/TasksPage'
 import StreamerProfilesPage from './pages/StreamerProfilesPage'
 import SearchPage from './pages/SearchPage'
 import AdminUsersPage from './pages/AdminUsersPage'
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/cases" element={<CasesPage />} />
+        <Route path="/tasks" element={<TasksPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/streamers" element={<StreamerProfilesPage />} />
         <Route path="/search" element={<SearchPage />} />

@@ -16,7 +16,14 @@ export const usersApi = {
     const { data } = await api.get<UserRow[]>('/users')
     return data
   },
-  async create(payload: { tg_id: number; role: string; label?: string }) {
+  async create(payload: {
+    tg_id: number
+    role: string
+    label?: string
+    // необязательно: сразу закинуть человека в конкретное пространство
+    workspace_id?: number
+    workspace_role?: string
+  }) {
     const { data } = await api.post<UserRow>('/users', payload)
     return data
   },

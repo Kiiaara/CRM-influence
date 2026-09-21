@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from openpyxl import Workbook, load_workbook
 
 from database import get_db
-from deps import get_current_user
+from deps import get_current_user, require_role
 from models.streamer_profile import StreamerProfile
 from models.user import User
 
@@ -111,7 +111,7 @@ def list_profiles(db: Session = Depends(get_db), user: User = Depends(get_curren
 
 
 @router.post("", response_model=ProfileOut, status_code=201)
-def create_profile(data: ProfileCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_profile(data: ProfileCreate, db: Session = Depends(get_db), user: User = Depends(require_role("admin", "editor"))):
     p = StreamerProfile(**data.model_dump())
     db.add(p)
     db.commit()
@@ -120,7 +120,7 @@ def create_profile(data: ProfileCreate, db: Session = Depends(get_db), user: Use
 
 
 @router.patch("/{profile_id}", response_model=ProfileOut)
-def update_profile(profile_id: int, data: ProfileUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def update_profile(profile_id: int, data: ProfileUpdate, db: Session = Depends(get_db), user: User = Depends(require_role("admin", "editor"))):
     p = db.get(StreamerProfile, profile_id)
     if not p:
         raise HTTPException(404)
@@ -132,7 +132,7 @@ def update_profile(profile_id: int, data: ProfileUpdate, db: Session = Depends(g
 
 
 @router.delete("/{profile_id}")
-def delete_profile(profile_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def delete_profile(profile_id: int, db: Session = Depends(get_db), user: User = Depends(require_role("admin"))):
     p = db.get(StreamerProfile, profile_id)
     if not p:
         raise HTTPException(404)
@@ -188,7 +188,7 @@ def _name_from_twitch_url(url: object) -> str:
 
 
 @router.post("/import")
-async def import_profiles(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def import_profiles(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(require_role("admin"))):
     """Импорт из Excel. Первая строка - заголовки (см. COLUMNS), строки с существующим
     именем стримера обновляются, новые - создаются."""
     content = await file.read()
@@ -246,8 +246,10 @@ async def import_profiles(file: UploadFile = File(...), db: Session = Depends(ge
 
 
 @router.get("/export")
-def export_profiles(ids: Optional[str] = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Экспорт справочника (или подборки по ids=1,2,3) в Excel - для отправки клиенту как КП."""
+def export_profiles(ids: Optional[str] = None, db: Session = Depends(get_db), user: User = Depends(require_role("admin"))):
+    """Экспорт справочника (или подборки по ids=1,2,3) в Excel - для отправки клиенту как КП.
+    База общая на все пространства, поэтому выгрузку целиком отдаём только админу -
+    иначе приглашённый унёс бы весь медиакит с прайсами одним файлом."""
     q = db.query(StreamerProfile)
     if ids:
         id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
