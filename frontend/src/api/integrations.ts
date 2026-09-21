@@ -377,6 +377,13 @@ export const integrationsApi = {
   async removeDiscussionMessage(messageId: number) {
     await api.delete(`/integrations/discussion/${messageId}`)
   },
+  async markDiscussionRead(streamerId: number) {
+    await api.post(`/integrations/streamers/${streamerId}/discussion/read`)
+  },
+  async unreadDiscussionCounts() {
+    const { data } = await api.get<Record<number, number>>('/integrations/discussion/unread')
+    return data
+  },
 
   async auditLog(streamerId: number) {
     const { data } = await api.get<AuditLogEntry[]>(`/integrations/streamers/${streamerId}/audit-log`)

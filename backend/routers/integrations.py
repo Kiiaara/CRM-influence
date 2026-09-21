@@ -9,6 +9,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, computed_field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -20,6 +21,7 @@ from models.case_study import CaseStudy
 from models.brief_file import BriefFile
 from models.advertiser import Advertiser
 from models.discussion_message import DiscussionMessage
+from models.discussion_read import DiscussionMessageRead
 from models.audit_log import AuditLogEntry
 from models.user import User
 from models.workspace import Workspace
@@ -920,6 +922,45 @@ def delete_discussion_message(message_id: int, db: Session = Depends(get_db), ws
     db.delete(m)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/streamers/{streamer_id}/discussion/read")
+def mark_discussion_read(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
+    """Отмечает обсуждение стримера прочитанным текущим юзером - убирает бейдж непрочитанного в чатике."""
+    _get_streamer_or_404(db, ws, streamer_id)
+    row = db.get(DiscussionMessageRead, (streamer_id, user.tg_id))
+    now = datetime.now()
+    if row:
+        row.last_read_at = now
+    else:
+        db.add(DiscussionMessageRead(streamer_id=streamer_id, user_tg_id=user.tg_id, last_read_at=now))
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/discussion/unread")
+def discussion_unread_counts(db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
+    """Число непрочитанных сообщений по каждому стримеру текущего пространства -
+    для бейджа на карточке канбана и в чатике."""
+    rows = (
+        db.query(DiscussionMessage.streamer_id, func.count(DiscussionMessage.id))
+        .join(IntegrationStreamer, DiscussionMessage.streamer_id == IntegrationStreamer.id)
+        .join(Integration, IntegrationStreamer.integration_id == Integration.id)
+        .outerjoin(
+            DiscussionMessageRead,
+            (DiscussionMessageRead.streamer_id == DiscussionMessage.streamer_id)
+            & (DiscussionMessageRead.user_tg_id == user.tg_id),
+        )
+        .filter(Integration.workspace_id == ws.id)
+        .filter((DiscussionMessage.author_tg_id != user.tg_id) | (DiscussionMessage.author_tg_id.is_(None)))
+        .filter(
+            (DiscussionMessageRead.last_read_at.is_(None))
+            | (DiscussionMessage.created_at > DiscussionMessageRead.last_read_at)
+        )
+        .group_by(DiscussionMessage.streamer_id)
+        .all()
+    )
+    return {streamer_id: count for streamer_id, count in rows}
 
 
 # ---------- журнал изменений (кто когда что менял) ----------
