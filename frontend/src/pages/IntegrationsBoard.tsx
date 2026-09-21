@@ -27,6 +27,9 @@ import type {
 } from '../api/integrations'
 import { advertisersApi } from '../api/advertisers'
 import { streamerProfilesApi } from '../api/streamerProfiles'
+import { workspacesApi } from '../api/workspaces'
+import type { WorkspaceMember } from '../api/workspaces'
+import { useWorkspace } from '../workspaceContext'
 
 const PAYMENT_COLORS: Record<PaymentStatus, string> = {
   not_invoiced: 'bg-slate-100 text-slate-600 dark:bg-brand-900 dark:text-slate-300',
@@ -52,6 +55,7 @@ export default function IntegrationsBoard() {
   const [dragOverStage, setDragOverStage] = useState<Stage | null>(null)
   const [mobileStage, setMobileStage] = useState<Stage>('negotiation')
   const [searchParams, setSearchParams] = useSearchParams()
+  const [summaryFor, setSummaryFor] = useState<Integration | null>(null)
   const dragData = useRef<{ id: number; stage: Stage } | null>(null)
 
   const { data: integrations = [] } = useQuery({ queryKey: ['integrations'], queryFn: integrationsApi.list })
@@ -78,6 +82,19 @@ export default function IntegrationsBoard() {
     }
   }, [cards, searchParams, setSearchParams])
 
+  // открытие сводки по всей сделке по ?deal=<integration_id> - персональная ссылка на сделку,
+  // можно кинуть коллеге в чат
+  useEffect(() => {
+    const dealId = searchParams.get('deal')
+    if (!dealId || integrations.length === 0) return
+    const found = integrations.find(i => i.id === Number(dealId))
+    if (found) {
+      setSummaryFor(found)
+      searchParams.delete('deal')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [integrations, searchParams, setSearchParams])
+
   const updateStreamer = useMutation({
     mutationFn: ({ id, p }: { id: number; p: Partial<Streamer> }) => integrationsApi.updateStreamer(id, p),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['integrations'] }),
@@ -102,7 +119,20 @@ export default function IntegrationsBoard() {
       className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-lg p-3 cursor-pointer hover:border-brand-400 shadow-sm"
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="text-xs text-slate-400">{c.brand}</div>
+        <div className="text-xs text-slate-400 flex items-center gap-1.5 min-w-0">
+          <span className="truncate">{c.brand}</span>
+          <button
+            onClick={e => {
+              e.stopPropagation()
+              const it = integrations.find(i => i.id === c.integration_id)
+              if (it) setSummaryFor(it)
+            }}
+            title="Открыть сделку целиком / ссылка"
+            className="shrink-0 text-slate-300 hover:text-brand-500"
+          >
+            🔗
+          </button>
+        </div>
         {!!unreadCounts[c.id] && (
           <span className="shrink-0 flex items-center gap-1 text-[11px] font-medium text-white bg-brand-600 rounded-full px-1.5 py-0.5">
             💬 {unreadCounts[c.id]}
@@ -229,6 +259,100 @@ export default function IntegrationsBoard() {
           onClose={() => setEditing(null)}
         />
       )}
+
+      {summaryFor && (
+        <IntegrationSummaryModal
+          integration={summaryFor}
+          onClose={() => setSummaryFor(null)}
+          onOpenStreamer={s => {
+            setSummaryFor(null)
+            setEditing({ streamer: s, brand: summaryFor.brand })
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// сводка по сделке целиком (бренд + все стримеры в пуле) - открывается по клику на 🔗
+// с карточки канбана или по прямой ссылке /integrations?deal=<id>, чтобы можно было её кинуть коллеге
+function IntegrationSummaryModal({
+  integration,
+  onClose,
+  onOpenStreamer,
+}: {
+  integration: Integration
+  onClose: () => void
+  onOpenStreamer: (s: Streamer) => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  const copyLink = () => {
+    const url = `${window.location.origin}/integrations?deal=${integration.id}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
+  const totalAmount = integration.streamers.reduce((s, x) => s + (x.amount ?? 0), 0)
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{integration.brand}</h2>
+          <div className="flex items-center gap-2 shrink-0">
+            <a
+              href={integrationsApi.exportUrl(integration.id)}
+              className="text-xs border border-slate-200 dark:border-brand-800 text-slate-600 dark:text-slate-300 hover:border-brand-400 px-3 py-1.5 rounded-lg"
+              title="Скачать сделку в Excel"
+            >
+              ⬇ Excel
+            </a>
+            <button
+              onClick={copyLink}
+              className="text-xs border border-slate-200 dark:border-brand-800 text-slate-600 dark:text-slate-300 hover:border-brand-400 px-3 py-1.5 rounded-lg"
+            >
+              {copied ? '✓ Скопировано' : '🔗 Ссылка'}
+            </button>
+          </div>
+        </div>
+        {integration.description && (
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">{integration.description}</p>
+        )}
+        <div className="text-xs text-slate-400 mb-4">
+          {integration.streamers.length} стример(ов){totalAmount > 0 && ` · Σ ${totalAmount.toLocaleString('ru-RU')} ₽`}
+        </div>
+
+        <div className="space-y-2">
+          {integration.streamers.map(s => (
+            <div
+              key={s.id}
+              onClick={() => onOpenStreamer(s)}
+              className="flex items-center justify-between gap-2 border border-slate-200 dark:border-brand-900 rounded-lg px-3 py-2 cursor-pointer hover:border-brand-400"
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{s.streamer_name}</div>
+                <div className="text-xs text-slate-400">{STAGES.find(st => st.key === s.stage)?.label ?? s.stage}</div>
+              </div>
+              {s.amount != null && (
+                <div className="text-xs text-slate-500 dark:text-slate-400 shrink-0">{s.amount.toLocaleString('ru-RU')} {s.currency}</div>
+              )}
+            </div>
+          ))}
+          {integration.streamers.length === 0 && <div className="text-xs text-slate-400">Стримеров в сделке ещё нет</div>}
+        </div>
+
+        <div className="flex justify-end mt-6">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 rounded-lg">
+            Закрыть
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1003,22 +1127,66 @@ export function StreamerModal({
 
 // чатик по обсуждению сделки со стримером - раньше жил внутри модалки,
 // теперь отдельная панель справа, чтобы можно было переписываться не теряя форму
+function memberDisplayName(m: WorkspaceMember): string {
+  return m.label || m.tg_username || `#${m.user_tg_id}`
+}
+
+// подсвечивает "@Имя" в тексте сообщения для тех, кто реально был упомянут (mentioned_tg_ids) -
+// намеренно не парсим текст как попало, чтобы не подсвечивать случайные "@слово"
+function renderMessageText(text: string, mentionedTgIds: number[], members: WorkspaceMember[]) {
+  const names = (mentionedTgIds ?? [])
+    .map(id => members.find(m => m.user_tg_id === id))
+    .filter((m): m is WorkspaceMember => !!m)
+    .map(memberDisplayName)
+    .sort((a, b) => b.length - a.length)
+  if (names.length === 0) return text
+
+  const escaped = names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const pattern = new RegExp(`@(${escaped.join('|')})`, 'g')
+  const parts: React.ReactNode[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(text))) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index))
+    parts.push(
+      <span key={match.index} className="text-brand-600 dark:text-brand-400 font-medium bg-brand-50 dark:bg-brand-900/30 rounded px-0.5">
+        {match[0]}
+      </span>
+    )
+    lastIndex = match.index + match[0].length
+  }
+  parts.push(text.slice(lastIndex))
+  return parts
+}
+
 function DiscussionPanel({ streamerId }: { streamerId: number }) {
   const qc = useQueryClient()
+  const { current: workspace } = useWorkspace()
   const [text, setText] = useState('')
+  const [mentionedIds, setMentionedIds] = useState<number[]>([])
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
+  const [mentionStart, setMentionStart] = useState<number | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   const { data: discussion = [] } = useQuery({
     queryKey: ['streamers', streamerId, 'discussion'],
     queryFn: () => integrationsApi.discussion(streamerId),
     refetchInterval: 5000,
   })
+  const { data: members = [] } = useQuery({
+    queryKey: ['workspace-members', workspace?.id],
+    queryFn: () => workspacesApi.members(workspace!.id),
+    enabled: !!workspace,
+  })
 
   const addMessage = useMutation({
-    mutationFn: (t: string) => integrationsApi.addDiscussionMessage(streamerId, t),
+    mutationFn: (p: { text: string; mentionedTgIds: number[] }) =>
+      integrationsApi.addDiscussionMessage(streamerId, p.text, p.mentionedTgIds),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['streamers', streamerId, 'discussion'] })
       setText('')
+      setMentionedIds([])
     },
   })
   const removeMessage = useMutation({
@@ -1037,9 +1205,67 @@ function DiscussionPanel({ streamerId }: { streamerId: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [discussion.length])
 
+  const mentionSuggestions = useMemo(() => {
+    if (mentionQuery == null) return []
+    const q = mentionQuery.toLowerCase()
+    return members.filter(m => memberDisplayName(m).toLowerCase().includes(q)).slice(0, 6)
+  }, [mentionQuery, members])
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setText(value)
+    const pos = e.target.selectionStart ?? value.length
+    const uptoCursor = value.slice(0, pos)
+    const at = uptoCursor.lastIndexOf('@')
+    if (at === -1 || /\s/.test(uptoCursor.slice(at + 1))) {
+      setMentionQuery(null)
+      setMentionStart(null)
+      return
+    }
+    setMentionStart(at)
+    setMentionQuery(uptoCursor.slice(at + 1))
+  }
+
+  const selectMention = (m: WorkspaceMember) => {
+    if (mentionStart == null) return
+    const name = memberDisplayName(m)
+    const before = text.slice(0, mentionStart)
+    const after = text.slice(mentionStart + 1 + (mentionQuery?.length ?? 0))
+    const newText = `${before}@${name} ${after}`
+    setText(newText)
+    setMentionedIds(ids => (ids.includes(m.user_tg_id) ? ids : [...ids, m.user_tg_id]))
+    setMentionQuery(null)
+    setMentionStart(null)
+    requestAnimationFrame(() => {
+      const cursor = before.length + name.length + 2
+      inputRef.current?.focus()
+      inputRef.current?.setSelectionRange(cursor, cursor)
+    })
+  }
+
   const send = () => {
     const t = text.trim()
-    if (t) addMessage.mutate(t)
+    if (!t) return
+    // шлём пуш только тем, чьё "@Имя" реально осталось в тексте - если стёрли упоминание руками, не спамим
+    const finalIds = mentionedIds.filter(id => {
+      const m = members.find(mm => mm.user_tg_id === id)
+      return m ? t.includes(`@${memberDisplayName(m)}`) : false
+    })
+    addMessage.mutate({ text: t, mentionedTgIds: finalIds })
+  }
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && mentionQuery != null && mentionSuggestions.length > 0) {
+      e.preventDefault()
+      selectMention(mentionSuggestions[0])
+      return
+    }
+    if (e.key === 'Escape' && mentionQuery != null) {
+      setMentionQuery(null)
+      setMentionStart(null)
+      return
+    }
+    if (e.key === 'Enter') send()
   }
 
   return (
@@ -1060,18 +1286,34 @@ function DiscussionPanel({ streamerId }: { streamerId: number }) {
                 <button onClick={() => removeMessage.mutate(m.id)} className="text-slate-300 hover:text-red-500 text-xs">×</button>
               </div>
             </div>
-            <div className="text-slate-800 dark:text-slate-200 whitespace-pre-wrap">{m.text}</div>
+            <div className="text-slate-800 dark:text-slate-200 whitespace-pre-wrap">
+              {renderMessageText(m.text, m.mentioned_tg_ids, members)}
+            </div>
           </div>
         ))}
         {discussion.length === 0 && <div className="text-xs text-slate-400">Обсуждения ещё нет</div>}
         <div ref={bottomRef} />
       </div>
-      <div className="p-3 border-t border-slate-200 dark:border-brand-900 flex gap-2">
+      <div className="relative p-3 border-t border-slate-200 dark:border-brand-900 flex gap-2">
+        {mentionQuery != null && mentionSuggestions.length > 0 && (
+          <div className="absolute bottom-full left-3 right-3 mb-1 bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-800 rounded-lg shadow-lg overflow-hidden">
+            {mentionSuggestions.map(m => (
+              <button
+                key={m.user_tg_id}
+                onClick={() => selectMention(m)}
+                className="w-full text-left px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900"
+              >
+                @{memberDisplayName(m)}
+              </button>
+            ))}
+          </div>
+        )}
         <input
+          ref={inputRef}
           value={text}
-          onChange={e => setText(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && send()}
-          placeholder="Написать сообщение…"
+          onChange={handleTextChange}
+          onKeyDown={onKeyDown}
+          placeholder="Написать сообщение… (@ - упомянуть)"
           className="flex-1 min-w-0 bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
         />
         <button onClick={send} className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg shrink-0">

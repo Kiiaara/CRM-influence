@@ -16,10 +16,13 @@ import {
 } from 'recharts'
 import { integrationsApi, STAGES } from '../api/integrations'
 import type { Streamer } from '../api/integrations'
+import { workspacesApi } from '../api/workspaces'
+import type { WorkspaceMember } from '../api/workspaces'
+import { useWorkspace } from '../workspaceContext'
 import { useTheme } from '../theme'
 
 type Period = 'month' | 'quarter' | 'year' | 'all'
-type Tab = 'overview' | 'streamers' | 'brands'
+type Tab = 'overview' | 'streamers' | 'brands' | 'managers'
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: 'month', label: 'Месяц' },
@@ -32,6 +35,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Обзор' },
   { key: 'streamers', label: 'Стримеры' },
   { key: 'brands', label: 'Рекламодатели' },
+  { key: 'managers', label: 'Менеджеры' },
 ]
 
 interface Row extends Streamer {
@@ -62,6 +66,12 @@ function paidAmount(r: Row): number {
 
 export default function AnalyticsPage() {
   const { data: integrations = [] } = useQuery({ queryKey: ['integrations'], queryFn: integrationsApi.list })
+  const { current: workspace } = useWorkspace()
+  const { data: members = [] } = useQuery({
+    queryKey: ['workspace-members', workspace?.id],
+    queryFn: () => workspacesApi.members(workspace!.id),
+    enabled: !!workspace,
+  })
   const { theme } = useTheme()
   const [period, setPeriod] = useState<Period>('month')
   const [tab, setTab] = useState<Tab>('overview')
@@ -128,6 +138,7 @@ export default function AnalyticsPage() {
         <StreamersTab rows={rows} doneInPeriod={doneInPeriod} onOpen={setOpenStreamer} />
       )}
       {tab === 'brands' && <BrandsTab rows={rows} doneInPeriod={doneInPeriod} onOpen={setOpenBrand} />}
+      {tab === 'managers' && <ManagersTab rows={rows} doneInPeriod={doneInPeriod} members={members} chart={chart} />}
 
       {openStreamer && (
         <StreamerDetail name={openStreamer} rows={rows} chart={chart} onClose={() => setOpenStreamer(null)} />
@@ -571,6 +582,130 @@ function BrandDetail({ brand, rows, onClose }: { brand: string; rows: Row[]; onC
       <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">История сделок</div>
       <DealsTable deals={mine} />
     </Modal>
+  )
+}
+
+// ---------- менеджеры ----------
+
+interface ManagerAgg {
+  key: string
+  name: string
+  totalDeals: number
+  activeDeals: number
+  doneDeals: number
+  cancelledDeals: number
+  overdue: number
+  turnover: number
+  revenue: number
+}
+
+function managerName(tgId: number | null, members: WorkspaceMember[]): string {
+  if (tgId == null) return 'Без автора'
+  const m = members.find(mm => mm.user_tg_id === tgId)
+  if (!m) return `#${tgId}`
+  return m.label || m.tg_username || `#${tgId}`
+}
+
+function aggregateManagers(rows: Row[], doneInPeriod: Row[], members: WorkspaceMember[]): ManagerAgg[] {
+  const map = new Map<string, ManagerAgg>()
+  for (const r of rows) {
+    const key = r.created_by_tg_id != null ? String(r.created_by_tg_id) : 'none'
+    const e = map.get(key) ?? {
+      key, name: managerName(r.created_by_tg_id, members),
+      totalDeals: 0, activeDeals: 0, doneDeals: 0, cancelledDeals: 0, overdue: 0, turnover: 0, revenue: 0,
+    }
+    e.totalDeals += 1
+    if (r.stage === 'done') e.doneDeals += 1
+    else if (r.stage === 'cancelled') e.cancelledDeals += 1
+    else e.activeDeals += 1
+    if (r.deadline && r.stage !== 'done' && r.stage !== 'cancelled' && dayjs(r.deadline).isBefore(dayjs(), 'day')) {
+      e.overdue += 1
+    }
+    map.set(key, e)
+  }
+  for (const r of doneInPeriod) {
+    const key = r.created_by_tg_id != null ? String(r.created_by_tg_id) : 'none'
+    const e = map.get(key)
+    if (!e) continue
+    e.turnover += r.amount ?? 0
+    e.revenue += r.commission_amount ?? 0
+  }
+  return [...map.values()].sort((a, b) => b.activeDeals - a.activeDeals || b.totalDeals - a.totalDeals)
+}
+
+function ManagersTab({
+  rows,
+  doneInPeriod,
+  members,
+  chart,
+}: {
+  rows: Row[]
+  doneInPeriod: Row[]
+  members: WorkspaceMember[]
+  chart: ChartColors
+}) {
+  const aggs = useMemo(() => aggregateManagers(rows, doneInPeriod, members), [rows, doneInPeriod, members])
+  const chartData = useMemo(() => aggs.map(a => ({ name: a.name, count: a.activeDeals })), [aggs])
+
+  return (
+    <div>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+        Загрузка по тому, кто завёл карточку стримера. Деньги — за выбранный период, количество сделок — за всё время.
+      </p>
+
+      {aggs.some(a => a.activeDeals > 0) && (
+        <Panel title="Активные сделки по менеджерам" hint="Сколько сейчас незакрытых карточек ведёт каждый" className="mb-4">
+          <ResponsiveContainer width="100%" height={Math.max(120, aggs.length * 40)}>
+            <BarChart data={chartData} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} horizontal={false} />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: chart.tick }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: chart.tick }} axisLine={false} tickLine={false} width={120} />
+              <Tooltip content={<CountTooltip dark={chart.dark} />} cursor={{ fill: chart.dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }} />
+              <Bar dataKey="count" name="Активных сделок" radius={[0, 4, 4, 0]} barSize={20}>
+                {chartData.map((_, i) => (
+                  <Cell key={i} fill={chart.bar} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </Panel>
+      )}
+
+      <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="bg-slate-50 dark:bg-brand-900/50">
+            <tr>
+              <Th>Менеджер</Th>
+              <Th>Активных</Th>
+              <Th>Всего сделок</Th>
+              <Th>Завершено</Th>
+              <Th>Оборот</Th>
+              <Th>Доход</Th>
+              <Th>Просрочки</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {aggs.map(a => (
+              <tr key={a.key} className="border-t border-slate-100 dark:border-brand-900">
+                <td className="px-4 py-2 text-slate-900 dark:text-slate-100 whitespace-nowrap font-medium">{a.name}</td>
+                <td className="px-4 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.activeDeals}</td>
+                <td className="px-4 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                  {a.totalDeals}
+                  {a.cancelledDeals > 0 && <span className="text-red-400 text-xs"> ({a.cancelledDeals} отм.)</span>}
+                </td>
+                <td className="px-4 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.doneDeals}</td>
+                <td className="px-4 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.turnover > 0 ? money(a.turnover) : '—'}</td>
+                <td className="px-4 py-2 text-brand-600 dark:text-brand-400 whitespace-nowrap">{a.revenue > 0 ? money(a.revenue) : '—'}</td>
+                <td className="px-4 py-2 whitespace-nowrap">
+                  {a.overdue > 0 ? <span className="text-xs text-red-500">{a.overdue} просроч.</span> : <span className="text-slate-400 text-xs">—</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {aggs.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Данных пока нет</div>}
+      </div>
+    </div>
   )
 }
 

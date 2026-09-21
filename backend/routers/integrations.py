@@ -1,13 +1,18 @@
 """CRM интеграций: сделка с брендом (Integration) содержит пул стримеров
 (IntegrationStreamer), каждый со своим статусом/сроком/суммой/договором/оплатами."""
+import io
+import json
 import os
 import re
 import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse, StreamingResponse
+from openpyxl import Workbook
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 from pydantic import BaseModel, computed_field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -24,7 +29,7 @@ from models.discussion_message import DiscussionMessage
 from models.discussion_read import DiscussionMessageRead
 from models.audit_log import AuditLogEntry
 from models.user import User
-from models.workspace import Workspace
+from models.workspace import Workspace, WorkspaceMember
 
 
 def _get_integration_or_404(db: Session, ws: Workspace, integration_id: int) -> Integration:
@@ -367,12 +372,14 @@ class DiscussionMessageOut(BaseModel):
     author_tg_id: Optional[int] = None
     author_label: Optional[str] = None
     text: str
+    mentioned_tg_ids: List[int] = []
     created_at: datetime
     model_config = {"from_attributes": True}
 
 
 class DiscussionMessageCreate(BaseModel):
     text: str
+    mentioned_tg_ids: List[int] = []
 
 
 class AuditLogEntryOut(BaseModel):
@@ -450,6 +457,107 @@ def create_integration(data: IntegrationCreate, db: Session = Depends(get_db), w
 @router.get("/{integration_id}", response_model=IntegrationOut)
 def get_integration(integration_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
     return _get_integration_or_404(db, ws, integration_id)
+
+
+_STAGE_LABELS_RU = {
+    "negotiation": "На согласовании",
+    "agreed": "Согласован",
+    "awaiting_contract": "Ждёт договора",
+    "awaiting_payment": "Ждёт оплаты",
+    "done": "Завершено",
+    "cancelled": "Отменено",
+}
+_PAYMENT_LABELS_RU = {
+    "not_invoiced": "Не выставлен",
+    "invoiced": "Выставлен счёт",
+    "partial": "Частично оплачен",
+    "paid": "Оплачен",
+}
+_CONTRACT_STATUS_LABELS_RU = {
+    "not_sent": "Не отправлен",
+    "sent_to_streamer": "Отправлен стримеру",
+    "signed_by_streamer": "Подписан стримером",
+    "sent_to_brand": "Отправлен бренду",
+    "signed_by_brand": "Подписан брендом",
+    "active": "Активен",
+    "expired": "Истёк",
+}
+
+
+@router.get("/{integration_id}/export.xlsx")
+def export_integration(integration_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    """Экспорт сделки (все стримеры внутри) в Excel - чтобы можно было отправить бренду или в отчётность."""
+    it = _get_integration_or_404(db, ws, integration_id)
+
+    wb = Workbook()
+    sheet = wb.active
+    sheet.title = "Сделка"
+
+    bold = Font(bold=True)
+    sheet.append(["Рекламодатель", it.brand])
+    sheet.append(["Описание", it.description or "—"])
+    sheet.append(["Экспортировано", datetime.now().strftime("%d.%m.%Y %H:%M")])
+    for row in range(1, 4):
+        sheet.cell(row=row, column=1).font = bold
+    sheet.append([])
+
+    headers = [
+        "Стример", "Контакт", "Стадия", "Сумма", "Валюта", "Комиссия %", "Налог стримера %",
+        "Комиссия (наша)", "На руки стримеру", "Статус оплаты", "Оплачено, %", "Дедлайн",
+        "Дата интеграции", "Статус договора", "Договор отправлен", "Договор подписан", "ТЗ",
+    ]
+    sheet.append(headers)
+    header_row = sheet.max_row
+    for col in range(1, len(headers) + 1):
+        sheet.cell(row=header_row, column=col).font = bold
+
+    total_amount = 0.0
+    for s in it.streamers:
+        amount = float(s.amount) if s.amount is not None else None
+        commission = round(amount * float(s.commission_percent) / 100, 2) if amount is not None else None
+        tax = round(amount * float(s.streamer_tax_percent) / 100, 2) if amount is not None else None
+        net = round(amount - commission - tax, 2) if amount is not None else None
+        paid_total = sum(float(p.amount) for p in s.payments)
+        paid_percent = round(min(paid_total / amount * 100, 100), 1) if amount and paid_total > 0 else None
+        if amount is not None:
+            total_amount += amount
+
+        sheet.append([
+            s.streamer_name,
+            s.contact,
+            _STAGE_LABELS_RU.get(s.stage, s.stage),
+            amount,
+            s.currency,
+            float(s.commission_percent),
+            float(s.streamer_tax_percent),
+            commission,
+            net,
+            _PAYMENT_LABELS_RU.get(s.payment_status, s.payment_status),
+            paid_percent,
+            s.deadline.strftime("%d.%m.%Y") if s.deadline else None,
+            s.integration_date.strftime("%d.%m.%Y") if s.integration_date else None,
+            _CONTRACT_STATUS_LABELS_RU.get(s.contract_status, s.contract_status),
+            s.contract_sent_date.strftime("%d.%m.%Y") if s.contract_sent_date else None,
+            s.contract_signed_date.strftime("%d.%m.%Y") if s.contract_signed_date else None,
+            s.brief,
+        ])
+
+    sheet.append([])
+    total_row = sheet.max_row + 1
+    sheet.cell(row=total_row, column=3, value="Итого:").font = bold
+    sheet.cell(row=total_row, column=4, value=total_amount).font = bold
+
+    for col in range(1, len(headers) + 1):
+        sheet.column_dimensions[get_column_letter(col)].width = 16
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=deal_{it.id}.xlsx"},
+    )
 
 
 @router.patch("/{integration_id}", response_model=IntegrationOut)
@@ -883,6 +991,20 @@ def _author_label(db: Session, tg_id: Optional[int]) -> Optional[str]:
     return u.label or u.tg_first_name or u.tg_username or str(u.tg_id)
 
 
+def _parse_mentions(raw: Optional[str]) -> List[int]:
+    try:
+        return json.loads(raw) if raw else []
+    except (TypeError, ValueError):
+        return []
+
+
+def _discussion_out(db: Session, m: DiscussionMessage) -> DiscussionMessageOut:
+    return DiscussionMessageOut.model_validate(m).model_copy(update={
+        "author_label": _author_label(db, m.author_tg_id),
+        "mentioned_tg_ids": _parse_mentions(m.mentions),
+    })
+
+
 @router.get("/streamers/{streamer_id}/discussion", response_model=List[DiscussionMessageOut])
 def list_discussion(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
     _get_streamer_or_404(db, ws, streamer_id)
@@ -892,23 +1014,52 @@ def list_discussion(streamer_id: int, db: Session = Depends(get_db), ws: Workspa
         .order_by(DiscussionMessage.created_at.asc())
         .all()
     )
-    return [
-        DiscussionMessageOut.model_validate(m).model_copy(update={"author_label": _author_label(db, m.author_tg_id)})
-        for m in msgs
-    ]
+    return [_discussion_out(db, m) for m in msgs]
 
 
 @router.post("/streamers/{streamer_id}/discussion", response_model=DiscussionMessageOut, status_code=201)
-def create_discussion_message(streamer_id: int, data: DiscussionMessageCreate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
-    _get_streamer_or_404(db, ws, streamer_id)
+def create_discussion_message(
+    streamer_id: int,
+    data: DiscussionMessageCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    ws: Workspace = Depends(get_current_workspace),
+    user: User = Depends(get_current_user),
+):
+    s = _get_streamer_or_404(db, ws, streamer_id)
     text = data.text.strip()
     if not text:
         raise HTTPException(400, "Сообщение не может быть пустым")
-    m = DiscussionMessage(streamer_id=streamer_id, author_tg_id=user.tg_id, text=text)
+
+    # берём только упоминания реальных участников этого пространства - иначе можно
+    # было бы дёрнуть пуш произвольному tg_id, подставив его в запрос напрямую
+    mention_ids: List[int] = []
+    if data.mentioned_tg_ids:
+        mention_ids = [
+            row[0] for row in db.query(WorkspaceMember.user_tg_id)
+            .filter(WorkspaceMember.workspace_id == ws.id, WorkspaceMember.user_tg_id.in_(data.mentioned_tg_ids))
+            .all()
+        ]
+
+    m = DiscussionMessage(streamer_id=streamer_id, author_tg_id=user.tg_id, text=text, mentions=json.dumps(mention_ids))
     db.add(m)
     db.commit()
     db.refresh(m)
-    return DiscussionMessageOut.model_validate(m).model_copy(update={"author_label": _author_label(db, m.author_tg_id)})
+
+    if mention_ids:
+        it = db.get(Integration, s.integration_id)
+        deal_title = f"{s.streamer_name} — {it.brand}" if it else s.streamer_name
+        author = _author_label(db, user.tg_id) or "кто-то"
+        push_text = f"💬 {author} упомянул(а) вас в обсуждении «{deal_title}»:\n{text}"
+        for tg_id in mention_ids:
+            if tg_id == user.tg_id:
+                continue
+            target = db.get(User, tg_id)
+            if target and target.tg_chat_ready:
+                from notifier import send_message
+                background_tasks.add_task(send_message, target.tg_id, push_text)
+
+    return _discussion_out(db, m)
 
 
 @router.delete("/discussion/{message_id}")

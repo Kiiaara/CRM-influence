@@ -122,6 +122,7 @@ export interface DiscussionMessage {
   author_tg_id: number | null
   author_label: string | null
   text: string
+  mentioned_tg_ids: number[]
   created_at: string
 }
 
@@ -273,6 +274,9 @@ export const integrationsApi = {
   async remove(id: number) {
     await api.delete(`/integrations/${id}`)
   },
+  exportUrl(id: number) {
+    return `/api/integrations/${id}/export.xlsx`
+  },
   async streamerNames() {
     const { data } = await api.get<string[]>('/integrations/streamer-names')
     return data
@@ -370,8 +374,11 @@ export const integrationsApi = {
     const { data } = await api.get<DiscussionMessage[]>(`/integrations/streamers/${streamerId}/discussion`)
     return data
   },
-  async addDiscussionMessage(streamerId: number, text: string) {
-    const { data } = await api.post<DiscussionMessage>(`/integrations/streamers/${streamerId}/discussion`, { text })
+  async addDiscussionMessage(streamerId: number, text: string, mentionedTgIds: number[] = []) {
+    const { data } = await api.post<DiscussionMessage>(`/integrations/streamers/${streamerId}/discussion`, {
+      text,
+      mentioned_tg_ids: mentionedTgIds,
+    })
     return data
   },
   async removeDiscussionMessage(messageId: number) {

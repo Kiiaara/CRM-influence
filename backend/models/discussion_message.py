@@ -14,5 +14,7 @@ class DiscussionMessage(Base):
     author_tg_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.tg_id", ondelete="SET NULL"), nullable=True)
 
     text: Mapped[str] = mapped_column(Text)
+    # упомянутые через @ участники пространства - JSON-массив tg_id, как pinned_pages у User
+    mentions: Mapped[str] = mapped_column(Text, default="[]")
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

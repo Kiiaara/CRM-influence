@@ -86,6 +86,18 @@ def _migrate_streamers_add_contract_valid_until():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN contract_valid_until DATETIME"))
 
 
+def _migrate_discussion_messages_add_mentions():
+    """Добавляем колонку mentions в discussion_messages если её нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "discussion_messages" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("discussion_messages")]
+    if "mentions" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE discussion_messages ADD COLUMN mentions TEXT DEFAULT '[]'"))
+
+
 def _migrate_workspaces_add_owner():
     """Добавляем owner_tg_id и updated_at в workspaces если их нет."""
     from sqlalchemy import text, inspect
@@ -357,6 +369,7 @@ async def lifespan(app: FastAPI):
     _migrate_streamers_add_case_reminder()
     _migrate_streamers_add_ord_links()
     _migrate_integrations_add_advertiser()
+    _migrate_discussion_messages_add_mentions()
     _migrate_brand_contacts_add_advertiser()
     _backfill_advertisers()
     _migrate_brand_contacts_drop_integration_not_null()

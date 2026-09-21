@@ -8,6 +8,7 @@ import {
   contactQuickLink,
 } from '../api/advertisers'
 import type { Advertiser, BrandContact, ContactType } from '../api/advertisers'
+import { integrationsApi } from '../api/integrations'
 
 export default function AdvertisersPage() {
   const qc = useQueryClient()
@@ -246,14 +247,7 @@ function AdvertiserModal({ advertiser, onClose }: { advertiser: Advertiser; onCl
           <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3">
             <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Сделки ({deals.length})</div>
             <div className="space-y-1">
-              {deals.map(d => (
-                <div key={d.id} className="flex items-center justify-between text-sm">
-                  <span className="text-slate-700 dark:text-slate-300 truncate">
-                    {d.description || `Сделка #${d.id}`} <span className="text-slate-400">· {d.streamers_count} стример(ов)</span>
-                  </span>
-                  <span className="text-xs text-slate-400 shrink-0">{new Date(d.updated_at).toLocaleDateString('ru-RU')}</span>
-                </div>
-              ))}
+              {deals.map(d => <DealRow key={d.id} deal={d} />)}
               {deals.length === 0 && <div className="text-xs text-slate-400">Сделок ещё не было</div>}
             </div>
           </div>
@@ -271,6 +265,41 @@ function AdvertiserModal({ advertiser, onClose }: { advertiser: Advertiser; onCl
             <button onClick={() => save.mutate()} className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Сохранить</button>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// строка сделки в карточке рекламодателя: ссылка на сделку (?deal=<id> в интеграциях) можно
+// скопировать и кинуть коллеге, плюс сразу выгрузить в Excel
+function DealRow({ deal }: { deal: { id: number; description: string; streamers_count: number; updated_at: string } }) {
+  const [copied, setCopied] = useState(false)
+
+  const copyLink = () => {
+    const url = `${window.location.origin}/integrations?deal=${deal.id}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2 text-sm">
+      <span className="text-slate-700 dark:text-slate-300 truncate">
+        {deal.description || `Сделка #${deal.id}`} <span className="text-slate-400">· {deal.streamers_count} стример(ов)</span>
+      </span>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="text-xs text-slate-400">{new Date(deal.updated_at).toLocaleDateString('ru-RU')}</span>
+        <a
+          href={integrationsApi.exportUrl(deal.id)}
+          title="Скачать в Excel"
+          className="text-slate-300 hover:text-brand-500 text-xs"
+        >
+          ⬇
+        </a>
+        <button onClick={copyLink} title="Скопировать ссылку на сделку" className="text-slate-300 hover:text-brand-500 text-xs">
+          {copied ? '✓' : '🔗'}
+        </button>
       </div>
     </div>
   )
