@@ -6,9 +6,12 @@ export interface UserRow {
   label: string | null
   tg_username: string | null
   tg_first_name: string | null
+  vk_id: number | null
   tg_chat_ready: boolean
   created_at: string
   is_self: boolean
+  // false у тех, кто заведён только по VK: уведомления им не уйдут
+  has_telegram: boolean
 }
 
 export const usersApi = {
@@ -17,7 +20,9 @@ export const usersApi = {
     return data
   },
   async create(payload: {
-    tg_id: number
+    // нужен хотя бы один из двух: по VK ID можно завести человека без Telegram
+    tg_id?: number
+    vk_id?: number
     role: string
     label?: string
     // необязательно: сразу закинуть человека в конкретное пространство
@@ -27,7 +32,7 @@ export const usersApi = {
     const { data } = await api.post<UserRow>('/users', payload)
     return data
   },
-  async update(tg_id: number, payload: { role?: string; label?: string }) {
+  async update(tg_id: number, payload: { role?: string; label?: string; vk_id?: number | null }) {
     const { data } = await api.patch<UserRow>(`/users/${tg_id}`, payload)
     return data
   },

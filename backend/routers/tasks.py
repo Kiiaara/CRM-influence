@@ -58,6 +58,8 @@ class AssigneeOut(BaseModel):
     tg_id: int
     label: str
     workspace_role: str
+    # false - человек не получит TG-уведомление о задаче (нет Telegram или не писал боту)
+    notifiable: bool = True
 
 
 class TaskCreate(BaseModel):
@@ -92,6 +94,7 @@ def list_assignees(db: Session = Depends(get_db), ws: Workspace = Depends(get_cu
             tg_id=u.tg_id,
             label=u.label or u.tg_first_name or u.tg_username or str(u.tg_id),
             workspace_role=m.role,
+            notifiable=u.tg_id > 0 and u.tg_chat_ready,
         )
         for m, u in rows
     ]

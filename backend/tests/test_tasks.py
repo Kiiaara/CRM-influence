@@ -3,31 +3,22 @@
 Проверяем главное: задачу можно поставить только участнику своего проекта,
 и на неё ставится флаг, по которому планировщик шлёт TG-уведомление.
 """
-import os
-import sys
-import uuid
 from datetime import datetime, timedelta
 
 import pytest
 
-_TEST_DB = os.path.join(os.path.dirname(__file__), f"test_{uuid.uuid4().hex}.db")
-os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB}"
-os.environ["DEV_AUTH_BYPASS"] = "false"
+from fastapi.testclient import TestClient
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import main
+from database import Base, engine, SessionLocal
+from models.user import User
+from models.auth_session import AuthSession
+from models.workspace import Workspace, WorkspaceMember
+from models.task import Task
 
-from fastapi.testclient import TestClient  # noqa: E402
-
-import main  # noqa: E402
-from database import Base, engine, SessionLocal  # noqa: E402
-from models.user import User  # noqa: E402
-from models.auth_session import AuthSession  # noqa: E402
-from models.workspace import Workspace, WorkspaceMember  # noqa: E402
-from models.task import Task  # noqa: E402
-
-LERA_TG = 111111
-HELPER_TG = 222222
-OUTSIDER_TG = 333333
+LERA_TG = 102001
+HELPER_TG = 102002
+OUTSIDER_TG = 102003
 
 
 @pytest.fixture(scope="module")
@@ -58,8 +49,8 @@ def ctx():
 
     expires = now + timedelta(days=1)
     db.add_all([
-        AuthSession(token="lera-token", tg_id=LERA_TG, expires_at=expires),
-        AuthSession(token="helper-token", tg_id=HELPER_TG, expires_at=expires),
+        AuthSession(token="task-lera", tg_id=LERA_TG, expires_at=expires),
+        AuthSession(token="task-helper", tg_id=HELPER_TG, expires_at=expires),
     ])
     db.commit()
 
@@ -69,9 +60,6 @@ def ctx():
     with TestClient(main.app) as client:
         yield client, data
 
-    engine.dispose()
-    if os.path.exists(_TEST_DB):
-        os.remove(_TEST_DB)
 
 
 def _as(client, token: str, ws_id: int):
@@ -82,7 +70,7 @@ def _as(client, token: str, ws_id: int):
 def test_workspace_members_endpoint_lists_only_this_project(ctx):
     """Выпадашка исполнителей: только те, кто в текущем пространстве."""
     client, data = ctx
-    headers = _as(client, "lera-token", data["main_ws_id"])
+    headers = _as(client, "task-lera", data["main_ws_id"])
     r = client.get("/api/tasks/assignees", headers=headers)
     assert r.status_code == 200
     ids = [u["tg_id"] for u in r.json()]
@@ -92,7 +80,7 @@ def test_workspace_members_endpoint_lists_only_this_project(ctx):
 
 def test_create_task_with_assignee(ctx):
     client, data = ctx
-    headers = _as(client, "lera-token", data["main_ws_id"])
+    headers = _as(client, "task-lera", data["main_ws_id"])
     due = (datetime.now() + timedelta(days=2)).replace(microsecond=0)
     r = client.post(
         "/api/tasks",
@@ -120,7 +108,7 @@ def test_create_task_with_assignee(ctx):
 def test_cannot_assign_to_outsider(ctx):
     """Нельзя поставить задачу тому, кого нет в этом пространстве."""
     client, data = ctx
-    headers = _as(client, "lera-token", data["main_ws_id"])
+    headers = _as(client, "task-lera", data["main_ws_id"])
     r = client.post(
         "/api/tasks",
         json={"title": "Чужая задача", "assignee_tg_id": OUTSIDER_TG},
@@ -131,7 +119,7 @@ def test_cannot_assign_to_outsider(ctx):
 
 def test_task_visible_to_coworker(ctx):
     client, data = ctx
-    headers = _as(client, "helper-token", data["main_ws_id"])
+    headers = _as(client, "task-helper", data["main_ws_id"])
     r = client.get("/api/tasks", headers=headers)
     assert r.status_code == 200
     titles = [t["title"] for t in r.json()]
@@ -141,7 +129,7 @@ def test_task_visible_to_coworker(ctx):
 def test_task_out_includes_assignee_label(ctx):
     """В списке нужно имя исполнителя, а не голый tg_id."""
     client, data = ctx
-    headers = _as(client, "lera-token", data["main_ws_id"])
+    headers = _as(client, "task-lera", data["main_ws_id"])
     r = client.get("/api/tasks", headers=headers)
     assert r.status_code == 200
     task = next(t for t in r.json() if t["title"] == "Согласовать ТЗ с брендом")
@@ -151,7 +139,7 @@ def test_task_out_includes_assignee_label(ctx):
 def test_reassign_resets_notification_flag(ctx):
     """Переназначили - человек должен получить своё уведомление."""
     client, data = ctx
-    headers = _as(client, "lera-token", data["main_ws_id"])
+    headers = _as(client, "task-lera", data["main_ws_id"])
 
     db = SessionLocal()
     t = db.query(Task).filter_by(title="Согласовать ТЗ с брендом").first()
@@ -180,6 +168,6 @@ def test_cannot_touch_task_from_other_workspace(ctx):
     foreign_id = foreign.id
     db.close()
 
-    headers = _as(client, "lera-token", data["main_ws_id"])
+    headers = _as(client, "task-lera", data["main_ws_id"])
     r = client.patch(f"/api/tasks/{foreign_id}", json={"title": "взлом"}, headers=headers)
     assert r.status_code == 404

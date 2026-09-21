@@ -1,6 +1,7 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { usersApi } from '../api/users'
+import type { UserRow } from '../api/users'
 import { workspacesApi } from '../api/workspaces'
 import type { WorkspaceRole } from '../api/workspaces'
 
@@ -29,6 +30,7 @@ export default function AdminUsersPage() {
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: usersApi.list })
   const { data: workspaces = [] } = useQuery({ queryKey: ['workspaces'], queryFn: workspacesApi.list })
   const [tgId, setTgId] = useState('')
+  const [vkId, setVkId] = useState('')
   const [label, setLabel] = useState('')
   const [role, setRole] = useState('editor')
   const [wsId, setWsId] = useState('')
@@ -54,7 +56,8 @@ export default function AdminUsersPage() {
   const add = useMutation({
     mutationFn: () =>
       usersApi.create({
-        tg_id: Number(tgId),
+        tg_id: tgId ? Number(tgId) : undefined,
+        vk_id: vkId ? Number(vkId) : undefined,
         role,
         label: label || undefined,
         workspace_id: wsId ? Number(wsId) : undefined,
@@ -63,7 +66,7 @@ export default function AdminUsersPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] })
       qc.invalidateQueries({ queryKey: ['workspace-members'] })
-      setTgId(''); setLabel(''); setAddError(null)
+      setTgId(''); setVkId(''); setLabel(''); setAddError(null)
     },
     onError: (e: any) => setAddError(e?.response?.data?.detail ?? 'Не удалось добавить пользователя'),
   })
@@ -85,6 +88,9 @@ export default function AdminUsersPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <Field label="TG ID">
             <input value={tgId} onChange={e => setTgId(e.target.value)} placeholder="123456789" className={inputCls} />
+          </Field>
+          <Field label="VK ID">
+            <input value={vkId} onChange={e => setVkId(e.target.value)} placeholder="можно позже" className={inputCls} />
           </Field>
           <Field label="Имя / заметка">
             <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Как называть" className={inputCls} />
@@ -111,14 +117,20 @@ export default function AdminUsersPage() {
             </Field>
           )}
           <div className="flex items-end">
-            <button onClick={() => add.mutate()} disabled={!tgId || add.isPending} className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium">
+            <button onClick={() => add.mutate()} disabled={(!tgId && !vkId) || add.isPending} className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium">
               {add.isPending ? 'Добавляю…' : '+ Добавить'}
             </button>
           </div>
         </div>
         {addError && <div className="text-xs text-red-500 mt-2">{addError}</div>}
+        {!tgId && vkId && (
+          <div className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+            Без TG ID человек будет заходить только через VK и не получит уведомлений о задачах и дедлайнах.
+          </div>
+        )}
         <p className="text-xs text-slate-400 mt-3">
-          Без пространства человек войдёт на сайт, но не увидит ни одного проекта. Он видит только те проекты, куда добавлен, и только тех людей, с кем делит проект.
+          Достаточно одного из ID. VK ID человек узнает, попробовав войти через VK - ему покажут номер, который нужно прислать вам.
+          Без пространства он войдёт на сайт, но не увидит ни одного проекта.
         </p>
       </div>
 
@@ -135,7 +147,12 @@ export default function AdminUsersPage() {
                 <button onClick={() => confirm('Удалить?') && remove.mutate(u.tg_id)} className="text-red-500 hover:text-red-700 text-xs shrink-0">удалить</button>
               )}
             </div>
-            <div className="text-xs text-slate-400 mb-2">TG ID: {u.tg_id}</div>
+            <div className="text-xs text-slate-400 mb-2 flex items-center gap-2 flex-wrap">
+              <span>TG ID: {u.has_telegram ? u.tg_id : 'нет'}</span>
+              <span className="flex items-center gap-1">
+                VK ID: <VkIdCell user={u} onSave={v => update.mutate({ tg_id: u.tg_id, p: { vk_id: v } })} />
+              </span>
+            </div>
             <div className="flex items-center justify-between gap-2">
               <select
                 value={u.role}
@@ -147,7 +164,15 @@ export default function AdminUsersPage() {
                 <option value="editor">Редактор</option>
                 <option value="viewer">Читатель</option>
               </select>
-              <span className="text-xs">{u.tg_chat_ready ? <span className="text-emerald-600">бот подключён</span> : <span className="text-amber-600">нужен /start боту</span>}</span>
+              <span className="text-xs">
+                {!u.has_telegram ? (
+                  <span className="text-slate-400">нет Telegram</span>
+                ) : u.tg_chat_ready ? (
+                  <span className="text-emerald-600">бот подключён</span>
+                ) : (
+                  <span className="text-amber-600">нужен /start боту</span>
+                )}
+              </span>
             </div>
             <div className="mt-2 pt-2 border-t border-slate-100 dark:border-brand-900">
               <div className="text-xs text-slate-400 mb-1">Проекты</div>
@@ -164,6 +189,7 @@ export default function AdminUsersPage() {
           <thead className="bg-slate-50 dark:bg-brand-900/50">
             <tr>
               <th className="text-left px-4 py-2 text-slate-700 dark:text-slate-300">TG ID</th>
+              <th className="text-left px-4 py-2 text-slate-700 dark:text-slate-300">VK ID</th>
               <th className="text-left px-4 py-2 text-slate-700 dark:text-slate-300">Имя</th>
               <th className="text-left px-4 py-2 text-slate-700 dark:text-slate-300">Доступ к сайту</th>
               <th className="text-left px-4 py-2 text-slate-700 dark:text-slate-300">Проекты</th>
@@ -174,7 +200,13 @@ export default function AdminUsersPage() {
           <tbody>
             {users.map(u => (
               <tr key={u.tg_id} className="border-t border-slate-100 dark:border-brand-900">
-                <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{u.tg_id}{u.is_self && <span className="ml-2 text-xs text-brand-600">(это ты)</span>}</td>
+                <td className="px-4 py-2 text-slate-700 dark:text-slate-300">
+                  {u.has_telegram ? u.tg_id : <span className="text-slate-400 text-xs">нет</span>}
+                  {u.is_self && <span className="ml-2 text-xs text-brand-600">(это ты)</span>}
+                </td>
+                <td className="px-4 py-2">
+                  <VkIdCell user={u} onSave={v => update.mutate({ tg_id: u.tg_id, p: { vk_id: v } })} />
+                </td>
                 <td className="px-4 py-2 text-slate-700 dark:text-slate-300">{u.label || u.tg_first_name || u.tg_username || '—'}</td>
                 <td className="px-4 py-2">
                   <select
@@ -191,7 +223,15 @@ export default function AdminUsersPage() {
                 <td className="px-4 py-2">
                   <UserWorkspaces tgId={u.tg_id} memberships={memberships} />
                 </td>
-                <td className="px-4 py-2 text-xs">{u.tg_chat_ready ? <span className="text-emerald-600">подключён</span> : <span className="text-amber-600">нужен /start боту</span>}</td>
+                <td className="px-4 py-2 text-xs">
+                  {!u.has_telegram ? (
+                    <span className="text-slate-400" title="Без Telegram уведомления невозможны">нет Telegram</span>
+                  ) : u.tg_chat_ready ? (
+                    <span className="text-emerald-600">подключён</span>
+                  ) : (
+                    <span className="text-amber-600">нужен /start боту</span>
+                  )}
+                </td>
                 <td className="px-4 py-2 text-right">
                   {!u.is_self && (
                     <button onClick={() => confirm('Удалить?') && remove.mutate(u.tg_id)} className="text-red-500 hover:text-red-700 text-xs">удалить</button>
@@ -203,6 +243,47 @@ export default function AdminUsersPage() {
         </table>
       </div>
     </div>
+  )
+}
+
+// VK ID: показываем привязанный или кнопку привязать, по клику - инпут
+function VkIdCell({ user, onSave }: { user: UserRow; onSave: (v: number | null) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(user.vk_id ? String(user.vk_id) : '')
+
+  const commit = () => {
+    setEditing(false)
+    const trimmed = draft.trim()
+    const next = trimmed ? Number(trimmed) : null
+    if (trimmed && !Number.isFinite(next)) return
+    if (next !== user.vk_id) onSave(next)
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        placeholder="VK ID"
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') commit()
+          if (e.key === 'Escape') { setDraft(user.vk_id ? String(user.vk_id) : ''); setEditing(false) }
+        }}
+        className="w-28 bg-slate-50 dark:bg-brand-950/60 border border-brand-400 rounded px-2 py-1 text-xs text-slate-900 dark:text-slate-100 outline-none"
+      />
+    )
+  }
+
+  return (
+    <button
+      onClick={() => setEditing(true)}
+      className={`text-xs ${user.vk_id ? 'text-slate-700 dark:text-slate-300 hover:text-brand-600' : 'text-slate-400 hover:text-brand-600'}`}
+      title={user.vk_id ? 'Изменить или отвязать' : 'Привязать VK ID'}
+    >
+      {user.vk_id ?? '+ привязать'}
+    </button>
   )
 }
 

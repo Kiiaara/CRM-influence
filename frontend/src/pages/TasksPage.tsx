@@ -372,7 +372,11 @@ function TaskModal({ task, onClose }: { task: Partial<Task>; onClose: () => void
               <label className="text-xs text-slate-500 dark:text-slate-400">Кому</label>
               <select value={assignee} onChange={e => setAssignee(e.target.value)} className={inputCls}>
                 <option value="">— не назначена —</option>
-                {assignees.map(a => <option key={a.tg_id} value={a.tg_id}>{a.label}</option>)}
+                {assignees.map(a => (
+                  <option key={a.tg_id} value={a.tg_id}>
+                    {a.label}{!a.notifiable && ' (без уведомлений)'}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -389,9 +393,13 @@ function TaskModal({ task, onClose }: { task: Partial<Task>; onClose: () => void
           </div>
 
           {assignee && (
-            <div className="text-xs text-slate-400">
-              Исполнителю уйдёт уведомление в Telegram. Если он ещё не писал боту /start, сообщение не дойдёт.
-            </div>
+            assignees.find(a => String(a.tg_id) === assignee)?.notifiable === false ? (
+              <div className="text-xs text-amber-600 dark:text-amber-400">
+                Этот человек не получит уведомление: у него нет Telegram или он не писал боту /start.
+              </div>
+            ) : (
+              <div className="text-xs text-slate-400">Исполнителю придёт уведомление в Telegram.</div>
+            )
           )}
           {error && <div className="text-xs text-red-500">{error}</div>}
         </div>

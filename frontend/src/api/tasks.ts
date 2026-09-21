@@ -30,6 +30,8 @@ export interface Assignee {
   tg_id: number
   label: string
   workspace_role: string
+  // false - TG-уведомление о задаче до человека не дойдёт
+  notifiable: boolean
 }
 
 export interface TaskPayload {
