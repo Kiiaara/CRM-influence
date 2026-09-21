@@ -18,6 +18,11 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [botUsername, setBotUsername] = useState<string | null>(null)
   const [vkAppId, setVkAppId] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  // бэк присылает "Твой VK ID: 12345" - даём скопировать одной кнопкой,
+  // человеку всё равно придётся переслать этот номер админу
+  const vkIdFromError = error?.match(/VK ID:\s*(\d+)/)?.[1] ?? null
 
   useEffect(() => {
     authApi.config()
@@ -133,6 +138,25 @@ export default function LoginPage() {
           </div>
         )}
 
+        {/* ошибка над кнопками: под ними её перекрывал iframe телеграма */}
+        {error && (
+          <div className="mb-5 text-left bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/60 rounded-lg px-4 py-3">
+            <div className="text-red-600 dark:text-red-400 text-sm whitespace-pre-line">{error}</div>
+            {vkIdFromError && (
+              <button
+                onClick={() => {
+                  navigator.clipboard?.writeText(vkIdFromError)
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 2000)
+                }}
+                className="mt-2 text-xs px-2.5 py-1 rounded-md bg-white dark:bg-brand-950 border border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40"
+              >
+                {copied ? '✓ Скопировано' : `Скопировать ID ${vkIdFromError}`}
+              </button>
+            )}
+          </div>
+        )}
+
         {vkAppId && <div ref={vkRef} className="flex justify-center mb-4" />}
 
         {vkAppId && botUsername && (
@@ -143,8 +167,9 @@ export default function LoginPage() {
           </div>
         )}
 
-        <div ref={tgRef} className="flex justify-center" />
-        {error && <div className="mt-4 text-red-600 dark:text-red-400 text-sm">{error}</div>}
+        {/* min-h под размер виджета: иначе пока грузится iframe, блок схлопнут
+            и соседние элементы прыгают, наезжая друг на друга */}
+        <div ref={tgRef} className="flex justify-center items-center min-h-[48px]" />
       </div>
     </div>
   )

@@ -6,6 +6,7 @@ import { useTheme } from '../theme'
 import TopSearch from '../components/TopSearch'
 import WorkspaceSelector from '../components/WorkspaceSelector'
 import AlertsPanel from '../components/AlertsPanel'
+import ConnectBotNudge from '../components/ConnectBotNudge'
 
 const navItems = [
   { to: '/', label: 'Главная', icon: '🏠' },
@@ -135,6 +136,7 @@ export default function WorkspacePage() {
           <Outlet />
         </div>
       </main>
+      <ConnectBotNudge />
     </div>
   )
 }
