@@ -142,7 +142,7 @@ export default function IntegrationsBoard() {
       <div className="font-medium text-sm text-slate-900 dark:text-slate-100">{c.streamer_name}</div>
       <div className="flex items-center justify-between mt-2 gap-2 flex-wrap">
         <span className={`text-[11px] px-1.5 py-0.5 rounded ${PAYMENT_COLORS[c.payment_status]}`}>
-          {PAYMENT_LABELS[c.payment_status]}{c.paid_percent != null && ` · ${c.paid_percent}%`}
+          {PAYMENT_LABELS[c.payment_status]}
         </span>
         {c.content_status && (
           <span className="text-[11px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
@@ -153,9 +153,6 @@ export default function IntegrationsBoard() {
           <span className="text-xs text-slate-500 dark:text-slate-400">{c.amount.toLocaleString('ru-RU')} {c.currency}</span>
         )}
       </div>
-      {c.deadline && (
-        <div className="text-[11px] text-slate-400 mt-1">до {new Date(c.deadline).toLocaleDateString('ru-RU')}</div>
-      )}
       {c.integration_date && (
         <div className="text-[11px] text-violet-500 mt-1">
           🎬 {new Date(c.integration_date).toLocaleDateString('ru-RU')}{c.integration_time && ` в ${c.integration_time}`}
