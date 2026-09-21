@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { integrationsApi } from '../api/integrations'
 import type { CaseStudy, Streamer } from '../api/integrations'
@@ -8,9 +8,9 @@ interface Row extends Streamer {
   brand: string
 }
 
-function StreamerCases({ row }: { row: Row }) {
+function StreamerCases({ row, autoAdd }: { row: Row; autoAdd?: boolean }) {
   const qc = useQueryClient()
-  const { data: cases = [] } = useQuery({
+  const { data: cases = [], isLoading } = useQuery({
     queryKey: ['streamers', row.id, 'cases'],
     queryFn: () => integrationsApi.cases(row.id),
   })
@@ -43,9 +43,21 @@ function StreamerCases({ row }: { row: Row }) {
     onSuccess: invalidate,
   })
 
+  // сделку выбрали в модалке - сразу заводим пустой кейс, чтобы не жать второй раз.
+  // ref, а не isPending: под StrictMode эффект вызывается дважды и создалось бы два кейса
+  const autoAddDone = useRef(false)
+  useEffect(() => {
+    if (autoAdd && !autoAddDone.current && !isLoading && cases.length === 0) {
+      autoAddDone.current = true
+      addCase.mutate()
+    }
+  }, [autoAdd, isLoading, cases.length, addCase])
+
+  if (cases.length === 0) return null
+
   return (
     <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 gap-2">
         <div>
           <div className="text-xs text-slate-400">{row.brand}</div>
           <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-2">
@@ -59,9 +71,9 @@ function StreamerCases({ row }: { row: Row }) {
         </div>
         <button
           onClick={() => addCase.mutate()}
-          className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg shrink-0"
+          className="text-xs text-brand-600 dark:text-brand-400 hover:underline shrink-0"
         >
-          + Кейс
+          + ещё кейс
         </button>
       </div>
       <div className="space-y-3">
@@ -75,7 +87,6 @@ function StreamerCases({ row }: { row: Row }) {
             onRemovePhoto={() => removePhoto.mutate(c.id)}
           />
         ))}
-        {cases.length === 0 && <div className="text-xs text-slate-400">Кейсов ещё нет</div>}
       </div>
     </div>
   )
@@ -84,8 +95,8 @@ function StreamerCases({ row }: { row: Row }) {
 export default function CasesPage() {
   const { data: integrations = [] } = useQuery({ queryKey: ['integrations'], queryFn: integrationsApi.list })
   const [q, setQ] = useState('')
-  // по умолчанию только завершённые, но кейс иногда надо завести заранее
-  const [onlyDone, setOnlyDone] = useState(true)
+  const [picking, setPicking] = useState(false)
+  const [justAdded, setJustAdded] = useState<number | null>(null)
 
   const all: Row[] = useMemo(
     () =>
@@ -96,47 +107,172 @@ export default function CasesPage() {
     [integrations]
   )
 
-  const doneCount = all.filter(r => r.stage === 'done').length
-  const rows = onlyDone ? all.filter(r => r.stage === 'done') : all
+  // завершено, но кейса ещё нет - именно это и надо подсветить
+  const waiting = all.filter(r => r.stage === 'done' && !r.has_case)
+  const withCases = all.filter(r => r.has_case || r.id === justAdded)
 
-  const filtered = rows.filter(r =>
+  const filtered = withCases.filter(r =>
     !q.trim() ||
     r.brand.toLowerCase().includes(q.toLowerCase()) ||
     r.streamer_name.toLowerCase().includes(q.toLowerCase())
   )
 
-  const withoutCase = filtered.filter(r => !r.has_case).length
-
   return (
     <div className="p-4 sm:p-10">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-slate-100">Кейсы для сайта</h1>
+        <button
+          onClick={() => setPicking(true)}
+          className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto"
+        >
+          + Новый кейс
+        </button>
+      </div>
+
+      {waiting.length > 0 && (
+        <div className="mb-6 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="animate-pulse text-lg">🔔</span>
+            <span className="font-medium text-amber-800 dark:text-amber-300">
+              Ждут кейса: {waiting.length}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {waiting.map(r => (
+              <button
+                key={r.id}
+                onClick={() => setJustAdded(r.id)}
+                className="text-xs bg-white dark:bg-brand-950 border border-amber-300 dark:border-amber-700/60 text-amber-800 dark:text-amber-300 px-2.5 py-1 rounded-full hover:bg-amber-100 dark:hover:bg-amber-900/40"
+              >
+                {r.brand} · {r.streamer_name}
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-amber-700/80 dark:text-amber-400/70 mt-2">
+            Интеграция завершена, а кейса для сайта ещё нет. Нажмите, чтобы завести.
+          </div>
+        </div>
+      )}
+
+      {withCases.length > 0 && (
+        <div className="mb-4">
+          <input
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Поиск по бренду или стримеру"
+            className="w-full sm:w-64 bg-slate-100 dark:bg-brand-900 border border-transparent focus:border-brand-500 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none"
+          />
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {filtered.map(row => (
+          <StreamerCases key={row.id} row={row} autoAdd={row.id === justAdded} />
+        ))}
+        {filtered.length === 0 && waiting.length === 0 && (
+          <div className="text-sm text-slate-400 text-center py-10 bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl">
+            Кейсов пока нет. Нажмите «Новый кейс», чтобы завести первый.
+          </div>
+        )}
+        {filtered.length === 0 && waiting.length > 0 && (
+          <div className="text-sm text-slate-400 text-center py-8 bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl">
+            Заполненных кейсов ещё нет — выберите сделку выше
+          </div>
+        )}
+      </div>
+
+      {picking && (
+        <CasePickerModal
+          rows={all}
+          onClose={() => setPicking(false)}
+          onPicked={id => { setPicking(false); setJustAdded(id) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// выбор сделки, к которой заводим кейс - по образцу выбора бренда на канбане
+function CasePickerModal({
+  rows,
+  onClose,
+  onPicked,
+}: {
+  rows: Row[]
+  onClose: () => void
+  onPicked: (streamerId: number) => void
+}) {
+  const [q, setQ] = useState('')
+  const [onlyDone, setOnlyDone] = useState(true)
+
+  const list = rows
+    .filter(r => (onlyDone ? r.stage === 'done' : true))
+    .filter(r =>
+      !q.trim() ||
+      r.brand.toLowerCase().includes(q.toLowerCase()) ||
+      r.streamer_name.toLowerCase().includes(q.toLowerCase())
+    )
+
+  const doneCount = rows.filter(r => r.stage === 'done').length
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[80vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <h2 className="text-xl font-semibold mb-1 text-slate-900 dark:text-slate-100">Новый кейс</h2>
+        <p className="text-xs text-slate-400 mb-3">Выберите интеграцию, по которой собираем кейс</p>
+
         <input
+          autoFocus
           value={q}
           onChange={e => setQ(e.target.value)}
           placeholder="Поиск по бренду или стримеру"
-          className="w-full sm:w-64 bg-slate-100 dark:bg-brand-900 border border-transparent focus:border-brand-500 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none"
+          className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 mb-2"
         />
-      </div>
-      <p className="text-slate-500 dark:text-slate-400 mb-3 text-sm">
-        Фото и результаты интеграций - для сборки кейсов на сайт. Показано: {filtered.length}
-        {withoutCase > 0 && <> · без кейса пока {withoutCase}</>}
-      </p>
 
-      <label className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 mb-4 cursor-pointer w-fit">
-        <input type="checkbox" checked={onlyDone} onChange={e => setOnlyDone(e.target.checked)} />
-        Только завершённые ({doneCount})
-      </label>
+        <label className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-3 cursor-pointer w-fit">
+          <input type="checkbox" checked={onlyDone} onChange={e => setOnlyDone(e.target.checked)} />
+          Только завершённые ({doneCount})
+        </label>
 
-      <div className="space-y-4">
-        {filtered.map(row => <StreamerCases key={row.id} row={row} />)}
-        {filtered.length === 0 && (
-          <div className="text-sm text-slate-400 text-center py-8 bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl">
-            {onlyDone && doneCount === 0
-              ? 'Завершённых интеграций пока нет. Снимите галочку, чтобы завести кейс заранее.'
-              : 'Ничего не найдено'}
-          </div>
-        )}
+        <div className="flex-1 overflow-y-auto -mx-2 px-2">
+          {list.map(r => (
+            <button
+              key={r.id}
+              onClick={() => onPicked(r.id)}
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-brand-900 flex items-center justify-between gap-2"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm text-slate-900 dark:text-slate-100 truncate">{r.streamer_name}</span>
+                <span className="block text-xs text-slate-400 truncate">{r.brand}</span>
+              </span>
+              <span className="shrink-0 flex items-center gap-1.5">
+                {r.has_case && <span className="text-[11px] text-slate-400">есть кейс</span>}
+                {r.stage !== 'done' && (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                    в работе
+                  </span>
+                )}
+              </span>
+            </button>
+          ))}
+          {list.length === 0 && (
+            <div className="text-sm text-slate-400 text-center py-8">
+              {onlyDone && doneCount === 0
+                ? 'Завершённых интеграций нет. Снимите галочку, чтобы завести кейс заранее.'
+                : 'Ничего не найдено'}
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={onClose}
+          className="mt-3 px-4 py-2 rounded-lg text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-brand-900 self-end"
+        >
+          Отмена
+        </button>
       </div>
     </div>
   )
