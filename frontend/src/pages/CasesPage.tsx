@@ -48,7 +48,14 @@ function StreamerCases({ row }: { row: Row }) {
       <div className="flex items-center justify-between mb-3">
         <div>
           <div className="text-xs text-slate-400">{row.brand}</div>
-          <div className="font-medium text-slate-900 dark:text-slate-100">{row.streamer_name}</div>
+          <div className="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            {row.streamer_name}
+            {row.stage !== 'done' && (
+              <span className="text-[11px] font-normal px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                ещё в работе
+              </span>
+            )}
+          </div>
         </div>
         <button
           onClick={() => addCase.mutate()}
@@ -77,11 +84,20 @@ function StreamerCases({ row }: { row: Row }) {
 export default function CasesPage() {
   const { data: integrations = [] } = useQuery({ queryKey: ['integrations'], queryFn: integrationsApi.list })
   const [q, setQ] = useState('')
+  // по умолчанию только завершённые, но кейс иногда надо завести заранее
+  const [onlyDone, setOnlyDone] = useState(true)
 
-  const rows: Row[] = useMemo(() => {
-    const done = integrations.flatMap(it => it.streamers.map(s => ({ ...s, brand: it.brand })).filter(s => s.stage === 'done'))
-    return done.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-  }, [integrations])
+  const all: Row[] = useMemo(
+    () =>
+      integrations
+        .flatMap(it => it.streamers.map(s => ({ ...s, brand: it.brand })))
+        .filter(s => s.stage !== 'cancelled')
+        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
+    [integrations]
+  )
+
+  const doneCount = all.filter(r => r.stage === 'done').length
+  const rows = onlyDone ? all.filter(r => r.stage === 'done') : all
 
   const filtered = rows.filter(r =>
     !q.trim() ||
@@ -102,16 +118,23 @@ export default function CasesPage() {
           className="w-full sm:w-64 bg-slate-100 dark:bg-brand-900 border border-transparent focus:border-brand-500 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none"
         />
       </div>
-      <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
-        Фото и результаты завершённых интеграций - для сборки кейсов на сайт. Всего завершённых: {filtered.length}
+      <p className="text-slate-500 dark:text-slate-400 mb-3 text-sm">
+        Фото и результаты интеграций - для сборки кейсов на сайт. Показано: {filtered.length}
         {withoutCase > 0 && <> · без кейса пока {withoutCase}</>}
       </p>
+
+      <label className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 mb-4 cursor-pointer w-fit">
+        <input type="checkbox" checked={onlyDone} onChange={e => setOnlyDone(e.target.checked)} />
+        Только завершённые ({doneCount})
+      </label>
 
       <div className="space-y-4">
         {filtered.map(row => <StreamerCases key={row.id} row={row} />)}
         {filtered.length === 0 && (
           <div className="text-sm text-slate-400 text-center py-8 bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl">
-            Завершённых интеграций пока нет
+            {onlyDone && doneCount === 0
+              ? 'Завершённых интеграций пока нет. Снимите галочку, чтобы завести кейс заранее.'
+              : 'Ничего не найдено'}
           </div>
         )}
       </div>
