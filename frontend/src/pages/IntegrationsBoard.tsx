@@ -916,6 +916,16 @@ export function StreamerModal({
             )}
           </div>
 
+          {!isNew && (
+            <Link
+              to={`/chat?streamer=${streamer.id}`}
+              className="flex items-center justify-between text-sm border border-slate-200 dark:border-brand-900 rounded-lg px-3 py-2 text-brand-600 dark:text-brand-400 hover:bg-slate-50 dark:hover:bg-brand-900/30"
+            >
+              <span>💬 Обсуждение этой сделки</span>
+              <span>→</span>
+            </Link>
+          )}
+
           <Link
             to={`/advertisers?q=${encodeURIComponent(brand)}`}
             className="flex items-center justify-between text-sm border border-slate-200 dark:border-brand-900 rounded-lg px-3 py-2 text-brand-600 dark:text-brand-400 hover:bg-slate-50 dark:hover:bg-brand-900/30"

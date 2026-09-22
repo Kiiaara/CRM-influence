@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import { chatApi } from '../api/chat'
 import type { ChatMessage } from '../api/chat'
 import { authApi } from '../api/auth'
+import { integrationsApi, STAGES } from '../api/integrations'
 
 export default function ChatPage() {
   const qc = useQueryClient()
@@ -14,6 +15,7 @@ export default function ChatPage() {
   const activeThread = threadParam ? Number(threadParam) : null
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [picking, setPicking] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: authApi.me, retry: false })
@@ -61,15 +63,27 @@ export default function ChatPage() {
     send.mutate()
   }
 
+  // все сделки пространства - для выбора новой ветки и для заголовка той,
+  // где ещё нет сообщений (в threads такая ветка не придёт)
+  const { data: integrations = [] } = useQuery({ queryKey: ['integrations'], queryFn: integrationsApi.list })
+  const allDeals = integrations.flatMap(it =>
+    it.streamers.map(s => ({
+      streamer_id: s.id,
+      streamer_name: s.streamer_name,
+      brand: it.brand,
+      stage: s.stage,
+    }))
+  )
+
   const activeTitle = activeThread
-    ? threads.find(t => t.streamer_id === activeThread)
+    ? threads.find(t => t.streamer_id === activeThread) ?? allDeals.find(d => d.streamer_id === activeThread)
     : null
 
   return (
     <div className="p-4 sm:p-10">
       <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-slate-100 mb-2">Чат</h1>
       <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
-        Общая лента проекта и переписка по конкретным сделкам.
+        Общий чат - для всего сразу. Отдельная переписка по сделке заводится кнопкой «Обсудить сделку».
       </p>
 
       <div className="flex flex-col lg:flex-row gap-4">
@@ -104,11 +118,27 @@ export default function ChatPage() {
                 )}
               </button>
             ))}
-            {threads.length === 0 && (
+            {/* открытая ветка без сообщений: в threads её ещё нет, но показать надо */}
+            {activeThread != null && !threads.some(t => t.streamer_id === activeThread) && activeTitle && (
+              <button className="w-full text-left px-4 py-2.5 bg-brand-50 dark:bg-brand-900/40 border-b border-slate-50 dark:border-brand-900/60">
+                <div className="text-sm text-slate-900 dark:text-slate-100 truncate">{activeTitle.streamer_name}</div>
+                <div className="text-xs text-slate-400 truncate">{activeTitle.brand}</div>
+              </button>
+            )}
+            {threads.length === 0 && activeThread == null && (
               <div className="px-4 py-3 text-xs text-slate-400">
-                Веток пока нет. Обсуждение по сделке появится здесь, как только напишете о ней.
+                Пока обсуждали только в общем чате
               </div>
             )}
+          </div>
+
+          <div className="p-2 border-t border-slate-100 dark:border-brand-900">
+            <button
+              onClick={() => setPicking(true)}
+              className="w-full text-sm text-brand-600 dark:text-brand-400 hover:bg-slate-50 dark:hover:bg-brand-900 rounded-lg px-2 py-1.5 text-left"
+            >
+              + Обсудить сделку
+            </button>
           </div>
         </div>
 
@@ -133,7 +163,9 @@ export default function ChatPage() {
             ))}
             {messages.length === 0 && (
               <div className="text-sm text-slate-400 text-center py-10">
-                Сообщений пока нет. Напишите первое.
+                {activeThread == null
+                  ? 'Сообщений пока нет. Напишите первое.'
+                  : 'По этой сделке ещё не переписывались. Напишите первое сообщение.'}
               </div>
             )}
             <div ref={bottomRef} />
@@ -166,6 +198,91 @@ export default function ChatPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {picking && (
+        <DealPicker
+          deals={allDeals}
+          onClose={() => setPicking(false)}
+          onPicked={id => { setPicking(false); openThread(id) }}
+        />
+      )}
+    </div>
+  )
+}
+
+interface Deal {
+  streamer_id: number
+  streamer_name: string
+  brand: string
+  stage: string
+}
+
+const STAGE_LABELS: Record<string, string> = Object.fromEntries(STAGES.map(s => [s.key, s.label]))
+
+// выбор сделки для новой ветки - тот же приём, что в кейсах
+function DealPicker({
+  deals,
+  onClose,
+  onPicked,
+}: {
+  deals: Deal[]
+  onClose: () => void
+  onPicked: (streamerId: number) => void
+}) {
+  const [q, setQ] = useState('')
+  const list = deals
+    .filter(d => d.stage !== 'cancelled')
+    .filter(d =>
+      !q.trim() ||
+      d.brand.toLowerCase().includes(q.toLowerCase()) ||
+      d.streamer_name.toLowerCase().includes(q.toLowerCase())
+    )
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[80vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <h2 className="text-xl font-semibold mb-1 text-slate-900 dark:text-slate-100">Обсудить сделку</h2>
+        <p className="text-xs text-slate-400 mb-3">Выберите, по какой сделке завести переписку</p>
+
+        <input
+          autoFocus
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Поиск по бренду или стримеру"
+          className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 mb-3"
+        />
+
+        <div className="flex-1 overflow-y-auto -mx-2 px-2">
+          {list.map(d => (
+            <button
+              key={d.streamer_id}
+              onClick={() => onPicked(d.streamer_id)}
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-brand-900 flex items-center justify-between gap-2"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm text-slate-900 dark:text-slate-100 truncate">{d.streamer_name}</span>
+                <span className="block text-xs text-slate-400 truncate">{d.brand}</span>
+              </span>
+              <span className="shrink-0 text-[11px] text-slate-400">{STAGE_LABELS[d.stage] ?? d.stage}</span>
+            </button>
+          ))}
+          {list.length === 0 && (
+            <div className="text-sm text-slate-400 text-center py-8">
+              {deals.length === 0 ? 'Сделок пока нет - заведите их на канбане' : 'Ничего не найдено'}
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={onClose}
+          className="mt-3 px-4 py-2 rounded-lg text-sm text-slate-500 hover:bg-slate-100 dark:hover:bg-brand-900 self-end"
+        >
+          Отмена
+        </button>
       </div>
     </div>
   )
