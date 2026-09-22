@@ -13,7 +13,7 @@ from models.user import User
 from models.advertiser import Advertiser
 from models.integration import Integration
 from routers import auth as auth_router
-from routers import search, tasks, users, integrations, streamer_profiles, workspaces as workspaces_router, advertisers as advertisers_router
+from routers import search, tasks, users, integrations, streamer_profiles, workspaces as workspaces_router, advertisers as advertisers_router, chat
 from scheduler import start_scheduler, stop_scheduler
 
 
@@ -238,6 +238,51 @@ def _migrate_streamers_add_ord_links():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN ord_report_link VARCHAR(512) DEFAULT ''"))
 
 
+def _migrate_discussion_messages_add_workspace():
+    """Чат: сообщения общей ленты не привязаны к стримеру, поэтому streamer_id
+    должен стать nullable, а workspace_id - появиться. SQLite не умеет снимать
+    NOT NULL через ALTER, поэтому пересоздаём таблицу с переносом переписки."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "discussion_messages" not in insp.get_table_names():
+        return
+    cols = {c["name"]: c for c in insp.get_columns("discussion_messages")}
+    streamer_nullable = cols.get("streamer_id", {}).get("nullable", True)
+    if "workspace_id" in cols and streamer_nullable:
+        return  # уже новая схема
+
+    with engine.begin() as conn:
+        # на время пересоздания глушим FK: если автор сообщения был удалён,
+        # вставка упала бы на проверке ссылки и бэк не поднялся
+        conn.execute(text("PRAGMA foreign_keys=OFF"))
+        conn.execute(text("""
+            CREATE TABLE discussion_messages_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE,
+                streamer_id INTEGER REFERENCES integration_streamers(id) ON DELETE CASCADE,
+                author_tg_id BIGINT REFERENCES users(tg_id) ON DELETE SET NULL,
+                text TEXT NOT NULL,
+                created_at DATETIME
+            )
+        """))
+        # переносим старые обсуждения, проставляя workspace через сделку
+        conn.execute(text("""
+            INSERT INTO discussion_messages_new (id, workspace_id, streamer_id, author_tg_id, text, created_at)
+            SELECT d.id,
+                   (SELECT i.workspace_id
+                      FROM integration_streamers s
+                      JOIN integrations i ON i.id = s.integration_id
+                     WHERE s.id = d.streamer_id),
+                   d.streamer_id, d.author_tg_id, d.text, d.created_at
+              FROM discussion_messages d
+        """))
+        conn.execute(text("DROP TABLE discussion_messages"))
+        conn.execute(text("ALTER TABLE discussion_messages_new RENAME TO discussion_messages"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_discussion_messages_streamer_id ON discussion_messages (streamer_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_discussion_messages_workspace_id ON discussion_messages (workspace_id)"))
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+
+
 def _migrate_integrations_add_advertiser():
     """Добавляем advertiser_id в integrations, если его нет."""
     from sqlalchemy import text, inspect
@@ -356,6 +401,7 @@ async def lifespan(app: FastAPI):
     _migrate_streamers_add_time_and_creator()
     _migrate_streamers_add_case_reminder()
     _migrate_streamers_add_ord_links()
+    _migrate_discussion_messages_add_workspace()
     _migrate_integrations_add_advertiser()
     _migrate_brand_contacts_add_advertiser()
     _backfill_advertisers()
@@ -432,3 +478,4 @@ app.include_router(integrations.router)
 app.include_router(streamer_profiles.router)
 app.include_router(workspaces_router.router)
 app.include_router(advertisers_router.router)
+app.include_router(chat.router)

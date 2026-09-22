@@ -12,6 +12,7 @@ const navItems = [
   { to: '/', label: 'Главная', icon: '🏠' },
   { to: '/integrations', label: 'Интеграции', icon: '🤝' },
   { to: '/tasks', label: 'Задачи', icon: '✅' },
+  { to: '/chat', label: 'Чат', icon: '💬' },
   { to: '/marking', label: 'Маркировка', icon: '🏷️' },
   { to: '/documents', label: 'Документы', icon: '📄' },
   { to: '/advertisers', label: 'Рекламодатели', icon: '🏢' },

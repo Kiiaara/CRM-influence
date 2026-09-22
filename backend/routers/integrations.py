@@ -19,7 +19,6 @@ from models.integration_payment import IntegrationPayment
 from models.case_study import CaseStudy
 from models.brief_file import BriefFile
 from models.advertiser import Advertiser
-from models.discussion_message import DiscussionMessage
 from models.audit_log import AuditLogEntry
 from models.user import User
 from models.workspace import Workspace
@@ -357,20 +356,6 @@ class CaseStudyUpdate(BaseModel):
     description: Optional[str] = None
     what_was_done: Optional[str] = None
     result: Optional[str] = None
-
-
-class DiscussionMessageOut(BaseModel):
-    id: int
-    streamer_id: int
-    author_tg_id: Optional[int] = None
-    author_label: Optional[str] = None
-    text: str
-    created_at: datetime
-    model_config = {"from_attributes": True}
-
-
-class DiscussionMessageCreate(BaseModel):
-    text: str
 
 
 class AuditLogEntryOut(BaseModel):
@@ -881,45 +866,8 @@ def _author_label(db: Session, tg_id: Optional[int]) -> Optional[str]:
     return u.label or u.tg_first_name or u.tg_username or str(u.tg_id)
 
 
-@router.get("/streamers/{streamer_id}/discussion", response_model=List[DiscussionMessageOut])
-def list_discussion(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
-    _get_streamer_or_404(db, ws, streamer_id)
-    msgs = (
-        db.query(DiscussionMessage)
-        .filter(DiscussionMessage.streamer_id == streamer_id)
-        .order_by(DiscussionMessage.created_at.asc())
-        .all()
-    )
-    return [
-        DiscussionMessageOut.model_validate(m).model_copy(update={"author_label": _author_label(db, m.author_tg_id)})
-        for m in msgs
-    ]
-
-
-@router.post("/streamers/{streamer_id}/discussion", response_model=DiscussionMessageOut, status_code=201)
-def create_discussion_message(streamer_id: int, data: DiscussionMessageCreate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
-    _get_streamer_or_404(db, ws, streamer_id)
-    text = data.text.strip()
-    if not text:
-        raise HTTPException(400, "Сообщение не может быть пустым")
-    m = DiscussionMessage(streamer_id=streamer_id, author_tg_id=user.tg_id, text=text)
-    db.add(m)
-    db.commit()
-    db.refresh(m)
-    return DiscussionMessageOut.model_validate(m).model_copy(update={"author_label": _author_label(db, m.author_tg_id)})
-
-
-@router.delete("/discussion/{message_id}")
-def delete_discussion_message(message_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
-    m = db.get(DiscussionMessage, message_id)
-    if not m:
-        raise HTTPException(404)
-    _get_streamer_or_404(db, ws, m.streamer_id)
-    if m.author_tg_id != user.tg_id and user.role != "admin":
-        raise HTTPException(403, "Можно удалить только своё сообщение")
-    db.delete(m)
-    db.commit()
-    return {"ok": True}
+# обсуждения переехали в routers/chat.py: там общая лента пространства
+# и те же ветки по сделкам в одном разделе
 
 
 # ---------- журнал изменений (кто когда что менял) ----------

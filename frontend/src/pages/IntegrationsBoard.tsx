@@ -15,7 +15,6 @@ import type {
   CaseStudy,
   ContentStatus,
   ContractStatus,
-  DiscussionMessage,
   Integration,
   OrdReportingStatus,
   OrdResponsible,
@@ -521,24 +520,6 @@ export function StreamerModal({
     enabled: !isNew,
   })
 
-  const { data: discussion = [] } = useQuery({
-    queryKey: ['streamers', streamer.id, 'discussion'],
-    queryFn: () => integrationsApi.discussion(streamer.id),
-    enabled: !isNew,
-  })
-  const [discussionText, setDiscussionText] = useState('')
-  const addDiscussionMessage = useMutation({
-    mutationFn: (text: string) => integrationsApi.addDiscussionMessage(streamer.id, text),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'discussion'] })
-      setDiscussionText('')
-    },
-  })
-  const removeDiscussionMessage = useMutation({
-    mutationFn: (id: number) => integrationsApi.removeDiscussionMessage(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['streamers', streamer.id, 'discussion'] }),
-  })
-
   const update = useMutation({
     mutationFn: (p: Partial<Streamer>) => integrationsApi.updateStreamer(streamer.id, p),
     onSuccess: () => {
@@ -934,42 +915,6 @@ export function StreamerModal({
               <BriefFiles streamerId={streamer.id} />
             )}
           </div>
-
-          {!isNew && (
-            <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3">
-              <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Обсуждение</div>
-              <div className="space-y-2 mb-2 max-h-56 overflow-y-auto">
-                {discussion.map((m: DiscussionMessage) => (
-                  <div key={m.id} className="bg-slate-50 dark:bg-brand-950/60 rounded-lg px-2 py-1.5 text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium text-slate-700 dark:text-slate-300 text-xs">{m.author_label ?? 'кто-то'}</span>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[11px] text-slate-400">{new Date(m.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                        <button onClick={() => removeDiscussionMessage.mutate(m.id)} className="text-slate-300 hover:text-red-500 text-xs">×</button>
-                      </div>
-                    </div>
-                    <div className="text-slate-800 dark:text-slate-200 whitespace-pre-wrap">{m.text}</div>
-                  </div>
-                ))}
-                {discussion.length === 0 && <div className="text-xs text-slate-400">Обсуждения ещё нет</div>}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  value={discussionText}
-                  onChange={e => setDiscussionText(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && discussionText.trim() && addDiscussionMessage.mutate(discussionText.trim())}
-                  placeholder="Написать сообщение…"
-                  className="flex-1 bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
-                />
-                <button
-                  onClick={() => discussionText.trim() && addDiscussionMessage.mutate(discussionText.trim())}
-                  className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg"
-                >
-                  Отправить
-                </button>
-              </div>
-            </div>
-          )}
 
           <Link
             to={`/advertisers?q=${encodeURIComponent(brand)}`}

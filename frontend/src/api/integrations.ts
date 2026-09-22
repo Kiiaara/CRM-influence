@@ -116,15 +116,6 @@ export interface Streamer {
   updated_at: string
 }
 
-export interface DiscussionMessage {
-  id: number
-  streamer_id: number
-  author_tg_id: number | null
-  author_label: string | null
-  text: string
-  created_at: string
-}
-
 export type AuditField =
   | 'stage'
   | 'payment_status'
@@ -364,18 +355,6 @@ export const integrationsApi = {
   },
   async removeCasePhoto(caseId: number) {
     await api.delete(`/integrations/cases/${caseId}/photo`)
-  },
-
-  async discussion(streamerId: number) {
-    const { data } = await api.get<DiscussionMessage[]>(`/integrations/streamers/${streamerId}/discussion`)
-    return data
-  },
-  async addDiscussionMessage(streamerId: number, text: string) {
-    const { data } = await api.post<DiscussionMessage>(`/integrations/streamers/${streamerId}/discussion`, { text })
-    return data
-  },
-  async removeDiscussionMessage(messageId: number) {
-    await api.delete(`/integrations/discussion/${messageId}`)
   },
 
   async auditLog(streamerId: number) {

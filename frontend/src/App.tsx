@@ -11,6 +11,7 @@ import DocumentsPage from './pages/DocumentsPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import CasesPage from './pages/CasesPage'
 import TasksPage from './pages/TasksPage'
+import ChatPage from './pages/ChatPage'
 import StreamerProfilesPage from './pages/StreamerProfilesPage'
 import SearchPage from './pages/SearchPage'
 import AdminUsersPage from './pages/AdminUsersPage'
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/cases" element={<CasesPage />} />
         <Route path="/tasks" element={<TasksPage />} />
+        <Route path="/chat" element={<ChatPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/streamers" element={<StreamerProfilesPage />} />
         <Route path="/search" element={<SearchPage />} />
