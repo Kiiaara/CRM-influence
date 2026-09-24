@@ -13,7 +13,7 @@ from models.user import User
 from models.advertiser import Advertiser
 from models.integration import Integration
 from routers import auth as auth_router
-from routers import search, tasks, users, integrations, streamer_profiles, workspaces as workspaces_router, advertisers as advertisers_router, chat
+from routers import search, tasks, users, integrations, streamer_profiles, blogger_profiles, site as site_router, workspaces as workspaces_router, advertisers as advertisers_router, chat
 from scheduler import start_scheduler, stop_scheduler
 
 
@@ -238,6 +238,60 @@ def _migrate_streamers_add_ord_links():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN ord_report_link VARCHAR(512) DEFAULT ''"))
 
 
+def _migrate_talent_type_and_kp_link():
+    """Тип участника сделки (стример/блогер), ссылка на КП у сделки и выбранное в боте пространство."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    tables = insp.get_table_names()
+    with engine.begin() as conn:
+        if "integration_streamers" in tables:
+            cols = [c["name"] for c in insp.get_columns("integration_streamers")]
+            if "talent_type" not in cols:
+                conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN talent_type VARCHAR(16) DEFAULT 'streamer'"))
+        if "integrations" in tables:
+            cols = [c["name"] for c in insp.get_columns("integrations")]
+            if "kp_sheet_url" not in cols:
+                conn.execute(text("ALTER TABLE integrations ADD COLUMN kp_sheet_url VARCHAR(512) DEFAULT ''"))
+        if "users" in tables:
+            cols = [c["name"] for c in insp.get_columns("users")]
+            if "bot_workspace_id" not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN bot_workspace_id INTEGER"))
+
+
+def _migrate_bloggers_sheet_columns():
+    """База блогеров: откуда запись (руками/из таблицы) и все колонки строки листа."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "blogger_profiles" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("blogger_profiles")]
+    with engine.begin() as conn:
+        if "source" not in cols:
+            conn.execute(text("ALTER TABLE blogger_profiles ADD COLUMN source VARCHAR(16) DEFAULT 'manual'"))
+        if "sheet_row" not in cols:
+            conn.execute(text("ALTER TABLE blogger_profiles ADD COLUMN sheet_row TEXT DEFAULT '[]'"))
+
+
+def _migrate_case_studies_site_fields():
+    """Кейсы: поля публикации на сайт (показывать, тег, плашка, переводы, когда опубликован)."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "case_studies" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("case_studies")]
+    with engine.begin() as conn:
+        if "show_on_site" not in cols:
+            conn.execute(text("ALTER TABLE case_studies ADD COLUMN show_on_site BOOLEAN DEFAULT 0"))
+        if "site_tag" not in cols:
+            conn.execute(text("ALTER TABLE case_studies ADD COLUMN site_tag VARCHAR(32) DEFAULT 'Games'"))
+        if "site_mini" not in cols:
+            conn.execute(text("ALTER TABLE case_studies ADD COLUMN site_mini VARCHAR(128) DEFAULT ''"))
+        if "translations" not in cols:
+            conn.execute(text("ALTER TABLE case_studies ADD COLUMN translations TEXT DEFAULT '{}'"))
+        if "site_published_at" not in cols:
+            conn.execute(text("ALTER TABLE case_studies ADD COLUMN site_published_at DATETIME"))
+
+
 def _migrate_discussion_messages_add_workspace():
     """Чат: сообщения общей ленты не привязаны к стримеру, поэтому streamer_id
     должен стать nullable, а workspace_id - появиться. SQLite не умеет снимать
@@ -401,6 +455,9 @@ async def lifespan(app: FastAPI):
     _migrate_streamers_add_time_and_creator()
     _migrate_streamers_add_case_reminder()
     _migrate_streamers_add_ord_links()
+    _migrate_talent_type_and_kp_link()
+    _migrate_bloggers_sheet_columns()
+    _migrate_case_studies_site_fields()
     _migrate_discussion_messages_add_workspace()
     _migrate_integrations_add_advertiser()
     _migrate_brand_contacts_add_advertiser()
@@ -426,7 +483,8 @@ async def lifespan(app: FastAPI):
     if settings.auth_bot_token:
         from notifier import set_my_commands
         await set_my_commands()
-        start_scheduler()
+    # планировщик нужен и без бота - он же подтягивает базу блогеров из гугл-таблицы
+    start_scheduler(with_bot=bool(settings.auth_bot_token))
     yield
     stop_scheduler()
 
@@ -476,6 +534,8 @@ app.include_router(tasks.router)
 app.include_router(users.router)
 app.include_router(integrations.router)
 app.include_router(streamer_profiles.router)
+app.include_router(blogger_profiles.router)
+app.include_router(site_router.router)
 app.include_router(workspaces_router.router)
 app.include_router(advertisers_router.router)
 app.include_router(chat.router)

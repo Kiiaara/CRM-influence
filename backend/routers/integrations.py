@@ -1,5 +1,6 @@
 """CRM интеграций: сделка с брендом (Integration) содержит пул стримеров
 (IntegrationStreamer), каждый со своим статусом/сроком/суммой/договором/оплатами."""
+import json
 import os
 import re
 import uuid
@@ -8,9 +9,11 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, computed_field, field_validator
 from sqlalchemy.orm import Session
 
+import case_translate
+import site_publisher
 from database import get_db
 from deps import get_current_user, get_current_workspace
 from models.integration import Integration
@@ -101,6 +104,7 @@ CONTENT_STATUSES = ("awaiting_brief", "filming", "filmed")
 ORD_RESPONSIBLE = ("us", "client", "not_required")
 ORD_STATUSES = ("todo", "done", "not_required")
 ORD_REPORTING_STATUSES = ("not_submitted", "submitted", "overdue")
+TALENT_TYPES = ("streamer", "blogger")
 CONTRACT_STATUSES = (
     "not_sent",
     "sent_to_streamer",
@@ -157,6 +161,11 @@ def _validate_contract_status(v: str):
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
+def _validate_talent_type(v: str):
+    if v not in TALENT_TYPES:
+        raise HTTPException(400, f"talent_type должен быть одним из: {', '.join(TALENT_TYPES)}")
+
+
 def _validate_integration_time(v: Optional[str]):
     if v is not None and not _TIME_RE.match(v):
         raise HTTPException(400, "integration_time должен быть в формате ЧЧ:ММ (например 18:30)")
@@ -168,6 +177,7 @@ class StreamerOut(BaseModel):
     id: int
     integration_id: int
     streamer_name: str
+    talent_type: str = "streamer"
     contact: str
     stage: str
     payment_status: str
@@ -229,6 +239,7 @@ class StreamerOut(BaseModel):
 
 class StreamerCreate(BaseModel):
     streamer_name: str
+    talent_type: str = "streamer"
     contact: str = ""
     stage: str = "negotiation"
     payment_status: str = "not_invoiced"
@@ -250,6 +261,7 @@ class StreamerCreate(BaseModel):
 
 class StreamerUpdate(BaseModel):
     streamer_name: Optional[str] = None
+    talent_type: Optional[str] = None
     contact: Optional[str] = None
     stage: Optional[str] = None
     payment_status: Optional[str] = None
@@ -281,6 +293,7 @@ class IntegrationOut(BaseModel):
     advertiser_id: Optional[int] = None
     brand: str
     description: str
+    kp_sheet_url: str = ""
     created_at: datetime
     updated_at: datetime
     streamers: List[StreamerOut] = []
@@ -299,10 +312,12 @@ class IntegrationBrief(BaseModel):
 class IntegrationCreate(BaseModel):
     advertiser_id: int
     description: str = ""
+    kp_sheet_url: str = ""
 
 
 class IntegrationUpdate(BaseModel):
     description: Optional[str] = None
+    kp_sheet_url: Optional[str] = None
 
 
 class PaymentOut(BaseModel):
@@ -338,10 +353,21 @@ class CaseStudyOut(BaseModel):
     description: str
     what_was_done: str
     result: str
+    show_on_site: bool = False
+    site_tag: str = "Games"
+    site_mini: str = ""
+    # {"en": {title, mini, description, what_was_done, result}, "zh": {...}}
+    translations: dict[str, dict[str, str]] = {}
+    site_published_at: Optional[datetime] = None
     photo_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
+    @field_validator("translations", mode="before")
+    @classmethod
+    def _parse_translations(cls, v):
+        return site_publisher.parse_translations(v) if isinstance(v, str) or v is None else v
 
 
 class CaseStudyCreate(BaseModel):
@@ -356,6 +382,10 @@ class CaseStudyUpdate(BaseModel):
     description: Optional[str] = None
     what_was_done: Optional[str] = None
     result: Optional[str] = None
+    show_on_site: Optional[bool] = None
+    site_tag: Optional[str] = None
+    site_mini: Optional[str] = None
+    translations: Optional[dict[str, dict[str, str]]] = None
 
 
 class AuditLogEntryOut(BaseModel):
@@ -423,7 +453,10 @@ def create_integration(data: IntegrationCreate, db: Session = Depends(get_db), w
     adv = db.get(Advertiser, data.advertiser_id)
     if not adv or adv.workspace_id != ws.id:
         raise HTTPException(404, "Рекламодатель не найден")
-    it = Integration(workspace_id=ws.id, advertiser_id=adv.id, brand=adv.name, description=data.description)
+    it = Integration(
+        workspace_id=ws.id, advertiser_id=adv.id, brand=adv.name,
+        description=data.description, kp_sheet_url=data.kp_sheet_url.strip(),
+    )
     db.add(it)
     db.commit()
     db.refresh(it)
@@ -439,7 +472,9 @@ def get_integration(integration_id: int, db: Session = Depends(get_db), ws: Work
 def update_integration(integration_id: int, data: IntegrationUpdate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
     it = _get_integration_or_404(db, ws, integration_id)
     for k, v in data.model_dump(exclude_unset=True).items():
-        setattr(it, k, v)
+        if v is None:
+            continue
+        setattr(it, k, v.strip() if k == "kp_sheet_url" else v)
     db.commit()
     db.refresh(it)
     return it
@@ -478,6 +513,7 @@ def create_streamer(
     user: User = Depends(get_current_user),
 ):
     it = _get_integration_or_404(db, ws, integration_id)
+    _validate_talent_type(data.talent_type)
     _validate_stage(data.stage)
     _validate_payment_status(data.payment_status)
     _validate_content_status(data.content_status)
@@ -494,6 +530,7 @@ def create_streamer(
     s = IntegrationStreamer(
         integration_id=integration_id,
         streamer_name=data.streamer_name,
+        talent_type=data.talent_type,
         contact=data.contact,
         stage=data.stage,
         payment_status=data.payment_status,
@@ -528,6 +565,8 @@ def create_streamer(
 @router.patch("/streamers/{streamer_id}", response_model=StreamerOut)
 def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
     s = _get_streamer_or_404(db, ws, streamer_id)
+    if data.talent_type is not None:
+        _validate_talent_type(data.talent_type)
     if data.stage is not None:
         _validate_stage(data.stage)
     if data.payment_status is not None:
@@ -797,8 +836,36 @@ def create_case(streamer_id: int, data: CaseStudyCreate, db: Session = Depends(g
 @router.patch("/cases/{case_id}", response_model=CaseStudyOut)
 def update_case(case_id: int, data: CaseStudyUpdate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
     c = _get_case_or_404(db, ws, case_id)
-    for k, v in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    if "site_tag" in changes and changes["site_tag"] not in site_publisher.SITE_TAGS:
+        raise HTTPException(400, f"site_tag: {', '.join(site_publisher.SITE_TAGS)}")
+    if "translations" in changes:
+        tr = changes["translations"] or {}
+        changes["translations"] = json.dumps(
+            {lang: {f: str((tr.get(lang) or {}).get(f, "")) for f in case_translate.FIELDS} for lang in ("en", "zh") if lang in tr},
+            ensure_ascii=False,
+        )
+    for k, v in changes.items():
+        if v is None:
+            continue
         setattr(c, k, v)
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@router.post("/cases/{case_id}/translate", response_model=CaseStudyOut)
+def translate_case(case_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    """Автоперевод кейса на EN/ZH (Groq). Обычная def - FastAPI выполнит в потоке, запрос долгий."""
+    c = _get_case_or_404(db, ws, case_id)
+    try:
+        tr = case_translate.translate_case({
+            "title": c.title, "mini": c.site_mini, "description": c.description,
+            "what_was_done": c.what_was_done, "result": c.result,
+        })
+    except case_translate.TranslateError as e:
+        raise HTTPException(400, str(e))
+    c.translations = json.dumps(tr, ensure_ascii=False)
     db.commit()
     db.refresh(c)
     return c

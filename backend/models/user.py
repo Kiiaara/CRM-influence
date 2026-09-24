@@ -26,6 +26,8 @@ class User(Base):
     notify_interval_hours: Mapped[int] = mapped_column(default=4)
     quiet_hours_start: Mapped[int | None] = mapped_column(nullable=True, default=22)  # 0-23, None = тихие часы выключены
     quiet_hours_end: Mapped[int | None] = mapped_column(nullable=True, default=8)
+    # пространство, с которым работает бот (выбирается /workspace); None - первое по дате вступления
+    bot_workspace_id: Mapped[int | None] = mapped_column(nullable=True)
     last_hot_tasks_notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

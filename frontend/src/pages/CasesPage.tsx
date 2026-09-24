@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { integrationsApi } from '../api/integrations'
-import type { CaseStudy, Streamer } from '../api/integrations'
+import type { CaseStudyUpdate, Streamer } from '../api/integrations'
+import { siteApi } from '../api/site'
+import type { PublishResult } from '../api/site'
+import { authApi } from '../api/auth'
 import { CaseStudyCard } from './IntegrationsBoard'
 
 interface Row extends Streamer {
@@ -26,9 +29,12 @@ function StreamerCases({ row, autoAdd }: { row: Row; autoAdd?: boolean }) {
     onSuccess: invalidateAll,
   })
   const updateCase = useMutation({
-    mutationFn: (p: { id: number; payload: Partial<Pick<CaseStudy, 'title' | 'description' | 'what_was_done' | 'result'>> }) =>
+    mutationFn: (p: { id: number; payload: CaseStudyUpdate }) =>
       integrationsApi.updateCase(p.id, p.payload),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate()
+      qc.invalidateQueries({ queryKey: ['site-status'] })
+    },
   })
   const removeCase = useMutation({
     mutationFn: (id: number) => integrationsApi.removeCase(id),
@@ -128,6 +134,8 @@ export default function CasesPage() {
           + Новый кейс
         </button>
       </div>
+
+      <SitePublishBar />
 
       {waiting.length > 0 && (
         <div className="mb-6 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 p-4">
@@ -274,6 +282,68 @@ function CasePickerModal({
           Отмена
         </button>
       </div>
+    </div>
+  )
+}
+
+function SitePublishBar() {
+  const qc = useQueryClient()
+  const { data: status } = useQuery({ queryKey: ['site-status'], queryFn: siteApi.status })
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: authApi.me, retry: false })
+  const [result, setResult] = useState<{ ok: boolean; text: string; link?: string } | null>(null)
+
+  const publish = useMutation({
+    mutationFn: siteApi.publish,
+    onSuccess: (r: PublishResult) => {
+      qc.invalidateQueries({ queryKey: ['site-status'] })
+      qc.invalidateQueries({ queryKey: ['streamers'] })
+      setResult(r.changed
+        ? { ok: true, text: `Опубликовано кейсов: ${r.count}. Сайт обновится, как только сервер заберёт изменения с GitHub.`, link: r.commit_url ?? undefined }
+        : { ok: true, text: 'На сайте и так всё актуально.' })
+    },
+    onError: (e: unknown) => {
+      const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+      setResult({ ok: false, text: typeof detail === 'string' ? detail : 'Не удалось опубликовать' })
+    },
+  })
+
+  if (!status) return null
+  const isAdmin = me?.role === 'admin'
+
+  return (
+    <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-3 mb-6 text-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex-1 text-slate-600 dark:text-slate-300">
+          🌐 На сайте{' '}
+          <a href={status.site_url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">
+            {status.site_url.replace(/^https?:\/\//, '')}
+          </a>
+          : {status.count ? `кейсов из CRM — ${status.count}` : 'пока ни одного кейса из CRM — поставь галочку «Показывать на сайте»'}
+          {status.unpublished > 0 && <span className="text-amber-600"> · ждут публикации: {status.unpublished}</span>}
+          {status.last_published_at && (
+            <span className="text-slate-400"> · обновлено {new Date(status.last_published_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+          )}
+        </div>
+        {isAdmin && (
+          <button
+            onClick={() => publish.mutate()}
+            disabled={publish.isPending || !status.configured}
+            title={status.configured ? '' : 'Нужен SITE_GITHUB_TOKEN в backend/.env'}
+            className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium shrink-0"
+          >
+            {publish.isPending ? 'Публикую…' : '🚀 Опубликовать на сайт'}
+          </button>
+        )}
+      </div>
+      {isAdmin && !status.configured && (
+        <div className="text-xs text-slate-400 mt-2">Публикация не настроена: нужен токен GitHub (SITE_GITHUB_TOKEN в backend/.env).</div>
+      )}
+      {result && (
+        <div className={`text-xs mt-2 ${result.ok ? 'text-emerald-600' : 'text-red-500'}`}>
+          {result.text}{' '}
+          {result.link && <a href={result.link} target="_blank" rel="noreferrer" className="underline">коммит ↗</a>}
+        </div>
+      )}
     </div>
   )
 }

@@ -20,6 +20,7 @@ const navItems = [
   { to: '/cases', label: 'Кейсы', icon: '🎬' },
   { to: '/history', label: 'История', icon: '🗂️' },
   { to: '/streamers', label: 'База стримеров', icon: '📋' },
+  { to: '/bloggers', label: 'База блогеров', icon: '📱' },
 ]
 
 export default function WorkspacePage() {

@@ -17,6 +17,7 @@ from models.user import User
 from models.integration_streamer import IntegrationStreamer
 from notifier import send_message
 import notifier
+import blogger_sheet
 import bot_dialog
 import httpx
 
@@ -306,7 +307,7 @@ _tg_offset = 0
 
 async def _poll_telegram_updates():
     """Слушает getUpdates: /start, текстовые команды/шаги диалога, нажатия инлайн-кнопок
-    редактирования (callback_query) и присланные документы (файл договора)."""
+    редактирования (callback_query) и присланные документы/фото (договор, файлы ТЗ, фото кейса)."""
     global _tg_offset
     if not settings.auth_bot_token:
         return
@@ -341,6 +342,12 @@ async def _poll_telegram_updates():
                 if doc:
                     await bot_dialog.handle_document(tg_id, doc.get("file_id"), doc.get("file_name"))
                     continue
+                photos = msg.get("photo")
+                if photos:
+                    # фото приходит несколькими размерами - берём самое большое (последнее)
+                    biggest = photos[-1]
+                    await bot_dialog.handle_document(tg_id, biggest.get("file_id"), f"photo_{biggest.get('file_unique_id', 'tg')}.jpg")
+                    continue
 
                 text = msg.get("text") or ""
                 if text.startswith("/start"):
@@ -349,7 +356,9 @@ async def _poll_telegram_updates():
                         tg_id,
                         "Привет 👋 Я буду присылать тебе уведомления по интеграциям из CRM-influence.\n\n"
                         "Жми кнопку ниже или пиши /new_integration, чтобы добавить интеграцию, "
-                        "/edit_integration - чтобы отредактировать существующую.",
+                        "/edit_integration - чтобы отредактировать карточку, "
+                        "/menu - чтобы открыть всё остальное: сделки и КП, рекламодателей, задачи, кейсы, "
+                        "базы стримеров и блогеров.",
                         with_keyboard=True,
                     )
                     continue
@@ -363,6 +372,8 @@ async def _poll_telegram_updates():
                     text = "/hot_tasks"
                 elif text.strip() == "⚙️ Настройки":
                     text = "/settings"
+                elif text.strip() == "📂 Меню":
+                    text = "/menu"
                 if await bot_dialog.handle_command(tg_id, text):
                     continue
                 await bot_dialog.handle_message(tg_id, text)
@@ -386,11 +397,36 @@ def _mark_chat_ready(tg_id: int, from_user: dict):
         db.close()
 
 
-def start_scheduler():
+async def _sync_bloggers_sheet():
+    """Автоматически подтягиваем базу блогеров из гугл-таблицы (если ссылка задана)."""
+    db = SessionLocal()
+    try:
+        if not blogger_sheet.get_sheet_url(db):
+            return
+        try:
+            await blogger_sheet.sync_from_sheet(db)
+        except blogger_sheet.SheetImportError as e:
+            log.warning("Синхронизация таблицы блогеров: %s", e)
+    except Exception:
+        log.exception("Ошибка синхронизации таблицы блогеров")
+    finally:
+        db.close()
+
+
+def start_scheduler(with_bot: bool = True):
     global _scheduler
     if _scheduler:
         return
     _scheduler = AsyncIOScheduler()
+    if settings.bloggers_sync_minutes > 0:
+        _scheduler.add_job(
+            _sync_bloggers_sheet, "interval", minutes=settings.bloggers_sync_minutes,
+            id="bloggers_sheet_sync", max_instances=1, coalesce=True,
+        )
+    if not with_bot:
+        _scheduler.start()
+        log.info("Scheduler started (без бота)")
+        return
     interval = max(15, settings.scheduler_interval_seconds)
     _scheduler.add_job(_check_deadlines, "interval", seconds=interval, id="deadlines")
     _scheduler.add_job(_notify_assigned, "interval", seconds=30, id="assigned")

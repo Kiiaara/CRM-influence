@@ -17,6 +17,8 @@ class Integration(Base):
     # чтобы не трогать весь остальной код, который читает Integration.brand напрямую
     brand: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
+    # ссылка на гугл-таблицу с расчётом КП по этой сделке
+    kp_sheet_url: Mapped[str] = mapped_column(String(512), default="")
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
