@@ -10,6 +10,7 @@ import {
   ORD_STATUS_LABELS,
   ORD_REPORTING_LABELS,
   CONTRACT_STATUS_LABELS,
+  TALENT_LABELS,
 } from '../api/integrations'
 import type {
   CaseStudy,
@@ -23,9 +24,11 @@ import type {
   PaymentStatus,
   Stage,
   Streamer,
+  TalentType,
 } from '../api/integrations'
 import { advertisersApi } from '../api/advertisers'
 import { streamerProfilesApi } from '../api/streamerProfiles'
+import { bloggerProfilesApi } from '../api/bloggerProfiles'
 
 const PAYMENT_COLORS: Record<PaymentStatus, string> = {
   not_invoiced: 'bg-slate-100 text-slate-600 dark:bg-brand-900 dark:text-slate-300',
@@ -41,6 +44,7 @@ function round2(n: number) {
 // плоская карточка стримера + бренд сделки, для рендера на канбане
 interface Card extends Streamer {
   brand: string
+  kp_sheet_url: string
 }
 
 export default function IntegrationsBoard() {
@@ -56,7 +60,7 @@ export default function IntegrationsBoard() {
   const { data: integrations = [] } = useQuery({ queryKey: ['integrations'], queryFn: integrationsApi.list })
 
   const cards: Card[] = useMemo(
-    () => integrations.flatMap(it => it.streamers.map(s => ({ ...s, brand: it.brand }))),
+    () => integrations.flatMap(it => it.streamers.map(s => ({ ...s, brand: it.brand, kp_sheet_url: it.kp_sheet_url }))),
     [integrations]
   )
 
@@ -95,8 +99,25 @@ export default function IntegrationsBoard() {
       onClick={() => setEditing({ streamer: c, brand: c.brand })}
       className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-lg p-3 cursor-pointer hover:border-brand-400 shadow-sm"
     >
-      <div className="text-xs text-slate-400">{c.brand}</div>
-      <div className="font-medium text-sm text-slate-900 dark:text-slate-100">{c.streamer_name}</div>
+      <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
+        <span className="truncate">{c.brand}</span>
+        {c.kp_sheet_url && (
+          <a
+            href={c.kp_sheet_url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={e => e.stopPropagation()}
+            title="Таблица с расчётом КП"
+            className="shrink-0 text-brand-600 hover:underline"
+          >
+            📊 КП
+          </a>
+        )}
+      </div>
+      <div className="font-medium text-sm text-slate-900 dark:text-slate-100">
+        {c.talent_type === 'blogger' && <span title="Блогер" className="mr-1">📱</span>}
+        {c.streamer_name}
+      </div>
       <div className="flex items-center justify-between mt-2 gap-2 flex-wrap">
         <span className={`text-[11px] px-1.5 py-0.5 rounded ${PAYMENT_COLORS[c.payment_status]}`}>
           {PAYMENT_LABELS[c.payment_status]}{c.paid_percent != null && ` · ${c.paid_percent}%`}
@@ -129,7 +150,7 @@ export default function IntegrationsBoard() {
           onClick={() => setPickingBrand(true)}
           className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto"
         >
-          + Стримеры на бренд
+          + Стримеры / блогеры на бренд
         </button>
       </div>
 
@@ -235,12 +256,13 @@ function BrandPickerModal({
   const [advMode, setAdvMode] = useState<'pick' | 'create'>('pick')
   const [selectedAdvId, setSelectedAdvId] = useState<number | ''>('')
   const [newAdvName, setNewAdvName] = useState('')
+  const [kpUrl, setKpUrl] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const { data: advertisers = [] } = useQuery({ queryKey: ['advertisers'], queryFn: advertisersApi.list })
 
   const createIntegration = useMutation({
-    mutationFn: (advertiserId: number) => integrationsApi.create({ advertiser_id: advertiserId }),
+    mutationFn: (advertiserId: number) => integrationsApi.create({ advertiser_id: advertiserId, kp_sheet_url: kpUrl.trim() }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['integrations'] })
       onPicked(data.id)
@@ -251,7 +273,7 @@ function BrandPickerModal({
     mutationFn: async (name: string) => {
       const adv = await advertisersApi.create({ name })
       qc.invalidateQueries({ queryKey: ['advertisers'] })
-      return integrationsApi.create({ advertiser_id: adv.id })
+      return integrationsApi.create({ advertiser_id: adv.id, kp_sheet_url: kpUrl.trim() })
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['integrations'] })
@@ -342,6 +364,12 @@ function BrandPickerModal({
                 className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               />
             )}
+            <input
+              value={kpUrl}
+              onChange={e => setKpUrl(e.target.value)}
+              placeholder="Ссылка на гугл-таблицу с расчётом КП (можно позже)"
+              className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+            />
           </div>
         )}
         {error && <div className="text-xs text-red-500 mt-2">{error}</div>}
@@ -360,6 +388,15 @@ function BrandPickerModal({
   )
 }
 
+// строка выбора в модалке добавления: стример или блогер из соответствующей базы
+interface PickItem {
+  key: string
+  name: string
+  hint: string
+  price: number | null
+  contact: string
+}
+
 function BulkStreamersModal({
   integrationId,
   brand,
@@ -370,45 +407,64 @@ function BulkStreamersModal({
   onClose: () => void
 }) {
   const qc = useQueryClient()
+  const [talentType, setTalentType] = useState<TalentType>('streamer')
   const { data: profiles = [] } = useQuery({ queryKey: ['streamer-profiles'], queryFn: streamerProfilesApi.list })
+  const { data: bloggers = [] } = useQuery({ queryKey: ['blogger-profiles'], queryFn: bloggerProfilesApi.list })
   const { data: legacyNames = [] } = useQuery({ queryKey: ['streamer-names'], queryFn: integrationsApi.streamerNames })
 
-  const [selectedProfiles, setSelectedProfiles] = useState<Set<number>>(new Set())
-  const [manualNames, setManualNames] = useState('')
+  // выбор храним по обоим типам сразу - можно набрать и стримеров, и блогеров в одну сделку
+  const [selected, setSelected] = useState<Record<TalentType, Set<string>>>({ streamer: new Set(), blogger: new Set() })
+  const [manualNames, setManualNames] = useState<Record<TalentType, string>>({ streamer: '', blogger: '' })
   const [search, setSearch] = useState('')
 
   const [commonDeadline, setCommonDeadline] = useState('')
   const [commonCommission, setCommonCommission] = useState(15)
   const [commonTax, setCommonTax] = useState(6)
 
-  const filteredProfiles = profiles.filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
+  const items: Record<TalentType, PickItem[]> = {
+    streamer: profiles.map(p => ({
+      key: `s${p.id}`, name: p.name, hint: p.category, price: p.post_price, contact: p.social_links,
+    })),
+    blogger: bloggers.map(b => ({
+      key: `b${b.id}`,
+      name: b.name,
+      hint: [b.platform, b.category].filter(Boolean).join(' · '),
+      price: b.price,
+      contact: b.telegram || b.url,
+    })),
+  }
+  const current = items[talentType]
+  const filtered = current.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.hint.toLowerCase().includes(search.toLowerCase()))
 
-  const toggleProfile = (id: number) => {
-    setSelectedProfiles(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
+  const toggle = (key: string) => {
+    setSelected(prev => {
+      const next = new Set(prev[talentType])
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return { ...prev, [talentType]: next }
     })
   }
 
+  const splitNames = (raw: string) => raw.split(/[,\n]/).map(s => s.trim()).filter(Boolean)
+
   const addBulk = useMutation({
     mutationFn: async () => {
-      const names = [
-        ...profiles.filter(p => selectedProfiles.has(p.id)).map(p => p.name),
-        ...manualNames.split(/[,\n]/).map(s => s.trim()).filter(Boolean),
-      ]
-      const uniqueNames = [...new Set(names)]
-      for (const name of uniqueNames) {
-        const profile = profiles.find(p => p.name === name)
-        await integrationsApi.addStreamer(integrationId, {
-          streamer_name: name,
-          contact: profile?.social_links ?? '',
-          amount: profile?.post_price ?? null,
-          commission_percent: commonCommission,
-          streamer_tax_percent: commonTax,
-          deadline: commonDeadline || null,
-        })
+      for (const type of ['streamer', 'blogger'] as TalentType[]) {
+        const picked = items[type].filter(p => selected[type].has(p.key))
+        const pickedNames = new Set(picked.map(p => p.name))
+        const manual = [...new Set(splitNames(manualNames[type]))].filter(n => !pickedNames.has(n))
+        const rows = [...picked, ...manual.map(name => ({ name, contact: '', price: null as number | null }))]
+        for (const row of rows) {
+          await integrationsApi.addStreamer(integrationId, {
+            streamer_name: row.name,
+            talent_type: type,
+            contact: row.contact ?? '',
+            amount: row.price ?? null,
+            commission_percent: commonCommission,
+            streamer_tax_percent: commonTax,
+            deadline: commonDeadline || null,
+          })
+        }
       }
     },
     onSuccess: () => {
@@ -417,13 +473,27 @@ function BulkStreamersModal({
     },
   })
 
-  const totalSelected = selectedProfiles.size + manualNames.split(/[,\n]/).map(s => s.trim()).filter(Boolean).length
+  const countFor = (type: TalentType) => selected[type].size + splitNames(manualNames[type]).length
+  const totalSelected = countFor('streamer') + countFor('blogger')
+  const baseLabel = talentType === 'streamer' ? 'базы стримеров' : 'базы блогеров'
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
       <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="text-xs text-slate-400 mb-1">{brand}</div>
-        <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-slate-100">Добавить стримеров</h2>
+        <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-slate-100">Кого добавляем?</h2>
+
+        <div className="flex gap-2 mb-4">
+          {(['streamer', 'blogger'] as TalentType[]).map(t => (
+            <button
+              key={t}
+              onClick={() => { setTalentType(t); setSearch('') }}
+              className={`flex-1 text-sm px-3 py-2 rounded-lg border ${talentType === t ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300' : 'border-slate-200 dark:border-brand-800 text-slate-600 dark:text-slate-300'}`}
+            >
+              {t === 'streamer' ? '🎮 Стримеры' : '📱 Блогеры'}{countFor(t) > 0 && ` (${countFor(t)})`}
+            </button>
+          ))}
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <div>
@@ -435,50 +505,54 @@ function BulkStreamersModal({
             <input type="number" value={commonCommission} onChange={e => setCommonCommission(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
           </div>
           <div>
-            <label className="text-xs text-slate-500 dark:text-slate-400">Налог стримера, %</label>
+            <label className="text-xs text-slate-500 dark:text-slate-400">Налог, %</label>
             <input type="number" value={commonTax} onChange={e => setCommonTax(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
           </div>
         </div>
-        <p className="text-xs text-slate-400 mb-4">Сумму, стадию и статус контента каждому стримеру выставишь отдельно в его карточке — они у всех разные.</p>
+        <p className="text-xs text-slate-400 mb-4">Сумму, стадию и статус контента каждому выставишь отдельно в его карточке — они у всех разные.</p>
 
-        {profiles.length > 0 && (
+        {current.length > 0 && (
           <div className="mb-4">
-            <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Выбери из базы стримеров</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">Выбери из {baseLabel}</div>
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Поиск по имени…"
+              placeholder={talentType === 'streamer' ? 'Поиск по имени…' : 'Поиск по имени или площадке…'}
               className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 mb-2"
             />
             <div className="border border-slate-200 dark:border-brand-900 rounded-lg max-h-48 overflow-y-auto">
-              {filteredProfiles.map(p => (
-                <label key={p.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-brand-900/50 border-b border-slate-100 dark:border-brand-900 last:border-0 cursor-pointer">
-                  <input type="checkbox" checked={selectedProfiles.has(p.id)} onChange={() => toggleProfile(p.id)} className="w-4 h-4" />
+              {filtered.map(p => (
+                <label key={p.key} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-brand-900/50 border-b border-slate-100 dark:border-brand-900 last:border-0 cursor-pointer">
+                  <input type="checkbox" checked={selected[talentType].has(p.key)} onChange={() => toggle(p.key)} className="w-4 h-4" />
                   <span className="text-slate-700 dark:text-slate-300">{p.name}</span>
-                  {p.category && <span className="text-xs text-slate-400">· {p.category}</span>}
-                  {p.post_price != null && <span className="text-xs text-slate-400 ml-auto">{p.post_price.toLocaleString('ru-RU')} ₽</span>}
+                  {p.hint && <span className="text-xs text-slate-400">· {p.hint}</span>}
+                  {p.price != null && <span className="text-xs text-slate-400 ml-auto">{p.price.toLocaleString('ru-RU')} ₽</span>}
                 </label>
               ))}
-              {filteredProfiles.length === 0 && <div className="px-3 py-4 text-sm text-slate-400 text-center">Ничего не найдено</div>}
+              {filtered.length === 0 && <div className="px-3 py-4 text-sm text-slate-400 text-center">Ничего не найдено</div>}
             </div>
           </div>
         )}
 
         <div>
           <label className="text-xs text-slate-500 dark:text-slate-400">
-            Или впиши новых стримеров (через запятую или с новой строки){legacyNames.length > 0 && ' — уже вводили: ' + legacyNames.slice(0, 5).join(', ')}
+            Или впиши {talentType === 'streamer' ? 'новых стримеров' : 'новых блогеров'} (через запятую или с новой строки)
+            {talentType === 'streamer' && legacyNames.length > 0 && ' — уже вводили: ' + legacyNames.slice(0, 5).join(', ')}
           </label>
           <textarea
-            value={manualNames}
-            onChange={e => setManualNames(e.target.value)}
+            value={manualNames[talentType]}
+            onChange={e => setManualNames({ ...manualNames, [talentType]: e.target.value })}
             rows={3}
-            placeholder="Стример1, Стример2, ..."
+            placeholder={talentType === 'streamer' ? 'Стример1, Стример2, ...' : 'Блогер1, Блогер2, ...'}
             className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
           />
         </div>
 
         <div className="flex justify-between items-center mt-6">
-          <div className="text-xs text-slate-400">Выбрано: {totalSelected}</div>
+          <div className="text-xs text-slate-400">
+            Выбрано: {totalSelected}
+            {countFor('streamer') > 0 && countFor('blogger') > 0 && ` (стримеров ${countFor('streamer')}, блогеров ${countFor('blogger')})`}
+          </div>
           <div className="flex gap-2">
             <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 rounded-lg">Отмена</button>
             <button
@@ -491,6 +565,58 @@ function BulkStreamersModal({
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ссылка на гугл-таблицу с расчётом КП - одна на всю сделку, поэтому сохраняется сразу в сделку,
+// а не вместе с карточкой участника
+function DealKpLink({ integrationId }: { integrationId: number }) {
+  const qc = useQueryClient()
+  const { data: integrations = [] } = useQuery({ queryKey: ['integrations'], queryFn: integrationsApi.list })
+  const saved = integrations.find(i => i.id === integrationId)?.kp_sheet_url ?? ''
+  const [editing, setEditing] = useState(false)
+  // null - поле не трогали, показываем сохранённое значение
+  const [draftInput, setDraft] = useState<string | null>(null)
+  const draft = draftInput ?? saved
+
+  const save = useMutation({
+    mutationFn: (url: string) => integrationsApi.update(integrationId, { kp_sheet_url: url.trim() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['integrations'] })
+      setEditing(false)
+      setDraft(null)
+    },
+  })
+
+  if (!integrationId) return null
+
+  return (
+    <div className="border border-slate-200 dark:border-brand-900 rounded-lg p-3 text-sm">
+      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">📊 Расчёт КП по сделке (гугл-таблица)</div>
+      {editing || !saved ? (
+        <div className="flex gap-2">
+          <input
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            placeholder="https://docs.google.com/spreadsheets/d/..."
+            className="flex-1 min-w-0 bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-1.5 text-slate-900 dark:text-slate-100"
+          />
+          <button
+            onClick={() => save.mutate(draft)}
+            disabled={save.isPending || draft.trim() === saved}
+            className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-medium"
+          >
+            Сохранить
+          </button>
+          {saved && <button onClick={() => { setEditing(false); setDraft(null) }} className="text-xs text-slate-500">Отмена</button>}
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <a href={saved} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline truncate">Открыть таблицу КП ↗</a>
+          <button onClick={() => setEditing(true)} className="text-xs text-slate-500 hover:text-slate-700 shrink-0">изменить</button>
+        </div>
+      )}
     </div>
   )
 }
@@ -572,6 +698,7 @@ export function StreamerModal({
     if (!form.streamer_name.trim()) return
     const payload: Partial<Streamer> = {
       streamer_name: form.streamer_name,
+      talent_type: form.talent_type,
       contact: form.contact,
       stage: form.stage,
       payment_status: form.payment_status,
@@ -604,13 +731,25 @@ export function StreamerModal({
       <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="text-xs text-slate-400 mb-1">{brand}</div>
         <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-slate-100">
-          {isNew ? 'Новый стример' : form.streamer_name}
+          {isNew ? 'Новый участник' : form.streamer_name}
         </h2>
 
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <DealKpLink integrationId={streamer.integration_id} />
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-slate-500 dark:text-slate-400">Кто</label>
+              <select
+                value={form.talent_type ?? 'streamer'}
+                onChange={e => setForm({ ...form, talent_type: e.target.value as TalentType })}
+                className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
+              >
+                {Object.entries(TALENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
             <div className="relative">
-              <label className="text-xs text-slate-500 dark:text-slate-400">Стример</label>
+              <label className="text-xs text-slate-500 dark:text-slate-400">{TALENT_LABELS[form.talent_type ?? 'streamer']}</label>
               <input
                 value={form.streamer_name}
                 onChange={e => { setForm({ ...form, streamer_name: e.target.value }); setNameOpen(true) }}

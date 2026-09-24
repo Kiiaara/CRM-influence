@@ -3,6 +3,12 @@ import { api } from './client'
 export type Stage = 'negotiation' | 'agreed' | 'awaiting_contract' | 'awaiting_payment' | 'done' | 'cancelled'
 export type PaymentStatus = 'not_invoiced' | 'invoiced' | 'partial' | 'paid'
 export type ContentStatus = 'awaiting_brief' | 'filming' | 'filmed'
+export type TalentType = 'streamer' | 'blogger'
+
+export const TALENT_LABELS: Record<TalentType, string> = {
+  streamer: 'Стример',
+  blogger: 'Блогер',
+}
 
 export const STAGES: { key: Stage; label: string }[] = [
   { key: 'negotiation', label: 'На согласовании' },
@@ -82,6 +88,7 @@ export interface Streamer {
   id: number
   integration_id: number
   streamer_name: string
+  talent_type: TalentType
   contact: string
   stage: Stage
   payment_status: PaymentStatus
@@ -210,6 +217,7 @@ export interface Integration {
   advertiser_id: number | null
   brand: string
   description: string
+  kp_sheet_url: string
   created_at: string
   updated_at: string
   streamers: Streamer[]
@@ -253,11 +261,11 @@ export const integrationsApi = {
     const { data } = await api.get<Integration>(`/integrations/${id}`)
     return data
   },
-  async create(payload: { advertiser_id: number; description?: string }) {
+  async create(payload: { advertiser_id: number; description?: string; kp_sheet_url?: string }) {
     const { data } = await api.post<Integration>('/integrations', payload)
     return data
   },
-  async update(id: number, payload: Partial<Pick<Integration, 'description'>>) {
+  async update(id: number, payload: Partial<Pick<Integration, 'description' | 'kp_sheet_url'>>) {
     const { data } = await api.patch<Integration>(`/integrations/${id}`, payload)
     return data
   },

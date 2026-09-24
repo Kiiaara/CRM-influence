@@ -13,6 +13,7 @@ import CasesPage from './pages/CasesPage'
 import TasksPage from './pages/TasksPage'
 import ChatPage from './pages/ChatPage'
 import StreamerProfilesPage from './pages/StreamerProfilesPage'
+import BloggerProfilesPage from './pages/BloggerProfilesPage'
 import SearchPage from './pages/SearchPage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import ProfilePage from './pages/ProfilePage'
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/streamers" element={<StreamerProfilesPage />} />
+        <Route path="/bloggers" element={<BloggerProfilesPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="/profile" element={<ProfilePage />} />

@@ -101,6 +101,7 @@ CONTENT_STATUSES = ("awaiting_brief", "filming", "filmed")
 ORD_RESPONSIBLE = ("us", "client", "not_required")
 ORD_STATUSES = ("todo", "done", "not_required")
 ORD_REPORTING_STATUSES = ("not_submitted", "submitted", "overdue")
+TALENT_TYPES = ("streamer", "blogger")
 CONTRACT_STATUSES = (
     "not_sent",
     "sent_to_streamer",
@@ -157,6 +158,11 @@ def _validate_contract_status(v: str):
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
+def _validate_talent_type(v: str):
+    if v not in TALENT_TYPES:
+        raise HTTPException(400, f"talent_type должен быть одним из: {', '.join(TALENT_TYPES)}")
+
+
 def _validate_integration_time(v: Optional[str]):
     if v is not None and not _TIME_RE.match(v):
         raise HTTPException(400, "integration_time должен быть в формате ЧЧ:ММ (например 18:30)")
@@ -168,6 +174,7 @@ class StreamerOut(BaseModel):
     id: int
     integration_id: int
     streamer_name: str
+    talent_type: str = "streamer"
     contact: str
     stage: str
     payment_status: str
@@ -229,6 +236,7 @@ class StreamerOut(BaseModel):
 
 class StreamerCreate(BaseModel):
     streamer_name: str
+    talent_type: str = "streamer"
     contact: str = ""
     stage: str = "negotiation"
     payment_status: str = "not_invoiced"
@@ -250,6 +258,7 @@ class StreamerCreate(BaseModel):
 
 class StreamerUpdate(BaseModel):
     streamer_name: Optional[str] = None
+    talent_type: Optional[str] = None
     contact: Optional[str] = None
     stage: Optional[str] = None
     payment_status: Optional[str] = None
@@ -281,6 +290,7 @@ class IntegrationOut(BaseModel):
     advertiser_id: Optional[int] = None
     brand: str
     description: str
+    kp_sheet_url: str = ""
     created_at: datetime
     updated_at: datetime
     streamers: List[StreamerOut] = []
@@ -299,10 +309,12 @@ class IntegrationBrief(BaseModel):
 class IntegrationCreate(BaseModel):
     advertiser_id: int
     description: str = ""
+    kp_sheet_url: str = ""
 
 
 class IntegrationUpdate(BaseModel):
     description: Optional[str] = None
+    kp_sheet_url: Optional[str] = None
 
 
 class PaymentOut(BaseModel):
@@ -423,7 +435,10 @@ def create_integration(data: IntegrationCreate, db: Session = Depends(get_db), w
     adv = db.get(Advertiser, data.advertiser_id)
     if not adv or adv.workspace_id != ws.id:
         raise HTTPException(404, "Рекламодатель не найден")
-    it = Integration(workspace_id=ws.id, advertiser_id=adv.id, brand=adv.name, description=data.description)
+    it = Integration(
+        workspace_id=ws.id, advertiser_id=adv.id, brand=adv.name,
+        description=data.description, kp_sheet_url=data.kp_sheet_url.strip(),
+    )
     db.add(it)
     db.commit()
     db.refresh(it)
@@ -439,7 +454,9 @@ def get_integration(integration_id: int, db: Session = Depends(get_db), ws: Work
 def update_integration(integration_id: int, data: IntegrationUpdate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
     it = _get_integration_or_404(db, ws, integration_id)
     for k, v in data.model_dump(exclude_unset=True).items():
-        setattr(it, k, v)
+        if v is None:
+            continue
+        setattr(it, k, v.strip() if k == "kp_sheet_url" else v)
     db.commit()
     db.refresh(it)
     return it
@@ -478,6 +495,7 @@ def create_streamer(
     user: User = Depends(get_current_user),
 ):
     it = _get_integration_or_404(db, ws, integration_id)
+    _validate_talent_type(data.talent_type)
     _validate_stage(data.stage)
     _validate_payment_status(data.payment_status)
     _validate_content_status(data.content_status)
@@ -494,6 +512,7 @@ def create_streamer(
     s = IntegrationStreamer(
         integration_id=integration_id,
         streamer_name=data.streamer_name,
+        talent_type=data.talent_type,
         contact=data.contact,
         stage=data.stage,
         payment_status=data.payment_status,
@@ -528,6 +547,8 @@ def create_streamer(
 @router.patch("/streamers/{streamer_id}", response_model=StreamerOut)
 def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
     s = _get_streamer_or_404(db, ws, streamer_id)
+    if data.talent_type is not None:
+        _validate_talent_type(data.talent_type)
     if data.stage is not None:
         _validate_stage(data.stage)
     if data.payment_status is not None:

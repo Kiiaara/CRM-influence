@@ -13,6 +13,7 @@ class IntegrationStreamer(Base):
     ord_status: todo | done - статус самой маркировки
     ord_reporting_status: not_submitted | submitted | overdue - статус отчётности в ОРД
     contract_status: not_sent | sent_to_streamer | signed_by_streamer | sent_to_brand | signed_by_brand | active | expired
+    talent_type: streamer | blogger - кто это: стример (база стримеров) или блогер (база блогеров)
     """
     __tablename__ = "integration_streamers"
 
@@ -20,6 +21,7 @@ class IntegrationStreamer(Base):
     integration_id: Mapped[int] = mapped_column(Integer, ForeignKey("integrations.id", ondelete="CASCADE"), index=True)
 
     streamer_name: Mapped[str] = mapped_column(String(255))
+    talent_type: Mapped[str] = mapped_column(String(16), default="streamer")
     contact: Mapped[str] = mapped_column(String(255), default="")
 
     stage: Mapped[str] = mapped_column(String(32), default="negotiation", index=True)
