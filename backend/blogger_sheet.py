@@ -6,7 +6,9 @@
 плюс подписчиков/просмотры/цену/тематику/гео/менеджера, если такие колонки нашлись.
 """
 import io
+import json
 import re
+from datetime import datetime
 from typing import Optional
 
 import httpx
@@ -17,6 +19,8 @@ from models.app_setting import AppSetting
 from models.blogger_profile import BloggerProfile
 
 SHEET_URL_KEY = "bloggers_sheet_url"
+TABS_KEY = "bloggers_sheet_tabs"  # JSON: названия листов в порядке таблицы - так же идут вкладки в CRM
+LAST_SYNC_KEY = "bloggers_last_sync"  # JSON: {at, created, updated, deleted, error}
 
 _SHEET_ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]+)")
 
@@ -54,6 +58,41 @@ def set_sheet_url(db: Session, url: str) -> None:
         row.value = url
     else:
         db.add(AppSetting(key=SHEET_URL_KEY, value=url))
+    db.commit()
+
+
+def _get_json(db: Session, key: str, default):
+    row = db.get(AppSetting, key)
+    if not row or not row.value:
+        return default
+    try:
+        return json.loads(row.value)
+    except ValueError:
+        return default
+
+
+def _set_json(db: Session, key: str, value) -> None:
+    row = db.get(AppSetting, key)
+    raw = json.dumps(value, ensure_ascii=False)
+    if row:
+        row.value = raw
+    else:
+        db.add(AppSetting(key=key, value=raw))
+
+
+def get_tabs(db: Session) -> list[str]:
+    return _get_json(db, TABS_KEY, [])
+
+
+def get_last_sync(db: Session) -> Optional[dict]:
+    return _get_json(db, LAST_SYNC_KEY, None)
+
+
+def _record_sync(db: Session, result: Optional[dict], error: Optional[str]) -> None:
+    info = {"at": datetime.now().isoformat(timespec="seconds"), "error": error}
+    if result:
+        info.update({k: result.get(k, 0) for k in ("created", "updated", "deleted")})
+    _set_json(db, LAST_SYNC_KEY, info)
     db.commit()
 
 
@@ -135,18 +174,34 @@ def _cell_text(cell) -> str:
     v = cell.value
     if v is None:
         return ""
+    if isinstance(v, datetime):
+        return v.strftime("%d.%m.%Y")
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
     return str(v).strip()
 
 
+def _hyperlink(cell) -> str:
+    return cell.hyperlink.target if cell.hyperlink is not None and cell.hyperlink.target else ""
+
+
 def parse_workbook(content: bytes) -> list[dict]:
-    """Возвращает список блогеров {name, platform, url, telegram, ...} со всех листов."""
+    return parse_workbook_with_tabs(content)[0]
+
+
+def parse_workbook_with_tabs(content: bytes) -> tuple[list[dict], list[str]]:
+    """Возвращает (блогеры {name, platform, url, telegram, ..., sheet_row} со всех листов,
+    названия листов с блогерами в порядке таблицы)."""
     try:
         wb = load_workbook(io.BytesIO(content), data_only=True)
     except Exception as e:
         raise SheetImportError(f"Не удалось прочитать таблицу: {e}")
 
     result: list[dict] = []
+    tabs: list[str] = []
     for ws in wb.worksheets:
+        if ws.sheet_state != "visible":
+            continue
         rows = list(ws.iter_rows())
         if not rows:
             continue
@@ -154,8 +209,22 @@ def parse_workbook(content: bytes) -> list[dict]:
         if header_idx < 0:
             continue
         platform = ws.title.strip()[:64]
+        # все подписанные колонки листа - чтобы показать вкладку в CRM так же, как в таблице
+        headers = {ci: _cell_text(c) for ci, c in enumerate(rows[header_idx]) if _cell_text(c)}
+        found = False
         for row in rows[header_idx + 1:]:
             item: dict = {"platform": platform}
+            sheet_row = []
+            for ci, h in headers.items():
+                if ci >= len(row):
+                    continue
+                text, link = _cell_text(row[ci]), _hyperlink(row[ci])
+                if text or link:
+                    entry = {"h": h, "v": text or link}
+                    if link and link != text:
+                        entry["u"] = link
+                    sheet_row.append(entry)
+            item["sheet_row"] = sheet_row
             name_hyperlink = ""
             for ci, field in col_map.items():
                 if ci >= len(row):
@@ -185,17 +254,27 @@ def parse_workbook(content: bytes) -> list[dict]:
                 continue
             item["name"] = name[:255]
             result.append(item)
-    return result
+            found = True
+        if found:
+            tabs.append(platform)
+    return result, tabs
 
 
-def upsert_bloggers(db: Session, items: list[dict]) -> dict:
+def upsert_bloggers(db: Session, items: list[dict], tabs: Optional[list[str]] = None, mirror: bool = False) -> dict:
     """Строка с тем же именем и площадкой обновляется, новая - создаётся.
-    Пустые ячейки таблицы не затирают то, что уже заполнено в CRM руками."""
+    Пустые ячейки таблицы не затирают то, что уже заполнено в CRM руками.
+    mirror=True (синхронизация по ссылке): блогеры, пришедшие из таблицы, но пропавшие из неё,
+    удаляются - только на тех листах, которые прочитались (сломанный лист не снесёт базу).
+    Заведённых в CRM руками это не касается."""
     existing = {(b.name.lower(), b.platform.lower()): b for b in db.query(BloggerProfile).all()}
-    created, updated = 0, 0
+    created, updated, deleted = 0, 0, 0
+    seen: set[tuple[str, str]] = set()
     for item in items:
         key = (item["name"].lower(), item.get("platform", "").lower())
-        values = {k: v for k, v in item.items() if v not in (None, "")}
+        seen.add(key)
+        values = {k: v for k, v in item.items() if v not in (None, "") and k != "sheet_row"}
+        values["sheet_row"] = json.dumps(item.get("sheet_row") or [], ensure_ascii=False)
+        values["source"] = "sheet"
         b = existing.get(key)
         if b:
             for k, v in values.items():
@@ -206,8 +285,17 @@ def upsert_bloggers(db: Session, items: list[dict]) -> dict:
             db.add(b)
             existing[key] = b
             created += 1
+    if mirror:
+        synced_tabs = {t.lower() for t in (tabs or [])}
+        for key, b in existing.items():
+            if b.source == "sheet" and key[1] in synced_tabs and key not in seen and b.id is not None:
+                db.delete(b)
+                deleted += 1
+    if tabs is not None:
+        # порядок вкладок как в таблице; листы, которые пропали, из вкладок уходят
+        _set_json(db, TABS_KEY, tabs)
     db.commit()
-    return {"created": created, "updated": updated, "total": len(items)}
+    return {"created": created, "updated": updated, "deleted": deleted, "total": len(items)}
 
 
 async def download_sheet(sheet_url: str) -> bytes:
@@ -229,5 +317,15 @@ async def sync_from_sheet(db: Session) -> dict:
     sheet_url = get_sheet_url(db)
     if not sheet_url:
         raise SheetImportError("Ссылка на таблицу блогеров не задана")
-    content = await download_sheet(sheet_url)
-    return upsert_bloggers(db, parse_workbook(content))
+    try:
+        content = await download_sheet(sheet_url)
+        items, tabs = parse_workbook_with_tabs(content)
+        if not items:
+            raise SheetImportError("В таблице не нашлось ни одного блогера - проверь заголовки колонок (Имя/Ник/Ссылка)")
+        result = upsert_bloggers(db, items, tabs, mirror=True)
+    except SheetImportError as e:
+        db.rollback()
+        _record_sync(db, None, str(e))
+        raise
+    _record_sync(db, result, None)
+    return result

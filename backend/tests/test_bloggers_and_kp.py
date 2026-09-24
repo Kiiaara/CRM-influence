@@ -1,4 +1,5 @@
 """База блогеров (импорт из многолистовой таблицы), тип участника сделки и ссылка на КП."""
+import asyncio
 import io
 from datetime import datetime, timedelta
 
@@ -108,7 +109,7 @@ def test_import_upserts_and_keeps_manual_values(ctx):
     files = {"file": ("bloggers.xlsx", _workbook_bytes(), "application/octet-stream")}
     r = client.post("/api/blogger-profiles/import", files=files, headers=h)
     assert r.status_code == 200, r.text
-    assert r.json() == {"created": 3, "updated": 0, "total": 3}
+    assert r.json() == {"created": 3, "updated": 0, "deleted": 0, "total": 3}
 
     masha = next(b for b in client.get("/api/blogger-profiles", headers=h).json() if b["name"] == "Маша Тех")
     r = client.patch(f"/api/blogger-profiles/{masha['id']}", json={"telegram": "@masha"}, headers=h)
@@ -116,19 +117,35 @@ def test_import_upserts_and_keeps_manual_values(ctx):
 
     # повторный импорт: те же люди обновляются, а пустая ячейка TG не затирает ручную правку
     r = client.post("/api/blogger-profiles/import", files=files, headers=h)
-    assert r.json() == {"created": 0, "updated": 3, "total": 3}
+    assert r.json() == {"created": 0, "updated": 3, "deleted": 0, "total": 3}
     masha = next(b for b in client.get("/api/blogger-profiles", headers=h).json() if b["name"] == "Маша Тех")
     assert masha["telegram"] == "@masha"
 
 
-def test_sheet_url_setting(ctx):
+def test_sheet_url_setting_syncs_tabs_and_columns(ctx, monkeypatch):
     client, data = ctx
     h = _as(client, "blog-admin", data["ws_id"])
+
+    async def fake_download(url):
+        return _workbook_bytes()
+    monkeypatch.setattr(blogger_sheet, "download_sheet", fake_download)
+
     bad = client.put("/api/blogger-profiles/sheet", json={"url": "https://example.com"}, headers=h)
     assert bad.status_code == 400
     link = "https://docs.google.com/spreadsheets/d/abc123/edit"
-    assert client.put("/api/blogger-profiles/sheet", json={"url": link}, headers=h).status_code == 200
-    assert client.get("/api/blogger-profiles/sheet", headers=h).json() == {"url": link}
+    r = client.put("/api/blogger-profiles/sheet", json={"url": link}, headers=h)
+    assert r.status_code == 200
+    info = client.get("/api/blogger-profiles/sheet", headers=h).json()
+    assert info["url"] == link
+    # вкладки - листы с блогерами в порядке таблицы, пустой лист не попадает
+    assert info["tabs"] == ["YouTube", "Instagram"]
+    assert info["last_sync"]["error"] is None
+
+    ivan = next(b for b in client.get("/api/blogger-profiles", headers=h).json() if b["name"] == "Иван Игры")
+    assert ivan["source"] == "sheet"
+    # все колонки листа как в таблице, по порядку, со ссылкой из гиперссылки
+    assert [c["h"] for c in ivan["sheet_row"]] == ["Блогер", "ТГ для связи", "Подписчики", "Стоимость интеграции", "Тематика"]
+    assert ivan["sheet_row"][0] == {"h": "Блогер", "v": "Иван Игры", "u": "https://youtube.com/@ivangames"}
 
     hv = _as(client, "blog-viewer", data["ws_id"])
     assert client.put("/api/blogger-profiles/sheet", json={"url": ""}, headers=hv).status_code == 403
@@ -155,3 +172,46 @@ def test_deal_kp_link_and_blogger_participant(ctx):
     assert r.json()["talent_type"] == "streamer"
     r = client.patch(f"/api/integrations/streamers/{r.json()['id']}", json={"talent_type": "robot"}, headers=h)
     assert r.status_code == 400
+
+
+def test_sync_removes_rows_deleted_from_sheet_but_keeps_manual(ctx, monkeypatch):
+    client, data = ctx
+    h = _as(client, "blog-admin", data["ws_id"])
+    manual = client.post("/api/blogger-profiles", json={"name": "Ручной", "platform": "YouTube"}, headers=h)
+    assert manual.status_code == 201
+
+    # из листа YouTube убрали Машу, лист Instagram не прочитался (заголовки сломали)
+    wb = Workbook()
+    yt = wb.active
+    yt.title = "YouTube"
+    yt.append(["Блогер", "ТГ для связи"])
+    yt.append(["Иван Игры", "@ivan_games"])
+    broken = wb.create_sheet("Instagram")
+    broken.append(["что-то", "непонятное"])
+    broken.append(["x", "y"])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    async def fake_download(url):
+        return buf.getvalue()
+    monkeypatch.setattr(blogger_sheet, "download_sheet", fake_download)
+
+    r = client.post("/api/blogger-profiles/sync", headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json()["deleted"] == 1
+    names = {b["name"] for b in client.get("/api/blogger-profiles", headers=h).json()}
+    assert "Маша Тех" not in names  # удалена из таблицы
+    assert "katya.style" in names  # её лист не прочитался - не трогаем
+    assert "Ручной" in names  # заведён руками
+
+
+def test_scheduler_job_syncs_sheet(ctx, monkeypatch):
+    import scheduler
+    calls = []
+
+    async def fake_sync(db):
+        calls.append(True)
+        return {}
+    monkeypatch.setattr(blogger_sheet, "sync_from_sheet", fake_sync)
+    asyncio.run(scheduler._sync_bloggers_sheet())
+    assert calls == [True]

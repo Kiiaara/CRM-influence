@@ -26,6 +26,8 @@ class Settings(BaseSettings):
 
     # Планировщик
     scheduler_interval_seconds: int = 60
+    # как часто подтягивать базу блогеров из гугл-таблицы (минуты, 0 - только вручную)
+    bloggers_sync_minutes: int = 30
 
     # Dev-режим без TG-логина: бэк подставляет фиктивного юзера-админа
     dev_auth_bypass: bool = False

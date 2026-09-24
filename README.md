@@ -42,6 +42,7 @@ DATABASE_URL=sqlite:///./data/zametochnitsa.db
 FRONTEND_ORIGIN=http://localhost:5173
 PUBLIC_URL=http://localhost:5173
 SCHEDULER_INTERVAL_SECONDS=60
+BLOGGERS_SYNC_MINUTES=30  # автообновление базы блогеров из гугл-таблицы (0 - только вручную)
 DEV_AUTH_BYPASS=true    # вход без авторизации (для локалки)
 ```
 

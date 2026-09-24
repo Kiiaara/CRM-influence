@@ -17,6 +17,7 @@ from models.user import User
 from models.integration_streamer import IntegrationStreamer
 from notifier import send_message
 import notifier
+import blogger_sheet
 import bot_dialog
 import httpx
 
@@ -396,11 +397,36 @@ def _mark_chat_ready(tg_id: int, from_user: dict):
         db.close()
 
 
-def start_scheduler():
+async def _sync_bloggers_sheet():
+    """Автоматически подтягиваем базу блогеров из гугл-таблицы (если ссылка задана)."""
+    db = SessionLocal()
+    try:
+        if not blogger_sheet.get_sheet_url(db):
+            return
+        try:
+            await blogger_sheet.sync_from_sheet(db)
+        except blogger_sheet.SheetImportError as e:
+            log.warning("Синхронизация таблицы блогеров: %s", e)
+    except Exception:
+        log.exception("Ошибка синхронизации таблицы блогеров")
+    finally:
+        db.close()
+
+
+def start_scheduler(with_bot: bool = True):
     global _scheduler
     if _scheduler:
         return
     _scheduler = AsyncIOScheduler()
+    if settings.bloggers_sync_minutes > 0:
+        _scheduler.add_job(
+            _sync_bloggers_sheet, "interval", minutes=settings.bloggers_sync_minutes,
+            id="bloggers_sheet_sync", max_instances=1, coalesce=True,
+        )
+    if not with_bot:
+        _scheduler.start()
+        log.info("Scheduler started (без бота)")
+        return
     interval = max(15, settings.scheduler_interval_seconds)
     _scheduler.add_job(_check_deadlines, "interval", seconds=interval, id="deadlines")
     _scheduler.add_job(_notify_assigned, "interval", seconds=30, id="assigned")

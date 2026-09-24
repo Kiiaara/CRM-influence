@@ -26,5 +26,11 @@ class BloggerProfile(Base):
     manager: Mapped[str] = mapped_column(String(255), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
 
+    # manual - заведён в CRM руками, sheet - пришёл из гугл-таблицы (такие удаляются,
+    # если строку убрали из таблицы)
+    source: Mapped[str] = mapped_column(String(16), default="manual")
+    # все колонки строки листа как есть, по порядку: JSON [{"h": заголовок, "v": значение, "u": ссылка?}]
+    sheet_row: Mapped[str] = mapped_column(Text, default="[]")
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

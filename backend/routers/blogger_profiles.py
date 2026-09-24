@@ -1,13 +1,16 @@
 """База блогеров: CRUD + ссылка на гугл-таблицу и импорт из неё (или из xlsx-файла).
-Как и база стримеров, общая на все пространства."""
+Как и база стримеров, общая на все пространства. Таблица подтягивается и сама по расписанию
+(scheduler._sync_bloggers_sheet), вкладки в CRM повторяют листы таблицы."""
+import json
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 import blogger_sheet
+from config import settings
 from database import get_db
 from deps import get_current_user, require_role
 from models.blogger_profile import BloggerProfile
@@ -29,9 +32,22 @@ class BloggerOut(BaseModel):
     price: Optional[float] = None
     manager: str
     notes: str
+    source: str = "manual"
+    # все колонки строки листа как в таблице: [{"h": заголовок, "v": значение, "u": ссылка?}]
+    sheet_row: List[dict[str, Any]] = []
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
+    @field_validator("sheet_row", mode="before")
+    @classmethod
+    def _parse_sheet_row(cls, v):
+        if isinstance(v, str):
+            try:
+                v = json.loads(v or "[]")
+            except ValueError:
+                return []
+        return v if isinstance(v, list) else []
 
 
 class BloggerCreate(BaseModel):
@@ -61,13 +77,23 @@ def list_bloggers(db: Session = Depends(get_db), user: User = Depends(get_curren
     return db.query(BloggerProfile).order_by(BloggerProfile.platform.asc(), BloggerProfile.name.asc()).all()
 
 
+def _sheet_info(db: Session) -> dict:
+    return {
+        "url": blogger_sheet.get_sheet_url(db),
+        "tabs": blogger_sheet.get_tabs(db),
+        "last_sync": blogger_sheet.get_last_sync(db),
+        "sync_minutes": settings.bloggers_sync_minutes,
+    }
+
+
 @router.get("/sheet")
 def get_sheet(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return {"url": blogger_sheet.get_sheet_url(db)}
+    return _sheet_info(db)
 
 
 @router.put("/sheet")
-def set_sheet(data: SheetSettings, db: Session = Depends(get_db), user: User = Depends(require_role("admin", "editor"))):
+async def set_sheet(data: SheetSettings, db: Session = Depends(get_db), user: User = Depends(require_role("admin", "editor"))):
+    """Сохраняем ссылку и сразу подтягиваем таблицу - чтобы вкладки появились без ожидания."""
     url = data.url.strip()
     if url:
         try:
@@ -75,7 +101,12 @@ def set_sheet(data: SheetSettings, db: Session = Depends(get_db), user: User = D
         except blogger_sheet.SheetImportError as e:
             raise HTTPException(400, str(e))
     blogger_sheet.set_sheet_url(db, url)
-    return {"url": url}
+    if url:
+        try:
+            await blogger_sheet.sync_from_sheet(db)
+        except blogger_sheet.SheetImportError:
+            pass  # ошибка уже записана в last_sync - фронт её покажет
+    return _sheet_info(db)
 
 
 @router.post("/sync")
@@ -91,10 +122,10 @@ async def sync_from_sheet(db: Session = Depends(get_db), user: User = Depends(re
 async def import_file(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(require_role("admin", "editor"))):
     """Тот же импорт, но из скачанного xlsx - если таблицу нельзя открыть по ссылке."""
     try:
-        items = blogger_sheet.parse_workbook(await file.read())
+        items, tabs = blogger_sheet.parse_workbook_with_tabs(await file.read())
     except blogger_sheet.SheetImportError as e:
         raise HTTPException(400, str(e))
-    return blogger_sheet.upsert_bloggers(db, items)
+    return blogger_sheet.upsert_bloggers(db, items, tabs)
 
 
 @router.post("", response_model=BloggerOut, status_code=201)

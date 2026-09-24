@@ -258,6 +258,20 @@ def _migrate_talent_type_and_kp_link():
                 conn.execute(text("ALTER TABLE users ADD COLUMN bot_workspace_id INTEGER"))
 
 
+def _migrate_bloggers_sheet_columns():
+    """База блогеров: откуда запись (руками/из таблицы) и все колонки строки листа."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "blogger_profiles" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("blogger_profiles")]
+    with engine.begin() as conn:
+        if "source" not in cols:
+            conn.execute(text("ALTER TABLE blogger_profiles ADD COLUMN source VARCHAR(16) DEFAULT 'manual'"))
+        if "sheet_row" not in cols:
+            conn.execute(text("ALTER TABLE blogger_profiles ADD COLUMN sheet_row TEXT DEFAULT '[]'"))
+
+
 def _migrate_discussion_messages_add_workspace():
     """Чат: сообщения общей ленты не привязаны к стримеру, поэтому streamer_id
     должен стать nullable, а workspace_id - появиться. SQLite не умеет снимать
@@ -422,6 +436,7 @@ async def lifespan(app: FastAPI):
     _migrate_streamers_add_case_reminder()
     _migrate_streamers_add_ord_links()
     _migrate_talent_type_and_kp_link()
+    _migrate_bloggers_sheet_columns()
     _migrate_discussion_messages_add_workspace()
     _migrate_integrations_add_advertiser()
     _migrate_brand_contacts_add_advertiser()
@@ -447,7 +462,8 @@ async def lifespan(app: FastAPI):
     if settings.auth_bot_token:
         from notifier import set_my_commands
         await set_my_commands()
-        start_scheduler()
+    # планировщик нужен и без бота - он же подтягивает базу блогеров из гугл-таблицы
+    start_scheduler(with_bot=bool(settings.auth_bot_token))
     yield
     stop_scheduler()
 
