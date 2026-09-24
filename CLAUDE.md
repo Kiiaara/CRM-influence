@@ -24,6 +24,11 @@ CRM для инфлюенс-менеджмента: сделки с бренда
 - `backend/bot_dialog.py` - бот: мастер /new_integration, категорийная правка карточки участника (e:...)
 - `backend/bot_editor.py` - бот: универсальный редактор всего остального (x:...): сделки/КП, оплаты,
   кейсы, файлы ТЗ, рекламодатели/контакты, задачи, базы стримеров и блогеров, выбор пространства
+- `backend/site_publisher.py` + `backend/routers/site.py` - публикация кейсов на сайт tkacheva-media
+  (репо Kiiaara/site): кейсы с `show_on_site` из пространств, которыми владеет админ, -> `cases.json` +
+  фото webp в `assets/images/crm/`, одним коммитом через GitHub API (SITE_GITHUB_TOKEN); сервер сайта сам
+  тянет с GitHub, index.html подгружает cases.json к ручным кейсам
+- `backend/case_translate.py` - автоперевод кейса на EN/ZH через Claude API (ANTHROPIC_API_KEY)
 - `backend/routers/integrations.py` - CRUD + договор (upload/download) + платежи
 - `frontend/src/pages/IntegrationsBoard.tsx` - канбан-доска
 - `frontend/src/pages/HomePage.tsx` - сводка (активные стримеры, к получению, дедлайны)

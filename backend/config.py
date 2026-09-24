@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     # как часто подтягивать базу блогеров из гугл-таблицы (минуты, 0 - только вручную)
     bloggers_sync_minutes: int = 30
 
+    # Публикация кейсов на сайт tkacheva-media: CRM коммитит cases.json + фото в репозиторий сайта,
+    # сервер сайта сам забирает изменения с GitHub. Токен - fine-grained PAT с Contents: Read and write
+    site_github_token: str = ""
+    site_github_repo: str = "Kiiaara/site"
+    site_github_branch: str = "main"
+    site_url: str = "https://tkacheva-media.ru"
+
+    # Автоперевод кейсов на EN/ZH через Claude API (если пусто - SDK ищет ключ в окружении)
+    anthropic_api_key: str = ""
+
     # Dev-режим без TG-логина: бэк подставляет фиктивного юзера-админа
     dev_auth_bypass: bool = False
 

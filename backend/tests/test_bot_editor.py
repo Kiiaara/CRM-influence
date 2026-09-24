@@ -262,3 +262,39 @@ def test_delete_card(ids, sent):
     assert db.get(IntegrationStreamer, ids["card"]) is None
     assert db.query(IntegrationPayment).filter_by(streamer_id=ids["card"]).count() == 0
     db.close()
+
+
+def test_case_site_fields_translate_and_publish_rights(ids, sent, monkeypatch):
+    import case_translate
+    from models.case_study import CaseStudy
+
+    db = SessionLocal()
+    card = IntegrationStreamer(integration_id=ids["deal"], streamer_name="КейсСтример")
+    db.add(card)
+    db.commit()
+    c = CaseStudy(streamer_id=card.id, title="Игра")
+    db.add(c)
+    db.commit()
+    case_id = c.id
+    db.close()
+
+    fields = [f.key for f in bot_editor.ENTITIES["case"].fields]
+    cb(LERA_TG, f"x:f:case:{case_id}:{fields.index('site_tag')}")
+    labels = [b["text"] for row in sent[-1][2] for b in row]
+    cb(LERA_TG, buttons(sent)[labels.index("Турниры")])
+    cb(LERA_TG, f"x:v:case:{case_id}:{fields.index('show_on_site')}:0")  # "Да"
+
+    def fake(source):
+        tr = {f: f"{f}-en" for f in case_translate.FIELDS}
+        return {"en": tr, "zh": {f: f"{f}-zh" for f in case_translate.FIELDS}}
+    monkeypatch.setattr(case_translate, "translate_case", fake)
+    cb(LERA_TG, f"x:a:ctr:{case_id}")
+
+    db = SessionLocal()
+    c = db.get(CaseStudy, case_id)
+    assert c.site_tag == "Tournament" and c.show_on_site is True
+    assert '"title": "title-en"' in c.translations
+    db.close()
+
+    cb(HELPER_TG, "x:a:publish:0")
+    assert "только админ" in sent[-1][1]

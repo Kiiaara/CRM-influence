@@ -43,6 +43,8 @@ FRONTEND_ORIGIN=http://localhost:5173
 PUBLIC_URL=http://localhost:5173
 SCHEDULER_INTERVAL_SECONDS=60
 BLOGGERS_SYNC_MINUTES=30  # автообновление базы блогеров из гугл-таблицы (0 - только вручную)
+SITE_GITHUB_TOKEN=       # публикация кейсов на сайт: fine-grained токен GitHub, Contents: Read and write на Kiiaara/site
+ANTHROPIC_API_KEY=       # автоперевод кейсов на EN/ZH (console.anthropic.com)
 DEV_AUTH_BYPASS=true    # вход без авторизации (для локалки)
 ```
 

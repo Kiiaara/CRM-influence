@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, DateTime, Integer, ForeignKey, Text
+from sqlalchemy import String, DateTime, Integer, ForeignKey, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from database import Base
 
@@ -15,6 +15,14 @@ class CaseStudy(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     what_was_done: Mapped[str] = mapped_column(Text, default="")
     result: Mapped[str] = mapped_column(Text, default="")
+
+    # --- публикация на сайт tkacheva-media (site_publisher.py) ---
+    show_on_site: Mapped[bool] = mapped_column(Boolean, default=False)
+    site_tag: Mapped[str] = mapped_column(String(32), default="Games")  # Games | Tournament | Special Project - фильтры сайта
+    site_mini: Mapped[str] = mapped_column(String(128), default="")  # плашка на карточке: "23,5 млн+ просмотров"
+    # переводы для переключателя языков сайта: JSON {"en": {title, mini, description, what_was_done, result}, "zh": {...}}
+    translations: Mapped[str] = mapped_column(Text, default="{}")
+    site_published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     photo_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     photo_name: Mapped[str | None] = mapped_column(String(255), nullable=True)

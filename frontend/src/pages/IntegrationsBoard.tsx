@@ -11,9 +11,15 @@ import {
   ORD_REPORTING_LABELS,
   CONTRACT_STATUS_LABELS,
   TALENT_LABELS,
+  SITE_TAG_LABELS,
 } from '../api/integrations'
 import type {
+  CaseLang,
   CaseStudy,
+  CaseStudyUpdate,
+  CaseTextField,
+  CaseTranslations,
+  SiteTag,
   ContentStatus,
   ContractStatus,
   Integration,
@@ -1262,6 +1268,9 @@ function OrdLinkInput({
   )
 }
 
+const CASE_LANG_LABELS: Record<'ru' | CaseLang, string> = { ru: 'RU', en: 'EN', zh: '中文' }
+const EMPTY_TR: Record<CaseTextField, string> = { title: '', mini: '', description: '', what_was_done: '', result: '' }
+
 export function CaseStudyCard({
   caseStudy,
   onSave,
@@ -1270,17 +1279,43 @@ export function CaseStudyCard({
   onRemovePhoto,
 }: {
   caseStudy: CaseStudy
-  onSave: (payload: { title: string; description: string; what_was_done: string; result: string }) => void
+  onSave: (payload: CaseStudyUpdate) => void
   onRemove: () => void
   onUploadPhoto: (file: File) => void
   onRemovePhoto: () => void
 }) {
-  const [title, setTitle] = useState(caseStudy.title)
-  const [description, setDescription] = useState(caseStudy.description)
-  const [whatWasDone, setWhatWasDone] = useState(caseStudy.what_was_done)
-  const [result, setResult] = useState(caseStudy.result)
+  const qc = useQueryClient()
+  const [ru, setRu] = useState<Record<CaseTextField, string>>({
+    title: caseStudy.title,
+    mini: caseStudy.site_mini,
+    description: caseStudy.description,
+    what_was_done: caseStudy.what_was_done,
+    result: caseStudy.result,
+  })
+  const [translations, setTranslations] = useState<CaseTranslations>(caseStudy.translations ?? {})
+  const [siteTag, setSiteTag] = useState<SiteTag>(caseStudy.site_tag ?? 'Games')
+  const [lang, setLang] = useState<'ru' | CaseLang>('ru')
   const [dirty, setDirty] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [translateError, setTranslateError] = useState<string | null>(null)
+
+  const translate = useMutation({
+    mutationFn: async () => {
+      // сначала сохраняем русский текст - переводим именно то, что сейчас в полях
+      if (dirty) await integrationsApi.updateCase(caseStudy.id, payload())
+      return integrationsApi.translateCase(caseStudy.id)
+    },
+    onSuccess: (c) => {
+      setTranslations(c.translations ?? {})
+      setDirty(false)
+      setTranslateError(null)
+      qc.invalidateQueries({ queryKey: ['streamers', caseStudy.streamer_id, 'cases'] })
+    },
+    onError: (e: unknown) => {
+      const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+      setTranslateError(typeof detail === 'string' ? detail : 'Не удалось перевести')
+    },
+  })
 
   const fieldCls = "w-full bg-white dark:bg-brand-900/30 border border-slate-200 dark:border-brand-800 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
   const labelCls = "text-[11px] text-slate-500 dark:text-slate-400"
@@ -1289,51 +1324,116 @@ export function CaseStudyCard({
     if (f && f.type.startsWith('image/')) onUploadPhoto(f)
   }
 
+  const value = (f: CaseTextField) => lang === 'ru' ? ru[f] : (translations[lang]?.[f] ?? '')
+  const setValue = (f: CaseTextField, v: string) => {
+    if (lang === 'ru') setRu({ ...ru, [f]: v })
+    else setTranslations({ ...translations, [lang]: { ...EMPTY_TR, ...translations[lang], [f]: v } })
+    setDirty(true)
+  }
+  // подсказка в пустом поле перевода - русский оригинал
+  const placeholder = (f: CaseTextField) => lang === 'ru' ? '' : ru[f]
+
+  const payload = (): CaseStudyUpdate => ({
+    title: ru.title,
+    site_mini: ru.mini,
+    description: ru.description,
+    what_was_done: ru.what_was_done,
+    result: ru.result,
+    site_tag: siteTag,
+    translations,
+  })
+
+  const hasTranslations = (['en', 'zh'] as CaseLang[]).some(l => translations[l] && Object.values(translations[l]!).some(Boolean))
+  const published = caseStudy.site_published_at && new Date(caseStudy.updated_at) <= new Date(caseStudy.site_published_at)
+
   return (
     <div className="border border-slate-200 dark:border-brand-800 rounded-lg p-3 bg-slate-50 dark:bg-brand-950/40 space-y-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1">
-          <label className={labelCls}>Название (игра/бренд)</label>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
           <input
-            value={title}
-            onChange={e => { setTitle(e.target.value); setDirty(true) }}
-            className={`${fieldCls} font-medium`}
+            type="checkbox"
+            checked={caseStudy.show_on_site}
+            onChange={e => onSave({ show_on_site: e.target.checked })}
+            className="w-4 h-4"
+          />
+          🌐 Показывать на сайте
+          {caseStudy.show_on_site && (
+            <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${published ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'}`}>
+              {published ? 'опубликован' : 'ждёт публикации'}
+            </span>
+          )}
+        </label>
+        <button onClick={onRemove} className="text-red-500 hover:text-red-700 text-xs">удалить</button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div>
+          <label className={labelCls}>Раздел на сайте</label>
+          <select
+            value={siteTag}
+            onChange={e => { setSiteTag(e.target.value as SiteTag); setDirty(true) }}
+            className={fieldCls}
+          >
+            {Object.entries(SITE_TAG_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+        <div className="flex items-end gap-1">
+          {(['ru', 'en', 'zh'] as const).map(l => (
+            <button
+              key={l}
+              onClick={() => setLang(l)}
+              className={`px-2.5 py-1 text-xs rounded-lg border ${lang === l ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300' : 'border-slate-200 dark:border-brand-800 text-slate-500'}`}
+            >
+              {CASE_LANG_LABELS[l]}
+            </button>
+          ))}
+          <button
+            onClick={() => translate.mutate()}
+            disabled={translate.isPending || !ru.title.trim()}
+            title="Перевести русский текст на английский и китайский"
+            className="ml-auto text-xs text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-50"
+          >
+            {translate.isPending ? 'Перевожу…' : hasTranslations ? '🔁 Перевести заново' : '🌍 Перевести на EN/中文'}
+          </button>
+        </div>
+      </div>
+      {translateError && <div className="text-xs text-red-500">{translateError}</div>}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div>
+          <label className={labelCls}>Название (игра/бренд)</label>
+          <input value={value('title')} placeholder={placeholder('title')} onChange={e => setValue('title', e.target.value)} className={`${fieldCls} font-medium`} />
+        </div>
+        <div>
+          <label className={labelCls}>Плашка на карточке</label>
+          <input
+            value={value('mini')}
+            placeholder={lang === 'ru' ? '20 млн+ просмотров' : placeholder('mini')}
+            onChange={e => setValue('mini', e.target.value)}
+            className={fieldCls}
           />
         </div>
-        <button onClick={onRemove} className="text-red-500 hover:text-red-700 text-xs shrink-0 mt-5">удалить</button>
       </div>
 
       <div>
-        <label className={labelCls}>Описание</label>
-        <textarea
-          value={description}
-          onChange={e => { setDescription(e.target.value); setDirty(true) }}
-          rows={2}
-          className={fieldCls}
-        />
+        <label className={labelCls}>Описание / задача</label>
+        <textarea value={value('description')} placeholder={placeholder('description')} onChange={e => setValue('description', e.target.value)} rows={2} className={fieldCls} />
       </div>
       <div>
-        <label className={labelCls}>Что сделано</label>
-        <textarea
-          value={whatWasDone}
-          onChange={e => { setWhatWasDone(e.target.value); setDirty(true) }}
-          rows={2}
-          className={fieldCls}
-        />
+        <label className={labelCls}>Что сделано — каждый пункт с новой строки</label>
+        <textarea value={value('what_was_done')} placeholder={placeholder('what_was_done')} onChange={e => setValue('what_was_done', e.target.value)} rows={3} className={fieldCls} />
       </div>
       <div>
-        <label className={labelCls}>Результат</label>
-        <textarea
-          value={result}
-          onChange={e => { setResult(e.target.value); setDirty(true) }}
-          rows={2}
-          className={fieldCls}
-        />
+        <label className={labelCls}>Результат — каждый пункт с новой строки</label>
+        <textarea value={value('result')} placeholder={placeholder('result')} onChange={e => setValue('result', e.target.value)} rows={3} className={fieldCls} />
       </div>
+      {lang !== 'ru' && (
+        <div className="text-[11px] text-slate-400">Пустое поле перевода — на сайте покажется русский текст.</div>
+      )}
 
       {dirty && (
         <button
-          onClick={() => { onSave({ title, description, what_was_done: whatWasDone, result }); setDirty(false) }}
+          onClick={() => { onSave(payload()); setDirty(false) }}
           className="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-lg"
         >
           Сохранить кейс

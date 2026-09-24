@@ -20,6 +20,7 @@ bot_dialog (e:...), здесь для неё только список, удал
   x:a:<action>:<id>            особые действия (файлы, синхронизация таблицы...)
   x:ws:<workspace_id>          выбрать пространство для бота
 """
+import asyncio
 import html
 import json
 import logging
@@ -33,7 +34,9 @@ from typing import Any, Callable, Optional
 from sqlalchemy.orm import Session
 
 import blogger_sheet
+import case_translate
 import notifier
+import site_publisher
 from database import SessionLocal
 from models.advertiser import Advertiser
 from models.audit_log import AuditLogEntry
@@ -68,6 +71,7 @@ STAGE_LABELS = {
     "cancelled": "Отменено",
 }
 TALENT_LABELS = {"streamer": "Стример", "blogger": "Блогер"}
+SITE_TAG_LABELS = {"Games": "Игры", "Tournament": "Турниры", "Special Project": "Спецпроекты"}
 TASK_STATUS_LABELS = {"todo": "К выполнению", "doing": "В работе", "done": "Готово"}
 CONTACT_TYPE_LABELS = {
     "telegram": "Telegram", "email": "Email", "whatsapp": "WhatsApp", "phone": "Телефон", "other": "Другое",
@@ -310,14 +314,31 @@ def _case_list(ctx: Ctx, parent_id: int):
 
 def _case_header(ctx: Ctx, c: CaseStudy) -> str:
     s = ctx.db.get(IntegrationStreamer, c.streamer_id)
-    return f"{esc(s.integration.brand)} × {esc(s.streamer_name)}" if s else ""
+    lines = [f"{esc(s.integration.brand)} × {esc(s.streamer_name)}"] if s else []
+    tr = site_publisher.parse_translations(c.translations)
+    langs = [lang.upper() for lang in ("en", "zh") if any((tr.get(lang) or {}).values())]
+    lines.append("Переводы: " + (", ".join(langs) if langs else "нет (на сайте будет русский)"))
+    if c.show_on_site:
+        fresh = c.site_published_at and c.updated_at <= c.site_published_at
+        lines.append("🌐 На сайте: " + ("опубликован" if fresh else "ждёт публикации"))
+    return "\n".join(lines)
 
 
 def _case_extra(ctx: Ctx, c: CaseStudy) -> list:
     row = [{"text": "🖼 Загрузить фото", "callback_data": f"x:a:cphoto:{c.id}"}]
     if c.photo_path:
         row.append({"text": "👀 Фото", "callback_data": f"x:a:cphotoget:{c.id}"})
-    return [row, [{"text": "👤 Карточка участника", "callback_data": f"e:cat:{c.streamer_id}"}]]
+    return [
+        row,
+        [{"text": "🌍 Перевести на EN/中文", "callback_data": f"x:a:ctr:{c.id}"}],
+        [{"text": "👤 Карточка участника", "callback_data": f"e:cat:{c.streamer_id}"}],
+    ]
+
+
+def _case_list_extra(ctx: Ctx, parent_id: int) -> list:
+    if parent_id or ctx.user.role != "admin":
+        return []
+    return [[{"text": "🚀 Опубликовать на сайт", "callback_data": "x:a:publish:0"}]]
 
 
 def _case_before_delete(ctx: Ctx, c: CaseStudy):
@@ -520,9 +541,12 @@ _reg(Entity(
     code="case", title="Кейс", plural="Кейсы", model=CaseStudy,
     fields=[
         F("title", "Заголовок", "text"),
+        F("show_on_site", "Показывать на сайте", "bool"),
+        F("site_tag", "Раздел на сайте", "enum", options=SITE_TAG_LABELS),
+        F("site_mini", "Плашка (20 млн+ просмотров)", "text"),
         F("description", "Описание / задача", "text"),
-        F("what_was_done", "Что сделано", "text"),
-        F("result", "Результат", "text"),
+        F("what_was_done", "Что сделано (пункт на строку)", "text"),
+        F("result", "Результат (пункт на строку)", "text"),
     ],
     label=_case_label,
     workspace_of=lambda db, o: _ws_of_streamer(db, db.get(IntegrationStreamer, o.streamer_id)),
@@ -531,6 +555,7 @@ _reg(Entity(
     create_prompt="Заголовок кейса (например название игры/бренда)?",
     create=lambda ctx, pid, text: CaseStudy(streamer_id=pid, title=text.strip()),
     header=_case_header, extra_buttons=_case_extra, before_delete=_case_before_delete,
+    list_extra=_case_list_extra,
 ))
 
 _reg(Entity(
@@ -1147,6 +1172,17 @@ async def _action(tg_id: int, action: str, obj_id: int, set_session: Callable[[d
                 await send_message(tg_id, "Карточка не найдена.")
                 return
             photo = (s.contract_file_path, s.contract_file_name)
+        elif action == "ctr":
+            c = _get_obj(ctx, ENTITIES["case"], obj_id)
+            if c is None:
+                await send_message(tg_id, "Кейс не найден.")
+                return
+            source = {"title": c.title, "mini": c.site_mini, "description": c.description,
+                      "what_was_done": c.what_was_done, "result": c.result}
+        elif action == "publish":
+            if ctx.user.role != "admin":
+                await send_message(tg_id, "Публиковать на сайт может только админ.")
+                return
         elif action in ("bsheet", "bsync"):
             if ctx.user.role not in SHEET_ROLES:
                 await send_message(tg_id, "Нет прав менять ссылку на таблицу блогеров.")
@@ -1176,6 +1212,46 @@ async def _action(tg_id: int, action: str, obj_id: int, set_session: Callable[[d
         await send_message(tg_id, f"{current}Пришли ссылку на гугл-таблицу с блогерами (или «нет», чтобы убрать).")
     elif action == "bsync":
         await _sync_bloggers(tg_id)
+    elif action == "ctr":
+        await _translate_case(tg_id, obj_id, source)
+    elif action == "publish":
+        await _publish_site(tg_id)
+
+
+async def _translate_case(tg_id: int, case_id: int, source: dict):
+    await send_message(tg_id, "🌍 Перевожу кейс…")
+    try:
+        # синхронный SDK-вызов - в отдельном потоке, чтобы не блокировать поллинг бота
+        tr = await asyncio.to_thread(case_translate.translate_case, source)
+    except case_translate.TranslateError as e:
+        await send_message(tg_id, f"⚠️ {e}")
+        return
+    db = SessionLocal()
+    try:
+        c = db.get(CaseStudy, case_id)
+        if c:
+            c.translations = json.dumps(tr, ensure_ascii=False)
+            db.commit()
+    finally:
+        db.close()
+    await send_message(tg_id, f"✅ Переведено\nEN: {esc(tr['en']['title'])} — {esc(tr['en']['mini'])}\n中文: {esc(tr['zh']['title'])} — {esc(tr['zh']['mini'])}")
+    await show_card(tg_id, "case", case_id)
+
+
+async def _publish_site(tg_id: int):
+    await send_message(tg_id, "🚀 Публикую кейсы на сайт…")
+    db = SessionLocal()
+    try:
+        r = await site_publisher.publish(db, tg_id)
+        if r["changed"]:
+            text = f"✅ Опубликовано кейсов: {r['count']}. Сайт обновится, когда сервер заберёт изменения с GitHub."
+        else:
+            text = "На сайте и так всё актуально."
+    except site_publisher.PublishError as e:
+        text = f"⚠️ {e}"
+    finally:
+        db.close()
+    await send_message(tg_id, text)
 
 
 async def _sync_bloggers(tg_id: int):

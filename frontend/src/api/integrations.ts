@@ -240,6 +240,19 @@ export interface BriefFile {
   created_at: string
 }
 
+export type SiteTag = 'Games' | 'Tournament' | 'Special Project'
+
+// фильтры на сайте tkacheva-media
+export const SITE_TAG_LABELS: Record<SiteTag, string> = {
+  Games: 'Игры',
+  Tournament: 'Турниры',
+  'Special Project': 'Спецпроекты',
+}
+
+export type CaseLang = 'en' | 'zh'
+export type CaseTextField = 'title' | 'mini' | 'description' | 'what_was_done' | 'result'
+export type CaseTranslations = Partial<Record<CaseLang, Record<CaseTextField, string>>>
+
 export interface CaseStudy {
   id: number
   streamer_id: number
@@ -247,10 +260,20 @@ export interface CaseStudy {
   description: string
   what_was_done: string
   result: string
+  show_on_site: boolean
+  site_tag: SiteTag
+  site_mini: string
+  translations: CaseTranslations
+  site_published_at: string | null
   photo_name: string | null
   created_at: string
   updated_at: string
 }
+
+export type CaseStudyUpdate = Partial<Pick<
+  CaseStudy,
+  'title' | 'description' | 'what_was_done' | 'result' | 'show_on_site' | 'site_tag' | 'site_mini' | 'translations'
+>>
 
 export const integrationsApi = {
   async list() {
@@ -343,8 +366,12 @@ export const integrationsApi = {
     const { data } = await api.post<CaseStudy>(`/integrations/streamers/${streamerId}/cases`, payload)
     return data
   },
-  async updateCase(caseId: number, payload: Partial<Pick<CaseStudy, 'title' | 'description' | 'what_was_done' | 'result'>>) {
+  async updateCase(caseId: number, payload: CaseStudyUpdate) {
     const { data } = await api.patch<CaseStudy>(`/integrations/cases/${caseId}`, payload)
+    return data
+  },
+  async translateCase(caseId: number) {
+    const { data } = await api.post<CaseStudy>(`/integrations/cases/${caseId}/translate`)
     return data
   },
   async removeCase(caseId: number) {

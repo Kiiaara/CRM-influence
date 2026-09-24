@@ -1,5 +1,6 @@
 """CRM интеграций: сделка с брендом (Integration) содержит пул стримеров
 (IntegrationStreamer), каждый со своим статусом/сроком/суммой/договором/оплатами."""
+import json
 import os
 import re
 import uuid
@@ -8,9 +9,11 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, computed_field, field_validator
 from sqlalchemy.orm import Session
 
+import case_translate
+import site_publisher
 from database import get_db
 from deps import get_current_user, get_current_workspace
 from models.integration import Integration
@@ -350,10 +353,21 @@ class CaseStudyOut(BaseModel):
     description: str
     what_was_done: str
     result: str
+    show_on_site: bool = False
+    site_tag: str = "Games"
+    site_mini: str = ""
+    # {"en": {title, mini, description, what_was_done, result}, "zh": {...}}
+    translations: dict[str, dict[str, str]] = {}
+    site_published_at: Optional[datetime] = None
     photo_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
+    @field_validator("translations", mode="before")
+    @classmethod
+    def _parse_translations(cls, v):
+        return site_publisher.parse_translations(v) if isinstance(v, str) or v is None else v
 
 
 class CaseStudyCreate(BaseModel):
@@ -368,6 +382,10 @@ class CaseStudyUpdate(BaseModel):
     description: Optional[str] = None
     what_was_done: Optional[str] = None
     result: Optional[str] = None
+    show_on_site: Optional[bool] = None
+    site_tag: Optional[str] = None
+    site_mini: Optional[str] = None
+    translations: Optional[dict[str, dict[str, str]]] = None
 
 
 class AuditLogEntryOut(BaseModel):
@@ -818,8 +836,36 @@ def create_case(streamer_id: int, data: CaseStudyCreate, db: Session = Depends(g
 @router.patch("/cases/{case_id}", response_model=CaseStudyOut)
 def update_case(case_id: int, data: CaseStudyUpdate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
     c = _get_case_or_404(db, ws, case_id)
-    for k, v in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    if "site_tag" in changes and changes["site_tag"] not in site_publisher.SITE_TAGS:
+        raise HTTPException(400, f"site_tag: {', '.join(site_publisher.SITE_TAGS)}")
+    if "translations" in changes:
+        tr = changes["translations"] or {}
+        changes["translations"] = json.dumps(
+            {lang: {f: str((tr.get(lang) or {}).get(f, "")) for f in case_translate.FIELDS} for lang in ("en", "zh") if lang in tr},
+            ensure_ascii=False,
+        )
+    for k, v in changes.items():
+        if v is None:
+            continue
         setattr(c, k, v)
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@router.post("/cases/{case_id}/translate", response_model=CaseStudyOut)
+def translate_case(case_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    """Автоперевод кейса на EN/ZH (Claude API). Обычная def - FastAPI выполнит в потоке, запрос долгий."""
+    c = _get_case_or_404(db, ws, case_id)
+    try:
+        tr = case_translate.translate_case({
+            "title": c.title, "mini": c.site_mini, "description": c.description,
+            "what_was_done": c.what_was_done, "result": c.result,
+        })
+    except case_translate.TranslateError as e:
+        raise HTTPException(400, str(e))
+    c.translations = json.dumps(tr, ensure_ascii=False)
     db.commit()
     db.refresh(c)
     return c
