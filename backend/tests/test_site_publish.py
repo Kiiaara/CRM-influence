@@ -109,7 +109,7 @@ def test_translate_error_is_readable(ctx, monkeypatch):
     client, data = ctx
 
     def broken(source):
-        raise case_translate.TranslateError("Не настроен ключ Claude API")
+        raise case_translate.TranslateError("Не настроен ключ Groq")
     monkeypatch.setattr(case_translate, "translate_case", broken)
     r = client.post(f"/api/integrations/cases/{data['case']}/translate", headers=_h(data))
     assert r.status_code == 400 and "ключ" in r.json()["detail"]
@@ -212,3 +212,35 @@ def test_publish_requires_admin_and_token(ctx, monkeypatch):
         assert client.post("/api/site/publish").status_code == 403
     finally:
         client.cookies.set("zametochnitsa_session", "site-owner")
+
+
+def test_groq_translate_request_and_parsing(monkeypatch):
+    import httpx as _httpx
+    seen = {}
+
+    def handler(request):
+        body = json.loads(request.content)
+        seen["auth"] = request.headers["Authorization"]
+        seen["model"] = body["model"]
+        seen["json_mode"] = body["response_format"]
+        answer = {
+            "en": {"title": "Game", "mini": "20M+ views", "description": "Launch",
+                   "what_was_done": ["Streams", "KPI"], "result": "13M views"},
+            "zh": {"title": "游戏", "mini": "2000万+ 观看次数"},
+        }
+        return _httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(answer, ensure_ascii=False)}}]})
+
+    monkeypatch.setattr(settings, "groq_api_key", "gsk-test")
+    monkeypatch.setattr(case_translate, "_transport", _httpx.MockTransport(handler))
+    tr = case_translate.translate_case({"title": "Игра", "mini": "20 млн+"})
+    assert seen == {"auth": "Bearer gsk-test", "model": settings.groq_model, "json_mode": {"type": "json_object"}}
+    assert tr["en"]["what_was_done"] == "Streams\nKPI"  # список от модели -> строки
+    assert tr["zh"]["result"] == ""  # пропущенное поле - пустое, на сайте будет русский
+
+    monkeypatch.setattr(case_translate, "_transport", _httpx.MockTransport(lambda r: _httpx.Response(429)))
+    with pytest.raises(case_translate.TranslateError, match="Лимит"):
+        case_translate.translate_case({"title": "Игра"})
+
+    monkeypatch.setattr(settings, "groq_api_key", "")
+    with pytest.raises(case_translate.TranslateError, match="GROQ_API_KEY"):
+        case_translate.translate_case({"title": "Игра"})

@@ -36,8 +36,9 @@ class Settings(BaseSettings):
     site_github_branch: str = "main"
     site_url: str = "https://tkacheva-media.ru"
 
-    # Автоперевод кейсов на EN/ZH через Claude API (если пусто - SDK ищет ключ в окружении)
-    anthropic_api_key: str = ""
+    # Автоперевод кейсов на EN/ZH через Groq (бесплатный тариф, ключ на console.groq.com)
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
 
     # Dev-режим без TG-логина: бэк подставляет фиктивного юзера-админа
     dev_auth_bypass: bool = False

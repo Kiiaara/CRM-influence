@@ -856,7 +856,7 @@ def update_case(case_id: int, data: CaseStudyUpdate, db: Session = Depends(get_d
 
 @router.post("/cases/{case_id}/translate", response_model=CaseStudyOut)
 def translate_case(case_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
-    """Автоперевод кейса на EN/ZH (Claude API). Обычная def - FastAPI выполнит в потоке, запрос долгий."""
+    """Автоперевод кейса на EN/ZH (Groq). Обычная def - FastAPI выполнит в потоке, запрос долгий."""
     c = _get_case_or_404(db, ws, case_id)
     try:
         tr = case_translate.translate_case({
