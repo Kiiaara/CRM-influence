@@ -45,17 +45,6 @@ export const bloggerProfilesApi = {
     const { data } = await api.get<BloggerProfile[]>('/blogger-profiles')
     return data
   },
-  async create(payload: Partial<BloggerProfile>) {
-    const { data } = await api.post<BloggerProfile>('/blogger-profiles', payload)
-    return data
-  },
-  async update(id: number, payload: Partial<BloggerProfile>) {
-    const { data } = await api.patch<BloggerProfile>(`/blogger-profiles/${id}`, payload)
-    return data
-  },
-  async remove(id: number) {
-    await api.delete(`/blogger-profiles/${id}`)
-  },
   async sheetInfo() {
     const { data } = await api.get<SheetInfo>('/blogger-profiles/sheet')
     return data

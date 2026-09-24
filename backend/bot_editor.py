@@ -21,6 +21,7 @@ bot_dialog (e:...), здесь для неё только список, удал
   x:ws:<workspace_id>          выбрать пространство для бота
 """
 import html
+import json
 import logging
 import os
 import re
@@ -148,6 +149,7 @@ class Entity:
     list_extra: Optional[Callable[[Ctx, int], list]] = None  # доп. кнопки над списком
     open_cb: Optional[Callable[[Any], str]] = None  # свой колбэк открытия (карточка участника)
     delete_hint: str = ""
+    readonly: bool = False  # только просмотр (база блогеров правится только в гугл-таблице)
 
 
 def _ws_of_streamer(db: Session, s: Optional[IntegrationStreamer]) -> Optional[int]:
@@ -451,6 +453,17 @@ def _bp_list_extra(ctx: Ctx, parent_id: int) -> list:
     return rows
 
 
+def _bp_header(ctx: Ctx, b: BloggerProfile) -> str:
+    """Карточка блогера - строка его листа как в таблице (правится только там)."""
+    try:
+        cells = json.loads(b.sheet_row or "[]")
+    except ValueError:
+        cells = []
+    lines = [f"{esc(c.get('h', ''))}: {esc(c.get('u') or c.get('v', ''))}" for c in cells if isinstance(c, dict)]
+    lines.append("<i>Править блогеров можно только в гугл-таблице - CRM подтягивает её сама.</i>")
+    return "\n".join(lines)
+
+
 ENTITIES: dict[str, Entity] = {}
 
 
@@ -614,26 +627,12 @@ _reg(Entity(
 
 _reg(Entity(
     code="bp", title="Блогер (база)", plural="База блогеров", model=BloggerProfile,
-    fields=[
-        F("name", "Имя", "text", required=True),
-        F("platform", "Площадка", "text"),
-        F("url", "Ссылка на блогера", "text"),
-        F("telegram", "Telegram", "text"),
-        F("category", "Тематика", "text"),
-        F("geo", "Гео", "text"),
-        F("subscribers", "Подписчики", "int", nullable=True),
-        F("avg_views", "Средние просмотры", "int", nullable=True),
-        F("price", "Цена интеграции", "float", nullable=True),
-        F("manager", "Менеджер", "text"),
-        F("notes", "Заметки", "text"),
-    ],
+    fields=[],  # всё показываем строкой листа (_bp_header) - править можно только в таблице
     label=lambda b: b.name + (f" · {b.platform}" if b.platform else ""),
-    global_base=True, edit_roles=("admin", "editor"), delete_roles=("admin",),
+    global_base=True, readonly=True,
     list_query=lambda ctx, pid: ctx.db.query(BloggerProfile).order_by(BloggerProfile.platform.asc(), BloggerProfile.name.asc()),
     search_attrs=("name", "telegram", "platform"),
-    create_prompt="Имя блогера?",
-    create=lambda ctx, pid, text: BloggerProfile(name=text.strip()),
-    list_extra=_bp_list_extra,
+    list_extra=_bp_list_extra, header=_bp_header,
 ))
 
 
@@ -668,7 +667,13 @@ def _parent_ok(ctx: Ctx, ent: Entity, parent_id: int) -> bool:
 
 
 def _can_edit(ctx: Ctx, ent: Entity) -> bool:
+    if ent.readonly:
+        return False
     return not ent.edit_roles or ctx.user.role in ent.edit_roles
+
+
+# ссылку на таблицу блогеров и ручное обновление меняют те же роли, что и на сайте
+SHEET_ROLES = ("admin", "editor")
 
 
 def _can_delete(ctx: Ctx, ent: Entity) -> bool:
@@ -749,7 +754,7 @@ async def show_list(tg_id: int, code: str, parent_id: int = 0, page: int = 0):
         chunk = rows[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
 
         keyboard = []
-        if ent.list_extra and _can_edit(ctx, ent):
+        if ent.list_extra and (_can_edit(ctx, ent) or (ent.readonly and ctx.user.role in SHEET_ROLES)):
             keyboard.extend(ent.list_extra(ctx, parent_id))
         for o in chunk:
             cb = ent.open_cb(o) if ent.open_cb else f"x:o:{code}:{o.id}"
@@ -1143,8 +1148,8 @@ async def _action(tg_id: int, action: str, obj_id: int, set_session: Callable[[d
                 return
             photo = (s.contract_file_path, s.contract_file_name)
         elif action in ("bsheet", "bsync"):
-            if not _can_edit(ctx, ENTITIES["bp"]):
-                await send_message(tg_id, "Нет прав на изменение базы блогеров.")
+            if ctx.user.role not in SHEET_ROLES:
+                await send_message(tg_id, "Нет прав менять ссылку на таблицу блогеров.")
                 return
             sheet_url = blogger_sheet.get_sheet_url(ctx.db)
         else:

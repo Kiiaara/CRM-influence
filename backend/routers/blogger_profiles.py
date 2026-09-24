@@ -1,6 +1,7 @@
 """База блогеров: CRUD + ссылка на гугл-таблицу и импорт из неё (или из xlsx-файла).
 Как и база стримеров, общая на все пространства. Таблица подтягивается и сама по расписанию
-(scheduler._sync_bloggers_sheet), вкладки в CRM повторяют листы таблицы."""
+(scheduler._sync_bloggers_sheet), вкладки в CRM повторяют листы таблицы.
+В CRM база только для чтения: создавать, править и удалять блогеров можно только в самой таблице."""
 import json
 from datetime import datetime
 from typing import Any, List, Optional
@@ -48,24 +49,6 @@ class BloggerOut(BaseModel):
             except ValueError:
                 return []
         return v if isinstance(v, list) else []
-
-
-class BloggerCreate(BaseModel):
-    name: str
-    platform: str = ""
-    url: str = ""
-    telegram: str = ""
-    category: str = ""
-    geo: str = ""
-    subscribers: Optional[int] = None
-    avg_views: Optional[int] = None
-    price: Optional[float] = None
-    manager: str = ""
-    notes: str = ""
-
-
-class BloggerUpdate(BloggerCreate):
-    name: Optional[str] = None
 
 
 class SheetSettings(BaseModel):
@@ -120,47 +103,13 @@ async def sync_from_sheet(db: Session = Depends(get_db), user: User = Depends(re
 
 @router.post("/import")
 async def import_file(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(require_role("admin", "editor"))):
-    """Тот же импорт, но из скачанного xlsx - если таблицу нельзя открыть по ссылке."""
+    """Тот же импорт, но из скачанного xlsx - если таблицу нельзя открыть по ссылке.
+    База приводится к файлу целиком, как при синхронизации."""
     try:
         items, tabs = blogger_sheet.parse_workbook_with_tabs(await file.read())
     except blogger_sheet.SheetImportError as e:
         raise HTTPException(400, str(e))
+    if not items:
+        # пустой/чужой файл не должен снести всю базу
+        raise HTTPException(400, "В файле не нашлось ни одного блогера - проверь заголовки колонок (Имя/Ник/Ссылка)")
     return blogger_sheet.upsert_bloggers(db, items, tabs)
-
-
-@router.post("", response_model=BloggerOut, status_code=201)
-def create_blogger(data: BloggerCreate, db: Session = Depends(get_db), user: User = Depends(require_role("admin", "editor"))):
-    if not data.name.strip():
-        raise HTTPException(400, "Имя не может быть пустым")
-    b = BloggerProfile(**data.model_dump())
-    b.name = b.name.strip()
-    db.add(b)
-    db.commit()
-    db.refresh(b)
-    return b
-
-
-@router.patch("/{blogger_id}", response_model=BloggerOut)
-def update_blogger(blogger_id: int, data: BloggerUpdate, db: Session = Depends(get_db), user: User = Depends(require_role("admin", "editor"))):
-    b = db.get(BloggerProfile, blogger_id)
-    if not b:
-        raise HTTPException(404)
-    for k, v in data.model_dump(exclude_unset=True).items():
-        if k == "name":
-            if not v or not v.strip():
-                raise HTTPException(400, "Имя не может быть пустым")
-            v = v.strip()
-        setattr(b, k, v)
-    db.commit()
-    db.refresh(b)
-    return b
-
-
-@router.delete("/{blogger_id}")
-def delete_blogger(blogger_id: int, db: Session = Depends(get_db), user: User = Depends(require_role("admin"))):
-    b = db.get(BloggerProfile, blogger_id)
-    if not b:
-        raise HTTPException(404)
-    db.delete(b)
-    db.commit()
-    return {"ok": True}

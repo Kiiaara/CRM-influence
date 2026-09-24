@@ -260,42 +260,44 @@ def parse_workbook_with_tabs(content: bytes) -> tuple[list[dict], list[str]]:
     return result, tabs
 
 
-def upsert_bloggers(db: Session, items: list[dict], tabs: Optional[list[str]] = None, mirror: bool = False) -> dict:
-    """Строка с тем же именем и площадкой обновляется, новая - создаётся.
-    Пустые ячейки таблицы не затирают то, что уже заполнено в CRM руками.
-    mirror=True (синхронизация по ссылке): блогеры, пришедшие из таблицы, но пропавшие из неё,
-    удаляются - только на тех листах, которые прочитались (сломанный лист не снесёт базу).
-    Заведённых в CRM руками это не касается."""
+# поля, которые берутся из таблицы; пустая ячейка = пустое поле (таблица - единственный источник)
+_SYNC_TEXT_FIELDS = ("platform", "url", "telegram", "category", "geo", "manager", "notes")
+_SYNC_NUM_FIELDS = ("subscribers", "avg_views", "price")
+
+
+def upsert_bloggers(db: Session, items: list[dict], tabs: Optional[list[str]] = None) -> dict:
+    """Приводим базу блогеров к таблице: строка с тем же именем и площадкой обновляется,
+    новая - создаётся, всё, чего в таблице больше нет, удаляется. В CRM база только
+    для чтения, поэтому таблица - единственный источник правды."""
     existing = {(b.name.lower(), b.platform.lower()): b for b in db.query(BloggerProfile).all()}
     created, updated, deleted = 0, 0, 0
     seen: set[tuple[str, str]] = set()
     for item in items:
         key = (item["name"].lower(), item.get("platform", "").lower())
+        if key in seen:
+            continue  # дубль строки на листе - берём первую
         seen.add(key)
-        values = {k: v for k, v in item.items() if v not in (None, "") and k != "sheet_row"}
+        values: dict = {"name": item["name"], "source": "sheet"}
+        values.update({f: item.get(f) or "" for f in _SYNC_TEXT_FIELDS})
+        values.update({f: item.get(f) for f in _SYNC_NUM_FIELDS})
         values["sheet_row"] = json.dumps(item.get("sheet_row") or [], ensure_ascii=False)
-        values["source"] = "sheet"
         b = existing.get(key)
         if b:
             for k, v in values.items():
                 setattr(b, k, v)
             updated += 1
         else:
-            b = BloggerProfile(**values)
-            db.add(b)
-            existing[key] = b
+            db.add(BloggerProfile(**values))
             created += 1
-    if mirror:
-        synced_tabs = {t.lower() for t in (tabs or [])}
-        for key, b in existing.items():
-            if b.source == "sheet" and key[1] in synced_tabs and key not in seen and b.id is not None:
-                db.delete(b)
-                deleted += 1
+    for key, b in existing.items():
+        if key not in seen:
+            db.delete(b)
+            deleted += 1
     if tabs is not None:
-        # порядок вкладок как в таблице; листы, которые пропали, из вкладок уходят
+        # порядок вкладок как в таблице
         _set_json(db, TABS_KEY, tabs)
     db.commit()
-    return {"created": created, "updated": updated, "deleted": deleted, "total": len(items)}
+    return {"created": created, "updated": updated, "deleted": deleted, "total": len(seen)}
 
 
 async def download_sheet(sheet_url: str) -> bytes:
@@ -322,7 +324,7 @@ async def sync_from_sheet(db: Session) -> dict:
         items, tabs = parse_workbook_with_tabs(content)
         if not items:
             raise SheetImportError("В таблице не нашлось ни одного блогера - проверь заголовки колонок (Имя/Ник/Ссылка)")
-        result = upsert_bloggers(db, items, tabs, mirror=True)
+        result = upsert_bloggers(db, items, tabs)
     except SheetImportError as e:
         db.rollback()
         _record_sync(db, None, str(e))

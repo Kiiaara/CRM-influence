@@ -208,15 +208,21 @@ def test_rename_advertiser_syncs_deal_brand(ids, sent):
     db.close()
 
 
-def test_blogger_base_edit_requires_role(ids, sent):
-    fields = [f.key for f in bot_editor.ENTITIES["bp"].fields]
-    cb(VIEWER_TG, f"x:f:bp:{ids['blogger']}:{fields.index('telegram')}")
+def test_blogger_base_is_read_only_in_bot(ids, sent):
+    cb(LERA_TG, f"x:o:bp:{ids['blogger']}")
+    cbs = buttons(sent)
+    assert "только в гугл-таблице" in sent[-1][1]
+    assert not any(c.startswith(("x:f:bp", "x:dq:bp")) for c in cbs)
+    cb(LERA_TG, "x:l:bp:0:0")
+    cbs = buttons(sent)
+    assert "x:n:bp:0" not in cbs
+    assert "x:a:bsheet:0" in cbs  # ссылку на таблицу поменять можно
+    cb(LERA_TG, "x:n:bp:0")
+    assert LERA_TG not in bot_dialog._sessions
+    # зрителю и ссылку менять нельзя
+    cb(VIEWER_TG, "x:a:bsheet:0")
     assert "нет прав" in sent[-1][1].lower()
-    cb(HELPER_TG, f"x:f:bp:{ids['blogger']}:{fields.index('telegram')}")
-    say(HELPER_TG, "@blogger1")
-    db = SessionLocal()
-    assert db.get(BloggerProfile, ids["blogger"]).telegram == "@blogger1"
-    db.close()
+
 
 
 def test_wizard_adds_blogger_to_existing_deal(ids, sent):

@@ -103,7 +103,7 @@ def _as(client, token: str, ws_id: int):
     return {"X-Workspace-Id": str(ws_id)}
 
 
-def test_import_upserts_and_keeps_manual_values(ctx):
+def test_import_and_base_is_read_only(ctx):
     client, data = ctx
     h = _as(client, "blog-admin", data["ws_id"])
     files = {"file": ("bloggers.xlsx", _workbook_bytes(), "application/octet-stream")}
@@ -111,15 +111,25 @@ def test_import_upserts_and_keeps_manual_values(ctx):
     assert r.status_code == 200, r.text
     assert r.json() == {"created": 3, "updated": 0, "deleted": 0, "total": 3}
 
-    masha = next(b for b in client.get("/api/blogger-profiles", headers=h).json() if b["name"] == "Маша Тех")
-    r = client.patch(f"/api/blogger-profiles/{masha['id']}", json={"telegram": "@masha"}, headers=h)
-    assert r.status_code == 200
-
-    # повторный импорт: те же люди обновляются, а пустая ячейка TG не затирает ручную правку
+    # повторный импорт: те же люди обновляются, дублей нет
     r = client.post("/api/blogger-profiles/import", files=files, headers=h)
     assert r.json() == {"created": 0, "updated": 3, "deleted": 0, "total": 3}
-    masha = next(b for b in client.get("/api/blogger-profiles", headers=h).json() if b["name"] == "Маша Тех")
-    assert masha["telegram"] == "@masha"
+
+    # в CRM база только для чтения: ни создать, ни поправить, ни удалить (даже админу)
+    bid = client.get("/api/blogger-profiles", headers=h).json()[0]["id"]
+    assert client.post("/api/blogger-profiles", json={"name": "Ручной"}, headers=h).status_code == 405
+    assert client.patch(f"/api/blogger-profiles/{bid}", json={"telegram": "@x"}, headers=h).status_code in (404, 405)
+    assert client.delete(f"/api/blogger-profiles/{bid}", headers=h).status_code in (404, 405)
+    after = client.get("/api/blogger-profiles", headers=h).json()
+    assert len(after) == 3 and "@x" not in [b["telegram"] for b in after]
+
+    # пустой файл не сносит базу
+    empty = io.BytesIO()
+    Workbook().save(empty)
+    r = client.post("/api/blogger-profiles/import", files={"file": ("e.xlsx", empty.getvalue(), "application/octet-stream")}, headers=h)
+    assert r.status_code == 400
+    assert len(client.get("/api/blogger-profiles", headers=h).json()) == 3
+
 
 
 def test_sheet_url_setting_syncs_tabs_and_columns(ctx, monkeypatch):
@@ -174,21 +184,17 @@ def test_deal_kp_link_and_blogger_participant(ctx):
     assert r.status_code == 400
 
 
-def test_sync_removes_rows_deleted_from_sheet_but_keeps_manual(ctx, monkeypatch):
+def test_sync_mirrors_sheet_exactly(ctx, monkeypatch):
+    """Таблица - единственный источник: убранные строки и листы пропадают, очищенные ячейки очищаются."""
     client, data = ctx
     h = _as(client, "blog-admin", data["ws_id"])
-    manual = client.post("/api/blogger-profiles", json={"name": "Ручной", "platform": "YouTube"}, headers=h)
-    assert manual.status_code == 201
 
-    # из листа YouTube убрали Машу, лист Instagram не прочитался (заголовки сломали)
+    # из YouTube убрали Машу и стёрли Ивану TG, лист Instagram удалили целиком
     wb = Workbook()
     yt = wb.active
     yt.title = "YouTube"
     yt.append(["Блогер", "ТГ для связи"])
-    yt.append(["Иван Игры", "@ivan_games"])
-    broken = wb.create_sheet("Instagram")
-    broken.append(["что-то", "непонятное"])
-    broken.append(["x", "y"])
+    yt.append(["Иван Игры", ""])
     buf = io.BytesIO()
     wb.save(buf)
 
@@ -198,11 +204,29 @@ def test_sync_removes_rows_deleted_from_sheet_but_keeps_manual(ctx, monkeypatch)
 
     r = client.post("/api/blogger-profiles/sync", headers=h)
     assert r.status_code == 200, r.text
-    assert r.json()["deleted"] == 1
-    names = {b["name"] for b in client.get("/api/blogger-profiles", headers=h).json()}
-    assert "Маша Тех" not in names  # удалена из таблицы
-    assert "katya.style" in names  # её лист не прочитался - не трогаем
-    assert "Ручной" in names  # заведён руками
+    assert r.json()["deleted"] == 2
+    rows = client.get("/api/blogger-profiles", headers=h).json()
+    assert [b["name"] for b in rows] == ["Иван Игры"]
+    assert rows[0]["telegram"] == ""
+    assert client.get("/api/blogger-profiles/sheet", headers=h).json()["tabs"] == ["YouTube"]
+
+
+def test_broken_sheet_does_not_wipe_base(ctx, monkeypatch):
+    client, data = ctx
+    h = _as(client, "blog-admin", data["ws_id"])
+    wb = Workbook()
+    wb.active.append(["что-то", "непонятное"])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    async def fake_download(url):
+        return buf.getvalue()
+    monkeypatch.setattr(blogger_sheet, "download_sheet", fake_download)
+
+    assert client.post("/api/blogger-profiles/sync", headers=h).status_code == 400
+    assert len(client.get("/api/blogger-profiles", headers=h).json()) == 1
+    assert client.get("/api/blogger-profiles/sheet", headers=h).json()["last_sync"]["error"]
+
 
 
 def test_scheduler_job_syncs_sheet(ctx, monkeypatch):
