@@ -14,10 +14,24 @@ CRM для инфлюенс-менеджмента: сделки с бренда
 - `backend/models/integration.py` - сделка с брендом (Integration)
 - `backend/models/integration_streamer.py` - стример внутри сделки (стадия/сумма/договор)
 - `backend/models/integration_payment.py` - история оплат стримера
+- `backend/models/blogger_profile.py` + `backend/blogger_sheet.py` - база блогеров и импорт из гугл-таблицы
+  (все листы, лист = площадка, колонки ищутся по ключевым словам в заголовке)
+- `backend/bot_dialog.py` - бот: мастер /new_integration, категорийная правка карточки участника (e:...)
+- `backend/bot_editor.py` - бот: универсальный редактор всего остального (x:...): сделки/КП, оплаты,
+  кейсы, файлы ТЗ, рекламодатели/контакты, задачи, базы стримеров и блогеров, выбор пространства
 - `backend/routers/integrations.py` - CRUD + договор (upload/download) + платежи
 - `frontend/src/pages/IntegrationsBoard.tsx` - канбан-доска
 - `frontend/src/pages/HomePage.tsx` - сводка (активные стримеры, к получению, дедлайны)
 - `frontend/src/api/integrations.ts` - API-клиент, стадии, лейблы
+
+## Участник сделки
+`IntegrationStreamer.talent_type`: `streamer` | `blogger` - из какой базы добавлен (стримеров или блогеров).
+У сделки (`Integration.kp_sheet_url`) - ссылка на гугл-таблицу с расчётом КП.
+
+## Бот
+Команды: /menu (всё), /new_integration, /edit_integration, /deals, /advertisers, /tasks, /cases,
+/streamers, /bloggers, /workspace, /hot_tasks, /settings, /cancel. Новая сущность в боте = описать
+`Entity` в `bot_editor.py` (поля, list_query, create, права) - списки/карточки/ввод общие.
 
 ## Стадии стримера (канбан)
 На согласовании → Согласован → Ждёт договора → Ждёт оплаты → Завершено (+ Отменено)

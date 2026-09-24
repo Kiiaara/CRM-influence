@@ -11,34 +11,39 @@ from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
 
+import bot_editor
 from database import SessionLocal
 from models.advertiser import Advertiser
 from models.audit_log import AuditLogEntry
 from models.integration import Integration
 from models.integration_streamer import IntegrationStreamer
 from models.user import User
-from models.workspace import WorkspaceMember
 import notifier
 from notifier import send_message
 
 
 def _resolve_workspace_id(db: Session, tg_id: int) -> Optional[int]:
-    """Пространство, в которое создаём/редактируем сделки из бота - первое, где юзер состоит участником."""
-    member = (
-        db.query(WorkspaceMember)
-        .filter_by(user_tg_id=tg_id)
-        .order_by(WorkspaceMember.joined_at.asc())
-        .first()
-    )
-    return member.workspace_id if member else None
+    """Пространство, в которое создаём/редактируем сделки из бота: выбранное через /workspace,
+    иначе первое, где юзер состоит участником."""
+    return bot_editor.resolve_workspace_id(db, tg_id)
+
+
+def _card_in_workspace(db: Session, tg_id: int, s: Optional[IntegrationStreamer]) -> bool:
+    """Карточку можно открыть/править только из своего пространства - callback_data
+    приходит от клиента, и подделанный id не должен давать доступ к чужой сделке."""
+    if s is None:
+        return False
+    it = db.get(Integration, s.integration_id)
+    return it is not None and it.workspace_id == _resolve_workspace_id(db, tg_id)
 
 log = logging.getLogger(__name__)
 
-STEPS = ["brand", "streamer_name", "amount", "commission_percent", "streamer_tax_percent", "integration_date"]
+STEPS = ["brand", "talent_type", "streamer_name", "amount", "commission_percent", "streamer_tax_percent", "integration_date"]
 
 STEP_PROMPTS = {
     "brand": "Как называется бренд/клиент?",
-    "streamer_name": "Имя стримера?",
+    "talent_type": "Кого добавляем: стримера или блогера?",
+    "streamer_name": "Имя (ник)?",
     "amount": "Сумма сделки (число, без пробелов и валюты)?",
     "commission_percent": "Твоя комиссия, % (например 15)?",
     "streamer_tax_percent": "Налог стримера, % (например 6)?",
@@ -68,6 +73,7 @@ PAYMENT_LABELS = {
     "paid": "Оплачен",
 }
 CONTENT_LABELS = {"awaiting_brief": "Ждём ТЗ", "filming": "Снимает контент", "filmed": "Снят контент"}
+TALENT_LABELS = {"streamer": "Стример", "blogger": "Блогер"}
 CONTRACT_STATUS_LABELS = {
     "not_sent": "Не отправлен",
     "sent_to_streamer": "Отправлен стримеру",
@@ -77,12 +83,13 @@ CONTRACT_STATUS_LABELS = {
     "active": "Активен",
     "expired": "Истёк",
 }
-ORD_RESPONSIBLE_LABELS = {"us": "Мы", "client": "Клиент"}
-ORD_STATUS_LABELS = {"todo": "Сделать", "done": "Сделано"}
+ORD_RESPONSIBLE_LABELS = {"us": "Мы", "client": "Клиент", "not_required": "Не требуется"}
+ORD_STATUS_LABELS = {"todo": "Сделать", "done": "Сделано", "not_required": "Не требуется"}
 ORD_REPORTING_LABELS = {"not_submitted": "Не сдана", "submitted": "Сдана", "overdue": "Просрочена"}
 
 # поле -> (словарь лейблов, можно ли "не задано")
 ENUM_FIELDS = {
+    "talent_type": (TALENT_LABELS, False),
     "stage": (STAGE_LABELS, False),
     "payment_status": (PAYMENT_LABELS, False),
     "content_status": (CONTENT_LABELS, True),
@@ -109,6 +116,8 @@ FIELD_TYPE = {
     "contract_valid_until": "date",
     "contract_notes": "text",
     "brief": "text",
+    "ord_link": "text",
+    "ord_report_link": "text",
 }
 
 # поля, у которых в БД реально допустим NULL (остальные NOT NULL с дефолтом "" или числом -
@@ -119,6 +128,7 @@ NULLABLE_FIELDS = {
 }
 
 FIELD_LABELS = {
+    "talent_type": "Кто (стример/блогер)",
     "stage": "Стадия",
     "payment_status": "Оплата",
     "content_status": "Статус контента",
@@ -141,15 +151,17 @@ FIELD_LABELS = {
     "ord_responsible": "Ответственный (ОРД)",
     "ord_status": "Статус маркировки",
     "ord_reporting_status": "Отчётность ОРД",
+    "ord_link": "Ссылка в ОРД (erid)",
+    "ord_report_link": "Ссылка на отчёт ОРД",
 }
 
 # категории меню: (ключ, заголовок, [поля]); "__file__" - особый пункт загрузки договора
 CATEGORIES = [
-    ("main", "📋 Основное", ["stage", "payment_status", "content_status"]),
+    ("main", "📋 Основное", ["stage", "payment_status", "content_status", "talent_type"]),
     ("amounts", "💰 Суммы", ["amount", "currency", "commission_percent", "streamer_tax_percent"]),
     ("dates", "📅 Даты", ["deadline", "integration_date", "integration_time"]),
     ("contract", "✍️ Договор", ["contract_status", "contract_sent_date", "contract_signed_date", "contract_valid_until", "contract_notes", "__file__"]),
-    ("ord", "🏷️ Маркировка ОРД", ["ord_responsible", "ord_status", "ord_reporting_status"]),
+    ("ord", "🏷️ Маркировка ОРД", ["ord_responsible", "ord_status", "ord_reporting_status", "ord_link", "ord_report_link"]),
     ("other", "📝 Прочее", ["contact", "streamer_name", "description", "brief"]),
 ]
 
@@ -445,13 +457,32 @@ async def _show_category_menu(tg_id: int, sid: int):
     db = SessionLocal()
     try:
         s = db.get(IntegrationStreamer, sid)
-        if not s:
+        if not _card_in_workspace(db, tg_id, s):
             await send_message(tg_id, "Карточка не найдена (возможно, удалена).")
             return
         it = db.get(Integration, s.integration_id)
-        keyboard = [[{"text": label, "callback_data": f"e:fld:{sid}:{key}"}] for key, label, _ in CATEGORIES]
-        keyboard.append([{"text": "✅ Готово", "callback_data": "e:done"}])
-        await send_message(tg_id, f"<b>{it.brand} × {s.streamer_name}</b>\nЧто меняем?", inline_keyboard=keyboard)
+        buttons = [{"text": label, "callback_data": f"e:fld:{sid}:{key}"} for key, label, _ in CATEGORIES]
+        keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+        keyboard.append([
+            {"text": "💳 Оплаты", "callback_data": f"x:l:pay:{sid}:0"},
+            {"text": "🎬 Кейсы", "callback_data": f"x:l:case:{sid}:0"},
+        ])
+        keyboard.append([
+            {"text": "📎 Файлы ТЗ", "callback_data": f"x:l:brief:{sid}:0"},
+            {"text": "🤝 Сделка (КП)", "callback_data": f"x:o:deal:{it.id}"},
+        ])
+        keyboard.append([
+            {"text": "🗑 Удалить карточку", "callback_data": f"x:dq:card:{sid}"},
+            {"text": "✅ Готово", "callback_data": "e:done"},
+        ])
+        kind = "📱 блогер" if s.talent_type == "blogger" else "🎮 стример"
+        amount = f"{float(s.amount):,.0f}".replace(",", " ") if s.amount is not None else "—"
+        await send_message(
+            tg_id,
+            f"<b>{bot_editor.esc(it.brand)} × {bot_editor.esc(s.streamer_name)}</b> ({kind})\n"
+            f"{STAGE_LABELS.get(s.stage, s.stage)} · {amount} {s.currency}\nЧто меняем?",
+            inline_keyboard=keyboard,
+        )
     finally:
         db.close()
 
@@ -460,7 +491,7 @@ async def _show_field_menu(tg_id: int, sid: int, cat_key: str):
     db = SessionLocal()
     try:
         s = db.get(IntegrationStreamer, sid)
-        if not s:
+        if not _card_in_workspace(db, tg_id, s):
             await send_message(tg_id, "Карточка не найдена.")
             return
         cat = next((c for c in CATEGORIES if c[0] == cat_key), None)
@@ -471,6 +502,8 @@ async def _show_field_menu(tg_id: int, sid: int, cat_key: str):
             if field == "__file__":
                 text = "📎 " + ("заменить файл договора" if s.contract_file_name else "загрузить файл договора")
                 keyboard.append([{"text": text, "callback_data": f"e:file:{sid}"}])
+                if s.contract_file_name:
+                    keyboard.append([{"text": "⬇️ скачать договор", "callback_data": f"x:a:cget:{sid}"}])
                 continue
             label = FIELD_LABELS[field]
             current = _current_value_label(s, field)
@@ -482,6 +515,16 @@ async def _show_field_menu(tg_id: int, sid: int, cat_key: str):
 
 
 async def _pick_field(tg_id: int, sid: int, field: str):
+    if field not in ENUM_FIELDS and field not in FIELD_TYPE:
+        return
+    db = SessionLocal()
+    try:
+        ok = _card_in_workspace(db, tg_id, db.get(IntegrationStreamer, sid))
+    finally:
+        db.close()
+    if not ok:
+        await send_message(tg_id, "Карточка не найдена.")
+        return
     if field in ENUM_FIELDS:
         labels, nullable = ENUM_FIELDS[field]
         keyboard = [[{"text": lbl, "callback_data": f"e:val:{sid}:{field}:{key}"}] for key, lbl in labels.items()]
@@ -506,8 +549,11 @@ async def _apply_enum(tg_id: int, sid: int, field: str, raw_val: str):
     db = SessionLocal()
     try:
         s = db.get(IntegrationStreamer, sid)
-        if not s:
+        if not _card_in_workspace(db, tg_id, s) or field not in ENUM_FIELDS:
             await send_message(tg_id, "Карточка не найдена.")
+            return
+        labels, nullable = ENUM_FIELDS[field]
+        if (raw_val == "__none__" and not nullable) or (raw_val != "__none__" and raw_val not in labels):
             return
         value = None if raw_val == "__none__" else raw_val
         old = getattr(s, field)
@@ -565,7 +611,7 @@ async def _apply_text_value(tg_id: int, sid: int, field: str, raw: str) -> bool:
     db = SessionLocal()
     try:
         s = db.get(IntegrationStreamer, sid)
-        if not s:
+        if not _card_in_workspace(db, tg_id, s):
             await send_message(tg_id, "Карточка не найдена.")
             return True
         it = db.get(Integration, s.integration_id)
@@ -591,8 +637,17 @@ async def _pick_file(tg_id: int, sid: int):
 
 
 async def handle_document(tg_id: int, file_id: Optional[str], file_name: Optional[str]) -> bool:
-    """Обрабатывает присланный документ, если сейчас ждём файл договора."""
+    """Обрабатывает присланный документ/фото, если сейчас ждём файл: договор, файл ТЗ или фото кейса."""
     session = _sessions.get(tg_id)
+    if session and session.get("mode") == "x_file":
+        del _sessions[tg_id]
+        path = await notifier.get_file_path(file_id) if file_id else None
+        content = await notifier.download_file(path) if path else None
+        if content is None:
+            await send_message(tg_id, "Не смог скачать файл из Telegram, попробуй ещё раз.")
+            return True
+        await bot_editor.save_file(tg_id, session["kind"], session["id"], content, file_name or "file")
+        return True
     if not session or session.get("mode") != "edit_contract_file":
         return False
     sid = session["streamer_id"]
@@ -616,7 +671,7 @@ async def handle_document(tg_id: int, file_id: Optional[str], file_name: Optiona
     db = SessionLocal()
     try:
         s = db.get(IntegrationStreamer, sid)
-        if not s:
+        if not _card_in_workspace(db, tg_id, s):
             await send_message(tg_id, "Карточка не найдена.")
             return True
         if s.contract_file_path and os.path.exists(s.contract_file_path):
@@ -697,7 +752,17 @@ async def _handle_new_callback(tg_id: int, parts: list) -> bool:
         session["data"]["brand"] = adv.name
         session["step"] = 1
         _sessions[tg_id] = session
-        await send_message(tg_id, f"Бренд: <b>{adv.name}</b>\n{STEP_PROMPTS[STEPS[1]]}")
+        await send_message(tg_id, f"Бренд: <b>{bot_editor.esc(adv.name)}</b>")
+        await _prompt_step(tg_id, STEPS[1])
+        return True
+    if action == "tt":
+        session = _sessions.get(tg_id)
+        value = parts[2] if len(parts) > 2 else ""
+        if not session or "step" not in session or STEPS[session["step"]] != "talent_type" or value not in TALENT_LABELS:
+            return True
+        session["data"]["talent_type"] = value
+        session["step"] += 1
+        await _prompt_step(tg_id, STEPS[session["step"]])
         return True
     if action == "newbrand":
         session = _sessions.get(tg_id) or {"step": 0, "data": {}}
@@ -708,11 +773,46 @@ async def _handle_new_callback(tg_id: int, parts: list) -> bool:
     return False
 
 
+async def _prompt_step(tg_id: int, step_name: str):
+    if step_name == "talent_type":
+        keyboard = [[
+            {"text": "🎮 Стример", "callback_data": "n:tt:streamer"},
+            {"text": "📱 Блогер", "callback_data": "n:tt:blogger"},
+        ]]
+        await send_message(tg_id, STEP_PROMPTS[step_name], inline_keyboard=keyboard)
+        return
+    await send_message(tg_id, STEP_PROMPTS[step_name])
+
+
+async def start_add_participant(tg_id: int, integration_id: int, brand: str):
+    """Мастер добавления участника в уже существующую сделку (из меню сделки)."""
+    _sessions[tg_id] = {"step": 1, "data": {"brand": brand, "integration_id": integration_id}}
+    await send_message(tg_id, f"Новый участник сделки <b>{bot_editor.esc(brand)}</b>")
+    await _prompt_step(tg_id, STEPS[1])
+
+
+def _set_session(tg_id: int):
+    def _set(data: dict):
+        _sessions[tg_id] = data
+    return _set
+
+
 async def handle_callback(tg_id: int, data: str) -> bool:
-    """Обрабатывает нажатия инлайн-кнопок: 'e:...' - редактирование сделки, 'n:...' - выбор бренда при создании."""
+    """Обрабатывает нажатия инлайн-кнопок: 'e:...' - редактирование карточки, 'n:...' - мастер создания,
+    's:...' - настройки, 'x:...' - универсальный редактор (сделки, оплаты, кейсы, задачи, базы...)."""
     parts = data.split(":")
     if not parts:
         return False
+    db = SessionLocal()
+    try:
+        allowed = db.get(User, tg_id) is not None
+    finally:
+        db.close()
+    if not allowed:
+        await send_message(tg_id, "Доступ запрещён.")
+        return True
+    if parts[0] == "x":
+        return await bot_editor.handle_callback(tg_id, parts, _set_session(tg_id))
     if parts[0] == "e":
         return await _handle_edit_callback(tg_id, parts)
     if parts[0] == "n":
@@ -723,7 +823,18 @@ async def handle_callback(tg_id: int, data: str) -> bool:
 
 
 def _cancel_text() -> str:
-    return "Диалог отменён. /new_integration - новая сделка, /edit_integration - редактировать существующую."
+    return "Диалог отменён. /menu - всё в CRM, /new_integration - новая сделка, /edit_integration - редактировать карточку."
+
+
+# команды, открывающие разделы универсального редактора
+_LIST_COMMANDS = {
+    "/deals": "deal",
+    "/advertisers": "adv",
+    "/tasks": "task",
+    "/cases": "case",
+    "/streamers": "sp",
+    "/bloggers": "bp",
+}
 
 
 async def handle_command(tg_id: int, text: str) -> bool:
@@ -783,6 +894,25 @@ async def handle_command(tg_id: int, text: str) -> bool:
         await _show_settings(tg_id)
         return True
 
+    command = text.split()[0].split("@")[0] if text.strip() else ""
+    if command in ("/menu", "/workspace") or command in _LIST_COMMANDS:
+        db = SessionLocal()
+        try:
+            user = db.get(User, tg_id)
+        finally:
+            db.close()
+        if not user:
+            await send_message(tg_id, "Доступ запрещён.")
+            return True
+        _sessions.pop(tg_id, None)
+        if command == "/menu":
+            await bot_editor.show_main_menu(tg_id)
+        elif command == "/workspace":
+            await bot_editor.show_workspaces(tg_id)
+        else:
+            await bot_editor.show_list(tg_id, _LIST_COMMANDS[command])
+        return True
+
     if text.startswith("/cancel"):
         if tg_id in _sessions:
             del _sessions[tg_id]
@@ -815,10 +945,30 @@ async def handle_message(tg_id: int, text: str) -> bool:
             _sessions.pop(tg_id, None)
         return True
 
+    if str(session.get("mode", "")).startswith("x_"):
+        # сессию закрываем до обработки: успешный ввод может открыть следующий шаг со своей сессией
+        _sessions.pop(tg_id, None)
+        done = await bot_editor.handle_text(tg_id, session, text)
+        if not done and tg_id not in _sessions:
+            _sessions[tg_id] = session
+        return True
+
+    if "step" not in session:
+        return False
+
     step_name = STEPS[session["step"]]
     value = text.strip()
 
-    if step_name == "amount":
+    if step_name == "talent_type":
+        low = value.lower()
+        if low.startswith("стрим") or low == "streamer":
+            session["data"]["talent_type"] = "streamer"
+        elif low.startswith("блог") or low == "blogger":
+            session["data"]["talent_type"] = "blogger"
+        else:
+            await _prompt_step(tg_id, "talent_type")
+            return True
+    elif step_name == "amount":
         try:
             session["data"]["amount"] = float(value.replace(",", ".").replace(" ", ""))
         except ValueError:
@@ -849,8 +999,7 @@ async def handle_message(tg_id: int, text: str) -> bool:
         del _sessions[tg_id]
         return True
 
-    next_step = STEPS[session["step"]]
-    await send_message(tg_id, STEP_PROMPTS[next_step])
+    await _prompt_step(tg_id, STEPS[session["step"]])
     return True
 
 
@@ -861,23 +1010,29 @@ async def _finish(tg_id: int, data: dict):
         if workspace_id is None:
             await send_message(tg_id, "У тебя нет доступа ни к одному пространству, обратись к админу.")
             return
+        integration = None
+        if data.get("integration_id"):
+            integration = db.get(Integration, data["integration_id"])
+            if integration and integration.workspace_id != workspace_id:
+                integration = None
         brand_name = data["brand"].strip()
-        advertiser = (
+        advertiser = None if integration else (
             db.query(Advertiser)
             .filter(Advertiser.workspace_id == workspace_id, Advertiser.name == brand_name)
             .first()
         )
-        if not advertiser:
+        if not integration and not advertiser:
             advertiser = Advertiser(workspace_id=workspace_id, name=brand_name)
             db.add(advertiser)
             db.flush()
 
-        integration = (
-            db.query(Integration)
-            .filter(Integration.advertiser_id == advertiser.id, Integration.workspace_id == workspace_id)
-            .order_by(Integration.created_at.desc())
-            .first()
-        )
+        if not integration:
+            integration = (
+                db.query(Integration)
+                .filter(Integration.advertiser_id == advertiser.id, Integration.workspace_id == workspace_id)
+                .order_by(Integration.created_at.desc())
+                .first()
+            )
         if not integration:
             integration = Integration(workspace_id=workspace_id, advertiser_id=advertiser.id, brand=advertiser.name)
             db.add(integration)
@@ -892,6 +1047,7 @@ async def _finish(tg_id: int, data: dict):
         streamer = IntegrationStreamer(
             integration_id=integration.id,
             streamer_name=data["streamer_name"],
+            talent_type=data.get("talent_type", "streamer"),
             amount=data.get("amount"),
             commission_percent=data.get("commission_percent", 15),
             streamer_tax_percent=data.get("streamer_tax_percent", 6),
@@ -904,7 +1060,7 @@ async def _finish(tg_id: int, data: dict):
 
         commission = round((data.get("amount") or 0) * (data.get("commission_percent", 15)) / 100, 2)
         text = (
-            f"✅ Добавлено: <b>{data['brand']}</b> × {data['streamer_name']}\n"
+            f"✅ Добавлено: <b>{bot_editor.esc(data['brand'])}</b> × {bot_editor.esc(data['streamer_name'])}\n"
             f"Сумма: {data.get('amount') or 0:,.0f}\n"
             f"Комиссия: {commission:,.0f}"
         ).replace(",", " ")

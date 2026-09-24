@@ -13,8 +13,8 @@ log = logging.getLogger(__name__)
 MAIN_KEYBOARD = {
     "keyboard": [
         [{"text": "➕ Новая интеграция"}, {"text": "✏️ Редактировать"}],
-        [{"text": "🔥 Горячие задачи"}, {"text": "⚙️ Настройки"}],
-        [{"text": "❌ Отменить диалог"}],
+        [{"text": "📂 Меню"}, {"text": "🔥 Горячие задачи"}],
+        [{"text": "⚙️ Настройки"}, {"text": "❌ Отменить диалог"}],
     ],
     "resize_keyboard": True,
 }
@@ -61,6 +61,28 @@ async def answer_callback_query(callback_query_id: str, text: Optional[str] = No
         log.exception("Не удалось ответить на callback_query")
 
 
+async def send_document(chat_id: int, path: str, file_name: str, caption: str = "") -> bool:
+    """Отправляет файл с диска (договор, файл ТЗ, фото кейса) документом."""
+    if not settings.auth_bot_token:
+        return False
+    try:
+        with open(path, "rb") as f:
+            content = f.read()
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(
+                f"{settings.telegram_api_base}/bot{settings.auth_bot_token}/sendDocument",
+                data={"chat_id": str(chat_id), "caption": caption},
+                files={"document": (file_name, content)},
+            )
+            if r.status_code == 200:
+                return True
+            log.warning("TG sendDocument %s -> %s: %s", chat_id, r.status_code, r.text)
+            return False
+    except Exception:
+        log.exception("Не удалось отправить файл в TG")
+        return False
+
+
 async def get_file_path(file_id: str) -> Optional[str]:
     """Резолвит file_id присланного документа в file_path для скачивания."""
     if not settings.auth_bot_token:
@@ -100,8 +122,16 @@ async def set_my_commands():
     if not settings.auth_bot_token:
         return
     commands = [
+        {"command": "menu", "description": "Всё в CRM: сделки, рекламодатели, задачи, кейсы, базы"},
         {"command": "new_integration", "description": "Добавить новую интеграцию"},
-        {"command": "edit_integration", "description": "Редактировать существующую сделку"},
+        {"command": "edit_integration", "description": "Редактировать карточку стримера/блогера"},
+        {"command": "deals", "description": "Сделки: КП, описание, участники"},
+        {"command": "advertisers", "description": "Рекламодатели и контакты"},
+        {"command": "tasks", "description": "Задачи"},
+        {"command": "cases", "description": "Кейсы для сайта"},
+        {"command": "streamers", "description": "База стримеров"},
+        {"command": "bloggers", "description": "База блогеров"},
+        {"command": "workspace", "description": "Выбрать пространство"},
         {"command": "hot_tasks", "description": "Горячие задачи (черновики, дедлайны, просрочки)"},
         {"command": "settings", "description": "Настройки уведомлений (интервал, тихие часы)"},
         {"command": "cancel", "description": "Отменить текущий диалог"},

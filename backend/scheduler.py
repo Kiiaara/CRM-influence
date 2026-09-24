@@ -306,7 +306,7 @@ _tg_offset = 0
 
 async def _poll_telegram_updates():
     """Слушает getUpdates: /start, текстовые команды/шаги диалога, нажатия инлайн-кнопок
-    редактирования (callback_query) и присланные документы (файл договора)."""
+    редактирования (callback_query) и присланные документы/фото (договор, файлы ТЗ, фото кейса)."""
     global _tg_offset
     if not settings.auth_bot_token:
         return
@@ -341,6 +341,12 @@ async def _poll_telegram_updates():
                 if doc:
                     await bot_dialog.handle_document(tg_id, doc.get("file_id"), doc.get("file_name"))
                     continue
+                photos = msg.get("photo")
+                if photos:
+                    # фото приходит несколькими размерами - берём самое большое (последнее)
+                    biggest = photos[-1]
+                    await bot_dialog.handle_document(tg_id, biggest.get("file_id"), f"photo_{biggest.get('file_unique_id', 'tg')}.jpg")
+                    continue
 
                 text = msg.get("text") or ""
                 if text.startswith("/start"):
@@ -349,7 +355,9 @@ async def _poll_telegram_updates():
                         tg_id,
                         "Привет 👋 Я буду присылать тебе уведомления по интеграциям из CRM-influence.\n\n"
                         "Жми кнопку ниже или пиши /new_integration, чтобы добавить интеграцию, "
-                        "/edit_integration - чтобы отредактировать существующую.",
+                        "/edit_integration - чтобы отредактировать карточку, "
+                        "/menu - чтобы открыть всё остальное: сделки и КП, рекламодателей, задачи, кейсы, "
+                        "базы стримеров и блогеров.",
                         with_keyboard=True,
                     )
                     continue
@@ -363,6 +371,8 @@ async def _poll_telegram_updates():
                     text = "/hot_tasks"
                 elif text.strip() == "⚙️ Настройки":
                     text = "/settings"
+                elif text.strip() == "📂 Меню":
+                    text = "/menu"
                 if await bot_dialog.handle_command(tg_id, text):
                     continue
                 await bot_dialog.handle_message(tg_id, text)
