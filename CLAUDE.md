@@ -1,6 +1,6 @@
 # CRM-influence - CLAUDE.md
 
-## Status: DEV (локально, деплой на VPS не настроен)
+## Status: PROD на VPS (crm-influence.kiiara.ru)
 CRM для инфлюенс-менеджмента: сделки с брендами, пул стримеров внутри каждой сделки
 (свои сроки/сумма/статус/договор/оплаты у каждого), канбан по стадиям, авторасчёт
 комиссии и суммы на руки стримеру.
@@ -67,6 +67,20 @@ cd frontend
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
+## Прод (VPS 157.22.207.137, Ubuntu 24.04)
+- Код: `/opt/crm-influence` (git, ветка main), systemd-сервис `crm-influence`:
+  `backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8010`, WorkingDirectory `backend`
+- nginx `crm-influence.kiiara.ru`: статика из `frontend/dist`, `/api/` -> 127.0.0.1:8010
+- Настройки: `/opt/crm-influence/backend/.env` (в git не входит)
+- Обновление:
+  ```
+  cd /opt/crm-influence && git pull origin main
+  backend/.venv/bin/pip install -r backend/requirements.txt
+  cd frontend && npm ci && npm run build; cd ..
+  systemctl restart crm-influence
+  ```
+- Сайт tkacheva-media.ru на том же сервере, сам тянет репо Kiiaara/site с GitHub
+
 ## Settings
 - `backend/.env`: `DEV_AUTH_BYPASS=true` для входа без Telegram в локальной разработке
 - `backend/data/zametochnitsa.db` - SQLite (имя файла унаследовано от старого проекта-заметочницы)
@@ -75,4 +89,3 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ## Известные долги
 - Папка проекта на диске всё ещё называется `zametochnitsa` (историческое название) -
   переименовать в `crm-influence`, когда освободится (сейчас держится открытым редактором/процессом)
-- Деплой на VPS/поддомен не настроен
