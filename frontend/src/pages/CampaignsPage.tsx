@@ -14,6 +14,7 @@ import { bloggerProfilesApi } from '../api/bloggerProfiles'
 import { integrationsApi, PAYMENT_LABELS, STAGES } from '../api/integrations'
 import type { TalentType } from '../api/integrations'
 import { tasksApi } from '../api/tasks'
+import { matchesQuery, nickFromUrl } from '../utils/bloggerSearch'
 
 const cellInput =
   'w-full bg-transparent border border-transparent hover:border-slate-200 dark:hover:border-brand-800 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-900 dark:text-slate-100 outline-none'
@@ -30,7 +31,6 @@ const fmtMoney = (n: number, currency: string) => `${Math.round(n).toLocaleStrin
 export default function CampaignsPage() {
   const qc = useQueryClient()
   const [q, setQ] = useState('')
-  const [hideClosed, setHideClosed] = useState(true)
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -65,7 +65,6 @@ export default function CampaignsPage() {
 
   const rows = useMemo(() => {
     let list = campaigns
-    if (hideClosed) list = list.filter(c => c.status !== 'cancelled' && c.status !== 'running')
     if (q.trim()) {
       const needle = q.toLowerCase()
       list = list.filter(
@@ -75,9 +74,7 @@ export default function CampaignsPage() {
       )
     }
     return list
-  }, [campaigns, hideClosed, q])
-
-  const closedCount = campaigns.filter(c => c.status === 'cancelled' || c.status === 'running').length
+  }, [campaigns, q])
 
   const set: SetFn = (id, p) => update.mutate({ id, p })
   const toggle = (id: number) =>
@@ -111,10 +108,6 @@ export default function CampaignsPage() {
           placeholder="Поиск по названию или бренду"
           className="w-full sm:w-64 bg-slate-100 dark:bg-brand-900 border border-transparent focus:border-brand-500 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none"
         />
-        <label className="flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 cursor-pointer">
-          <input type="checkbox" checked={hideClosed} onChange={e => setHideClosed(e.target.checked)} />
-          Скрыть запущенные и отменённые ({closedCount})
-        </label>
       </div>
 
       {error && <div className="text-sm text-red-500 mb-3">{error}</div>}
@@ -500,7 +493,15 @@ function BloggerRow({ b }: { b: CampaignBlogger }) {
   )
 }
 
-type Suggestion = { name: string; hint: string; price: number | null; type: TalentType }
+type Suggestion = {
+  name: string
+  hint: string
+  price: number | null
+  type: TalentType
+  // по ним тоже ищем: в базе имя бывает русское, а знают блогера по нику из ссылки
+  url?: string
+  telegram?: string
+}
 
 // добавление блогера: подсказки из базы блогеров (с ценой) и ранее вводимых имён
 function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: string[]; onAdded: () => void }) {
@@ -519,6 +520,8 @@ function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: strin
       hint: [p.platform, p.category].filter(Boolean).join(' · '),
       price: p.price,
       type: 'blogger',
+      url: p.url,
+      telegram: p.telegram,
     }))
     const known = new Set(fromBase.map(s => s.name.toLowerCase()))
     const fromHistory: Suggestion[] = oldNames
@@ -528,9 +531,7 @@ function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: strin
   }, [profiles, oldNames])
 
   const needle = name.trim().toLowerCase()
-  const shown = needle
-    ? suggestions.filter(s => s.name.toLowerCase().includes(needle)).slice(0, 8)
-    : []
+  const shown = needle ? suggestions.filter(s => matchesQuery(s, name)).slice(0, 8) : []
 
   const pick = (s: Suggestion) => {
     setName(s.name)
@@ -569,7 +570,7 @@ function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: strin
             onFocus={() => setFocus(true)}
             onBlur={() => setTimeout(() => setFocus(false), 150)}
             onKeyDown={e => { if (e.key === 'Enter' && canAdd) add.mutate() }}
-            placeholder="Имя блогера (подсказки из базы)"
+            placeholder="Имя, ник или ссылка"
             className={boxInput}
           />
           {focus && shown.length > 0 && (
@@ -581,7 +582,13 @@ function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: strin
                   onMouseDown={e => { e.preventDefault(); pick(s) }}
                   className="w-full flex justify-between gap-3 text-left px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-brand-900"
                 >
-                  <span className="text-slate-900 dark:text-slate-100 truncate">{s.name}</span>
+                  <span className="min-w-0 truncate">
+                    <span className="text-slate-900 dark:text-slate-100">{s.name}</span>
+                    {/* ник показываем, иначе непонятно, почему русское имя нашлось по латинице */}
+                    {nickFromUrl(s.url ?? '') && (
+                      <span className="text-slate-400"> @{nickFromUrl(s.url ?? '')}</span>
+                    )}
+                  </span>
                   <span className="text-xs text-slate-400 shrink-0">
                     {s.hint}{s.price != null && ` · ${s.price.toLocaleString('ru-RU')}`}
                   </span>

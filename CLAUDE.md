@@ -1,9 +1,9 @@
 # CRM-influence - CLAUDE.md
 
-## Status: DEV (локально, деплой на VPS не настроен)
-CRM для инфлюенс-менеджмента: сделки с брендами, пул стримеров внутри каждой сделки
+## Status: LIVE (crm-influence.kiiara.ru, FirstVDS, /opt/crm-influence)
+CRM для инфлюенс-менеджмента: сделки с брендами, пул инфлюенсеров внутри каждой сделки
 (свои сроки/сумма/статус/договор/оплаты у каждого), канбан по стадиям, авторасчёт
-комиссии и суммы на руки стримеру.
+комиссии и суммы на руки инфлюенсеру.
 
 ## Stack
 - Backend: Python 3.11, FastAPI, SQLAlchemy, SQLite
@@ -12,8 +12,9 @@ CRM для инфлюенс-менеджмента: сделки с бренда
 
 ## Key Files
 - `backend/models/integration.py` - сделка с брендом (Integration)
-- `backend/models/integration_streamer.py` - стример внутри сделки (стадия/сумма/договор)
-- `backend/models/integration_payment.py` - история оплат стримера
+- `backend/models/integration_streamer.py` - инфлюенсер внутри сделки (стадия/сумма/договор);
+  имя файла, таблицы и полей историческое, в интерфейсе везде "инфлюенсер"
+- `backend/models/integration_payment.py` - история оплат инфлюенсера
 - `backend/models/blogger_profile.py` + `backend/blogger_sheet.py` - база блогеров и импорт из гугл-таблицы
   (все листы, лист = площадка = вкладка в CRM, колонки ищутся по ключевым словам в заголовке,
   вся строка листа хранится в `sheet_row` и показывается на вкладке как в таблице).
@@ -52,7 +53,7 @@ CRM для инфлюенс-менеджмента: сделки с бренда
 ```
 комиссия (моя) = сумма * commission_percent / 100     # дефолт 15%
 налог стримера = сумма * streamer_tax_percent / 100    # дефолт 6%
-стримеру на руки = сумма - комиссия - налог
+инфлюенсеру на руки = сумма - комиссия - налог
 ```
 
 ## Dev
@@ -73,7 +74,45 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - `backend/data/zametochnitsa.db` - SQLite (имя файла унаследовано от старого проекта-заметочницы)
 - `backend/data/contracts/` - загруженные файлы договоров (в .gitignore)
 
+## Deploy (FirstVDS, crm-influence.kiiara.ru)
+
+Докера нет. Бэкенд - systemd-юнит `crm-influence.service` (uvicorn на 127.0.0.1:8010,
+WorkingDirectory `/opt/crm-influence/backend`). Фронт - статика, nginx раздаёт
+`/opt/crm-influence/frontend/dist`, `/api/` проксирует на 8010.
+
+```bash
+# 1. бэкап базы. SQLite в режиме WAL, просто cp файла .db теряет свежие записи
+cd /opt/crm-influence/backend
+.venv/bin/python -c "
+import sqlite3, datetime
+dst = 'data/zametochnitsa.db.bak-' + datetime.datetime.now().strftime('%Y%m%d-%H%M')
+src = sqlite3.connect('data/zametochnitsa.db'); out = sqlite3.connect(dst)
+src.backup(out); out.close(); src.close(); print(dst)
+"
+
+# 2. код
+cd /opt/crm-influence && git pull
+
+# 3. фронт (без пересборки морда остаётся старой)
+cd frontend && npm ci && npm run build
+
+# 4. бэк. Миграции прогоняются на старте в lifespan
+systemctl restart crm-influence
+journalctl -u crm-influence -n 60 --no-pager
+```
+
+Откат, если миграция упала:
+
+```bash
+systemctl stop crm-influence
+cd /opt/crm-influence/backend
+rm -f data/zametochnitsa.db-wal data/zametochnitsa.db-shm
+cp data/zametochnitsa.db.bak-ГГГГММДД-ЧЧММ data/zametochnitsa.db
+systemctl start crm-influence
+```
+
 ## Известные долги
 - Папка проекта на диске всё ещё называется `zametochnitsa` (историческое название) -
   переименовать в `crm-influence`, когда освободится (сейчас держится открытым редактором/процессом)
-- Деплой на VPS/поддомен не настроен
+- `npm audit` на фронте: 38 уязвимостей (11 high). `npm audit fix` вслепую ломает мажорные
+  версии, разбирать отдельно
