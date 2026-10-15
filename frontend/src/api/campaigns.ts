@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { PaymentStatus, Stage, TalentType } from './integrations'
 
 export type CampaignStatus =
   | 'picking'
@@ -44,6 +45,11 @@ export interface Campaign {
   owner_tg_id: number | null
   owner_label: string | null
   notes: string
+  // ссылка на КП (гугл-таблица с расчётом)
+  kp_url: string
+  // живые (не отменённые) блогеры кампании: сколько и на какую сумму
+  bloggers_count: number
+  bloggers_total: number
   created_at: string
   updated_at: string
 }
@@ -59,6 +65,28 @@ export interface CampaignPayload {
   currency?: string
   owner_tg_id?: number | null
   notes?: string
+  kp_url?: string
+}
+
+// блогер кампании = инфлюенсер в сделке кампании (та же запись, что на канбане)
+export interface CampaignBlogger {
+  streamer_id: number
+  integration_id: number
+  name: string
+  talent_type: TalentType
+  amount: number | null
+  currency: string
+  payment_status: PaymentStatus
+  integration_date: string | null
+  deadline: string | null
+  stage: Stage
+}
+
+export interface CampaignBloggerPayload {
+  name: string
+  talent_type?: TalentType
+  amount?: number | null
+  currency?: string
 }
 
 export const campaignsApi = {
@@ -76,5 +104,13 @@ export const campaignsApi = {
   },
   async remove(id: number) {
     await api.delete(`/campaigns/${id}`)
+  },
+  async bloggers(id: number) {
+    const { data } = await api.get<CampaignBlogger[]>(`/campaigns/${id}/bloggers`)
+    return data
+  },
+  async addBlogger(id: number, payload: CampaignBloggerPayload) {
+    const { data } = await api.post<CampaignBlogger>(`/campaigns/${id}/bloggers`, payload)
+    return data
   },
 }

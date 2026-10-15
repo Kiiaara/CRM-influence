@@ -121,3 +121,17 @@ body { margin: 0; }
     background-color: rgba(239, 68, 68, 0.14);
   }
 }
+
+/* Нативные выпадашки: у select с прозрачным фоном Chrome рисует список белым, а текст option
+   наследует светлый цвет - в тёмной теме имена не видно. Задаём цвета явно, одним правилом на весь проект */
+select option,
+select optgroup {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+.dark select option,
+.dark select optgroup {
+  background-color: var(--color-brand-950);
+  color: #e2e8f0;
+}

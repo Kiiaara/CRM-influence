@@ -239,7 +239,7 @@ def _migrate_streamers_add_ord_links():
 
 
 def _migrate_talent_type_and_kp_link():
-    """Тип участника сделки (стример/блогер), ссылка на КП у сделки и выбранное в боте пространство."""
+    """Тип участника сделки (инфлюенсер/блогер), ссылка на КП у сделки и выбранное в боте пространство."""
     from sqlalchemy import text, inspect
     insp = inspect(engine)
     tables = insp.get_table_names()
@@ -347,6 +347,23 @@ def _migrate_integrations_add_advertiser():
     if "advertiser_id" not in cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE integrations ADD COLUMN advertiser_id INTEGER"))
+
+
+def _migrate_integrations_add_campaign():
+    """Блогеры внутри кампании: integrations.campaign_id и campaigns.kp_url, если их нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    tables = insp.get_table_names()
+    with engine.begin() as conn:
+        if "integrations" in tables:
+            cols = [c["name"] for c in insp.get_columns("integrations")]
+            if "campaign_id" not in cols:
+                # SQLite позволяет REFERENCES в ADD COLUMN, если дефолт NULL
+                conn.execute(text("ALTER TABLE integrations ADD COLUMN campaign_id INTEGER REFERENCES campaigns(id) ON DELETE SET NULL"))
+        if "campaigns" in tables:
+            cols = [c["name"] for c in insp.get_columns("campaigns")]
+            if "kp_url" not in cols:
+                conn.execute(text("ALTER TABLE campaigns ADD COLUMN kp_url VARCHAR(512) DEFAULT ''"))
 
 
 def _migrate_brand_contacts_add_advertiser():
@@ -460,6 +477,7 @@ async def lifespan(app: FastAPI):
     _migrate_case_studies_site_fields()
     _migrate_discussion_messages_add_workspace()
     _migrate_integrations_add_advertiser()
+    _migrate_integrations_add_campaign()
     _migrate_brand_contacts_add_advertiser()
     _backfill_advertisers()
     _migrate_brand_contacts_drop_integration_not_null()

@@ -53,7 +53,7 @@ export default function HistoryPage() {
         <input
           value={q}
           onChange={e => setQ(e.target.value)}
-          placeholder="Поиск по бренду или стримеру"
+          placeholder="Поиск по бренду или инфлюенсеру"
           className="w-full sm:w-64 bg-slate-100 dark:bg-brand-900 border border-transparent focus:border-brand-500 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none"
         />
       </div>
@@ -85,7 +85,7 @@ export default function HistoryPage() {
               <thead className="bg-slate-50 dark:bg-brand-900/50">
                 <tr>
                   <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Бренд</th>
-                  <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Стример</th>
+                  <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Инфлюенсер</th>
                   <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Сумма</th>
                   <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Комиссия</th>
                   <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">Оплата</th>

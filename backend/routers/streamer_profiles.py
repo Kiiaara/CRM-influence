@@ -1,4 +1,4 @@
-"""Справочник стримеров (медиакит): соцсети, аудитория, прайс-лист.
+"""Справочник инфлюенсеров (медиакит): соцсети, аудитория, прайс-лист.
 Импорт/экспорт через Excel, независим от конкретных сделок."""
 import io
 from datetime import datetime
@@ -190,7 +190,7 @@ def _name_from_twitch_url(url: object) -> str:
 @router.post("/import")
 async def import_profiles(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(require_role("admin"))):
     """Импорт из Excel. Первая строка - заголовки (см. COLUMNS), строки с существующим
-    именем стримера обновляются, новые - создаются."""
+    именем инфлюенсера обновляются, новые - создаются."""
     content = await file.read()
     wb = load_workbook(io.BytesIO(content), data_only=True)
     ws = wb.active
@@ -258,7 +258,7 @@ def export_profiles(ids: Optional[str] = None, db: Session = Depends(get_db), us
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Стримеры"
+    ws.title = "Инфлюенсеры"
     ws.append([label for label, _, _ in COLUMNS])
     for p in profiles:
         row = []

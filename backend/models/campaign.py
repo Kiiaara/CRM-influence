@@ -5,7 +5,7 @@ from database import Base
 
 
 class Campaign(Base):
-    """Рекламная кампания - уровень выше сделки со стримером.
+    """Рекламная кампания - уровень выше сделки со инфлюенсером.
     Запрос от бренда живёт здесь ещё до того, как подобраны блогеры:
     пришёл запрос -> собираем подборку -> отдали -> ждём ОС -> условия -> запуск.
 
@@ -33,6 +33,8 @@ class Campaign(Base):
 
     owner_tg_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.tg_id", ondelete="SET NULL"), nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
+    # ссылка на КП (гугл-таблица с расчётом) по всей кампании
+    kp_url: Mapped[str] = mapped_column(String(512), default="")
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

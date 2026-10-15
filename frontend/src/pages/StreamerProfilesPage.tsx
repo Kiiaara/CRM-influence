@@ -52,7 +52,7 @@ export default function StreamerProfilesPage() {
   return (
     <div className="p-4 sm:p-10">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
-        <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-slate-100">База стримеров</h1>
+        <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-slate-100">База инфлюенсеров</h1>
         <div className="flex flex-wrap gap-2">
           <a
             href="https://docs.google.com/spreadsheets/d/18js3QuVJ0S0JnPxCoavKJsSIHCoLDhSRo3POAXYOkdE/edit?pli=1&gid=216813285#gid=216813285"
@@ -67,7 +67,7 @@ export default function StreamerProfilesPage() {
               onClick={() => setEditing(emptyProfile())}
               className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
             >
-              + Стример
+              + Инфлюенсер
             </button>
           )}
         </div>
@@ -90,7 +90,7 @@ export default function StreamerProfilesPage() {
             </div>
           </div>
         ))}
-        {profiles.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Стримеров нет — добавь вручную</div>}
+        {profiles.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Инфлюенсеров нет - добавь вручную</div>}
       </div>
 
       {/* Десктоп: таблица */}
@@ -119,14 +119,14 @@ export default function StreamerProfilesPage() {
                     {canEdit ? 'править' : 'открыть'}
                   </button>
                   {canDelete && (
-                    <button onClick={() => confirm('Удалить стримера из базы?') && remove.mutate(p.id)} className="text-red-500 hover:text-red-700 text-xs">удалить</button>
+                    <button onClick={() => confirm('Удалить инфлюенсера из базы?') && remove.mutate(p.id)} className="text-red-500 hover:text-red-700 text-xs">удалить</button>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {profiles.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Стримеров нет — добавь вручную</div>}
+        {profiles.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Инфлюенсеров нет - добавь вручную</div>}
       </div>
 
       {editing && (
@@ -174,7 +174,7 @@ function ProfileModal({ profile, onClose }: { profile: StreamerProfile; onClose:
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
       <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-slate-100">{isNew ? 'Новый стример' : form.name}</h2>
+        <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-slate-100">{isNew ? 'Новый инфлюенсер' : form.name}</h2>
 
         <div className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

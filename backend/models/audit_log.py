@@ -5,7 +5,7 @@ from database import Base
 
 
 class AuditLogEntry(Base):
-    """Запись в журнале изменений: кто когда что поменял по стримеру внутри сделки.
+    """Запись в журнале изменений: кто когда что поменял по инфлюенсеру внутри сделки.
     streamer_id нулится (не каскадно удаляется), чтобы запись переживала удаление карточки -
     brand/streamer_name денормализованы специально для этого.
     field: stage | payment_status | content_status | amount | deadline | contract_status |

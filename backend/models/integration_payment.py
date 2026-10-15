@@ -5,7 +5,7 @@ from database import Base
 
 
 class IntegrationPayment(Base):
-    """Запись в истории оплат по стримеру внутри интеграции."""
+    """Запись в истории оплат по инфлюенсеру внутри интеграции."""
     __tablename__ = "integration_payments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

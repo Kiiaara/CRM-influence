@@ -105,7 +105,7 @@ async def _notify_admins(text: str):
 
 
 async def _notify_creator(db: Session, s: IntegrationStreamer, text: str):
-    """Шлём тому, кто добавил карточку стримера в канбан. Если создатель не
+    """Шлём тому, кто добавил карточку инфлюенсера в канбан. Если создатель не
     известен (старые записи) или ещё не подключил чат - фолбэк на рассылку
     всем админам, как было раньше."""
     creator = db.get(User, s.created_by_tg_id) if s.created_by_tg_id else None
@@ -358,7 +358,7 @@ async def _poll_telegram_updates():
                         "Жми кнопку ниже или пиши /new_integration, чтобы добавить интеграцию, "
                         "/edit_integration - чтобы отредактировать карточку, "
                         "/menu - чтобы открыть всё остальное: сделки и КП, рекламодателей, задачи, кейсы, "
-                        "базы стримеров и блогеров.",
+                        "базы инфлюенсеров и блогеров.",
                         with_keyboard=True,
                     )
                     continue

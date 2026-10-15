@@ -249,7 +249,7 @@ function AdvertiserModal({ advertiser, onClose }: { advertiser: Advertiser; onCl
               {deals.map(d => (
                 <div key={d.id} className="flex items-center justify-between text-sm">
                   <span className="text-slate-700 dark:text-slate-300 truncate">
-                    {d.description || `Сделка #${d.id}`} <span className="text-slate-400">· {d.streamers_count} стример(ов)</span>
+                    {d.description || `Сделка #${d.id}`} <span className="text-slate-400">· {d.streamers_count} инфлюенсер(ов)</span>
                   </span>
                   <span className="text-xs text-slate-400 shrink-0">{new Date(d.updated_at).toLocaleDateString('ru-RU')}</span>
                 </div>

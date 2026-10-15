@@ -1,6 +1,6 @@
-"""Рекламные кампании: запросы от брендов на уровень выше сделок со стримерами.
+"""Рекламные кампании: запросы от брендов на уровень выше сделок со инфлюенсерами.
 
-Сделка на канбане - это конкретный стример. Кампания - весь запрос клиента,
+Сделка на канбане - это конкретный инфлюенсер. Кампания - весь запрос клиента,
 который живёт с момента поступления, когда блогеры ещё не подобраны.
 """
 from datetime import datetime
@@ -8,14 +8,18 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
 from deps import get_current_user, get_current_workspace
 from models.advertiser import Advertiser
 from models.campaign import Campaign
+from models.integration import Integration
+from models.integration_streamer import IntegrationStreamer
 from models.user import User
 from models.workspace import Workspace, WorkspaceMember
+from routers.integrations import StreamerCreate, create_streamer
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
@@ -82,9 +86,35 @@ class CampaignOut(BaseModel):
     owner_tg_id: Optional[int] = None
     owner_label: Optional[str] = None
     notes: str
+    kp_url: str = ""
+    # счётчик и сумма по живым (не отменённым) блогерам кампании, чтобы видеть без раскрытия
+    bloggers_count: int = 0
+    bloggers_total: float = 0
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
+
+class CampaignBloggerOut(BaseModel):
+    """Блогер кампании = инфлюенсер в сделке кампании (та же запись, что на канбане)."""
+    streamer_id: int
+    integration_id: int
+    name: str
+    talent_type: str
+    amount: Optional[float] = None
+    currency: str
+    payment_status: str
+    integration_date: Optional[datetime] = None
+    deadline: Optional[datetime] = None
+    stage: str
+
+
+class CampaignBloggerCreate(BaseModel):
+    name: str
+    talent_type: str = "blogger"
+    amount: Optional[float] = None
+    currency: str = "RUB"
+    contact: str = ""
 
 
 class CampaignCreate(BaseModel):
@@ -98,6 +128,7 @@ class CampaignCreate(BaseModel):
     currency: str = "RUB"
     owner_tg_id: Optional[int] = None
     notes: str = ""
+    kp_url: str = ""
 
 
 class CampaignUpdate(BaseModel):
@@ -111,13 +142,48 @@ class CampaignUpdate(BaseModel):
     currency: Optional[str] = None
     owner_tg_id: Optional[int] = None
     notes: Optional[str] = None
+    kp_url: Optional[str] = None
 
 
-def _out(db: Session, c: Campaign) -> CampaignOut:
+def _stats(db: Session, campaign_ids: List[int]) -> dict:
+    """campaign_id -> (число живых блогеров, сумма). Отменённые сделки не считаем."""
+    if not campaign_ids:
+        return {}
+    rows = (
+        db.query(Integration.campaign_id, func.count(IntegrationStreamer.id), func.coalesce(func.sum(IntegrationStreamer.amount), 0))
+        .join(IntegrationStreamer, IntegrationStreamer.integration_id == Integration.id)
+        .filter(Integration.campaign_id.in_(campaign_ids), IntegrationStreamer.stage != "cancelled")
+        .group_by(Integration.campaign_id)
+        .all()
+    )
+    return {r[0]: (r[1], float(r[2])) for r in rows}
+
+
+def _out(db: Session, c: Campaign, stats: Optional[dict] = None) -> CampaignOut:
+    if stats is None:
+        stats = _stats(db, [c.id])
+    count, total = stats.get(c.id, (0, 0.0))
     return CampaignOut.model_validate(c).model_copy(update={
         "advertiser_name": _adv_name(db, c.advertiser_id),
         "owner_label": _label(db, c.owner_tg_id),
+        "bloggers_count": count,
+        "bloggers_total": total,
     })
+
+
+def _blogger_out(s: IntegrationStreamer) -> CampaignBloggerOut:
+    return CampaignBloggerOut(
+        streamer_id=s.id,
+        integration_id=s.integration_id,
+        name=s.streamer_name,
+        talent_type=s.talent_type,
+        amount=float(s.amount) if s.amount is not None else None,
+        currency=s.currency,
+        payment_status=s.payment_status,
+        integration_date=s.integration_date,
+        deadline=s.deadline,
+        stage=s.stage,
+    )
 
 
 @router.get("", response_model=List[CampaignOut])
@@ -128,7 +194,8 @@ def list_campaigns(db: Session = Depends(get_db), ws: Workspace = Depends(get_cu
         .order_by(Campaign.created_at.desc())
         .all()
     )
-    return [_out(db, c) for c in rows]
+    stats = _stats(db, [c.id for c in rows])
+    return [_out(db, c, stats) for c in rows]
 
 
 @router.post("", response_model=CampaignOut, status_code=201)
@@ -158,6 +225,7 @@ def create_campaign(
         currency=data.currency,
         owner_tg_id=data.owner_tg_id,
         notes=data.notes,
+        kp_url=data.kp_url.strip(),
     )
     db.add(c)
     db.commit()
@@ -183,7 +251,14 @@ def update_campaign(
         raise HTTPException(400, "Название не может быть пустым")
 
     for k, v in data.model_dump(exclude_unset=True).items():
+        if k == "kp_url":
+            v = (v or "").strip()
         setattr(c, k, v.strip() if k == "name" and isinstance(v, str) else v)
+    # сменили рекламодателя - сделки кампании должны показывать тот же бренд
+    if "advertiser_id" in data.model_fields_set or "name" in data.model_fields_set:
+        for it in db.query(Integration).filter(Integration.campaign_id == c.id).all():
+            it.advertiser_id = c.advertiser_id
+            it.brand = _adv_name(db, c.advertiser_id) or c.name
     db.commit()
     db.refresh(c)
     return _out(db, c)
@@ -199,3 +274,68 @@ def delete_campaign(
     db.delete(c)
     db.commit()
     return {"ok": True}
+
+@router.get("/{campaign_id}/bloggers", response_model=List[CampaignBloggerOut])
+def list_campaign_bloggers(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    ws: Workspace = Depends(get_current_workspace),
+):
+    c = _get_or_404(db, ws, campaign_id)
+    rows = (
+        db.query(IntegrationStreamer)
+        .join(Integration, IntegrationStreamer.integration_id == Integration.id)
+        .filter(Integration.campaign_id == c.id, Integration.workspace_id == ws.id)
+        .order_by(IntegrationStreamer.id.asc())
+        .all()
+    )
+    return [_blogger_out(s) for s in rows]
+
+
+@router.post("/{campaign_id}/bloggers", response_model=CampaignBloggerOut, status_code=201)
+def add_campaign_blogger(
+    campaign_id: int,
+    data: CampaignBloggerCreate,
+    db: Session = Depends(get_db),
+    ws: Workspace = Depends(get_current_workspace),
+    user: User = Depends(get_current_user),
+):
+    c = _get_or_404(db, ws, campaign_id)
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(400, "Имя блогера не может быть пустым")
+
+    # сделка кампании создаётся при первом блогере; дальше все идут в неё же
+    it = (
+        db.query(Integration)
+        .filter(Integration.campaign_id == c.id, Integration.workspace_id == ws.id)
+        .order_by(Integration.id.asc())
+        .first()
+    )
+    if not it:
+        it = Integration(
+            workspace_id=ws.id,
+            advertiser_id=c.advertiser_id,
+            # без рекламодателя бренд сделки - название кампании
+            brand=_adv_name(db, c.advertiser_id) or c.name,
+            description="",
+            campaign_id=c.id,
+        )
+        db.add(it)
+        db.commit()
+        db.refresh(it)
+
+    # саму карточку создаёт общий код канбана: позиция, аудит, валидации
+    s = create_streamer(
+        it.id,
+        StreamerCreate(
+            streamer_name=name,
+            talent_type=data.talent_type,
+            amount=data.amount,
+            currency=data.currency,
+            contact=data.contact,
+        ),
+        db=db, ws=ws, user=user,
+    )
+    return _blogger_out(s)
+

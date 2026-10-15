@@ -30,7 +30,7 @@ const PERIODS: { key: Period; label: string }[] = [
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Обзор' },
-  { key: 'streamers', label: 'Стримеры' },
+  { key: 'streamers', label: 'Инфлюенсеры' },
   { key: 'brands', label: 'Рекламодатели' },
 ]
 
@@ -215,7 +215,7 @@ function Overview({ rows, doneInPeriod, chart }: { rows: Row[]; doneInPeriod: Ro
           )}
         </Panel>
 
-        <Panel title="Воронка по стадиям" hint="Сколько стримеров сейчас на каждом этапе">
+        <Panel title="Воронка по стадиям" hint="Сколько инфлюенсеров сейчас на каждом этапе">
           {funnel.every(f => f.count === 0) ? (
             <EmptyState text="Сделок пока нет" />
           ) : (
@@ -225,7 +225,7 @@ function Overview({ rows, doneInPeriod, chart }: { rows: Row[]; doneInPeriod: Ro
                 <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: chart.tick }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="stage" tick={{ fontSize: 12, fill: chart.tick }} axisLine={false} tickLine={false} width={110} />
                 <Tooltip content={<CountTooltip dark={chart.dark} />} cursor={{ fill: chart.dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }} />
-                <Bar dataKey="count" name="Стримеров" radius={[0, 4, 4, 0]} barSize={20}>
+                <Bar dataKey="count" name="Инфлюенсеров" radius={[0, 4, 4, 0]} barSize={20}>
                   {funnel.map((_, i) => (
                     <Cell key={i} fill={chart.bar} />
                   ))}
@@ -239,7 +239,7 @@ function Overview({ rows, doneInPeriod, chart }: { rows: Row[]; doneInPeriod: Ro
   )
 }
 
-// ---------- стримеры ----------
+// ---------- инфлюенсеры ----------
 
 interface StreamerAgg {
   name: string
@@ -299,7 +299,7 @@ function StreamersTab({ rows, doneInPeriod, onOpen }: { rows: Row[]; doneInPerio
     <div>
       <div className="flex items-center justify-between gap-3 mb-3">
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Деньги — за выбранный период, надёжность — за всё время. Нажмите на стримера, чтобы раскрыть карточку.
+          Деньги - за выбранный период, надёжность - за всё время. Нажмите на инфлюенсера, чтобы раскрыть карточку.
         </p>
         <input
           value={q}
@@ -313,7 +313,7 @@ function StreamersTab({ rows, doneInPeriod, onOpen }: { rows: Row[]; doneInPerio
         <table className="min-w-full text-sm">
           <thead className="bg-slate-50 dark:bg-brand-900/50">
             <tr>
-              <Th>Стример</Th>
+              <Th>Инфлюенсер</Th>
               <Th>Сделок</Th>
               <Th>Оборот</Th>
               <Th>Доход</Th>
@@ -343,7 +343,7 @@ function StreamersTab({ rows, doneInPeriod, onOpen }: { rows: Row[]; doneInPerio
             ))}
           </tbody>
         </table>
-        {filtered.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Стримеров пока нет</div>}
+        {filtered.length === 0 && <div className="text-sm text-slate-400 text-center py-8">Инфлюенсеров пока нет</div>}
       </div>
     </div>
   )
@@ -381,7 +381,7 @@ function StreamerDetail({ name, rows, chart, onClose }: { name: string; rows: Ro
     .filter(r => r.stage !== 'cancelled' && r.payment_status !== 'paid')
     .reduce((s, r) => s + ((r.amount ?? 0) - paidAmount(r)), 0)
 
-  // бренды, с которыми этот стример уже работал - видно, кто берёт повторно
+  // бренды, с которыми этот инфлюенсер уже работал - видно, кто берёт повторно
   const brands = useMemo(() => {
     const m = new Map<string, number>()
     for (const r of mine) m.set(r.brand, (m.get(r.brand) ?? 0) + 1)
@@ -401,7 +401,7 @@ function StreamerDetail({ name, rows, chart, onClose }: { name: string; rows: Ro
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard icon="💰" label="Заработал всего" value={money(totalEarned)} compact />
         <StatCard icon="🎁" label="Наша комиссия" value={money(myRevenue)} compact />
-        <StatCard icon="🪙" label="На руки стримеру" value={money(streamerNet)} compact />
+        <StatCard icon="🪙" label="На руки инфлюенсеру" value={money(streamerNet)} compact />
         <StatCard icon="⏳" label="Ждём оплаты" value={awaiting > 0 ? money(awaiting) : '—'} compact />
       </div>
 
@@ -487,7 +487,7 @@ function BrandsTab({ rows, doneInPeriod, onOpen }: { rows: Row[]; doneInPeriod: 
             <tr>
               <Th>Рекламодатель</Th>
               <Th>Сделок</Th>
-              <Th>Стримеров</Th>
+              <Th>Инфлюенсеров</Th>
               <Th>Оборот</Th>
               <Th>Доход</Th>
               <Th>Последняя сделка</Th>
@@ -551,7 +551,7 @@ function BrandDetail({ brand, rows, onClose }: { brand: string; rows: Row[]; onC
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard icon="💰" label="Оборот" value={money(turnover)} compact />
         <StatCard icon="🎁" label="Наш доход" value={money(revenue)} compact />
-        <StatCard icon="🎮" label="Стримеров" value={String(topStreamers.length)} compact />
+        <StatCard icon="🎮" label="Инфлюенсеров" value={String(topStreamers.length)} compact />
         <StatCard icon="⏳" label="Ждём оплаты" value={awaiting > 0 ? money(awaiting) : '—'} compact />
       </div>
 
@@ -582,7 +582,7 @@ function DealsTable({ deals, showBrand }: { deals: Row[]; showBrand?: boolean })
       <table className="min-w-full text-sm">
         <thead className="bg-slate-50 dark:bg-brand-900/50">
           <tr>
-            <Th>{showBrand ? 'Бренд' : 'Стример'}</Th>
+            <Th>{showBrand ? 'Бренд' : 'Инфлюенсер'}</Th>
             <Th>Статус</Th>
             <Th>Сумма</Th>
             <Th>Оплата</Th>
@@ -699,7 +699,7 @@ function CountTooltip({ active, payload, dark }: any) {
   return (
     <div className={tooltipBoxClass(dark)}>
       <div className="text-xs text-slate-400 mb-0.5">{payload[0].payload.stage}</div>
-      <div className="font-medium">{payload[0].value} стримеров</div>
+      <div className="font-medium">{payload[0].value} инфлюенсеров</div>
     </div>
   )
 }

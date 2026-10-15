@@ -1,4 +1,4 @@
-"""CRM интеграций: сделка с брендом (Integration) содержит пул стримеров
+"""CRM интеграций: сделка с брендом (Integration) содержит пул инфлюенсеров
 (IntegrationStreamer), каждый со своим статусом/сроком/суммой/договором/оплатами."""
 import json
 import os
@@ -35,7 +35,7 @@ def _get_integration_or_404(db: Session, ws: Workspace, integration_id: int) -> 
 
 
 def _get_streamer_or_404(db: Session, ws: Workspace, streamer_id: int) -> IntegrationStreamer:
-    """Достаём стримера, проверяя что его сделка принадлежит текущему workspace -
+    """Достаём инфлюенсера, проверяя что его сделка принадлежит текущему workspace -
     иначе любой залогиненный юзер мог бы читать/менять чужие сделки по id."""
     s = db.get(IntegrationStreamer, streamer_id)
     if not s:
@@ -54,7 +54,7 @@ def _get_case_or_404(db: Session, ws: Workspace, case_id: int) -> CaseStudy:
     return c
 
 
-# поля стримера, изменения которых пишем в журнал - только те, что важны для бизнеса
+# поля инфлюенсера, изменения которых пишем в журнал - только те, что важны для бизнеса
 TRACKED_FIELDS = (
     "stage",
     "payment_status",
@@ -417,7 +417,7 @@ def list_integrations(db: Session = Depends(get_db), ws: Workspace = Depends(get
 
 @router.get("/streamer-names")
 def suggest_streamer_names(db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
-    """Уникальные ранее введённые имена стримеров в этом пространстве - для автоподстановки."""
+    """Уникальные ранее введённые имена инфлюенсеров в этом пространстве - для автоподстановки."""
     rows = (
         db.query(IntegrationStreamer.streamer_name)
         .join(Integration, IntegrationStreamer.integration_id == Integration.id)
@@ -491,7 +491,7 @@ def delete_integration(integration_id: int, db: Session = Depends(get_db), ws: W
     return {"ok": True}
 
 
-# ---------- стримеры внутри сделки ----------
+# ---------- инфлюенсеры внутри сделки ----------
 
 @router.get("/{integration_id}/streamers", response_model=List[StreamerOut])
 def list_streamers(integration_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
@@ -922,7 +922,7 @@ def delete_case_photo(case_id: int, db: Session = Depends(get_db), ws: Workspace
     return {"ok": True}
 
 
-# ---------- обсуждение сделки со стримером ----------
+# ---------- обсуждение сделки со инфлюенсером ----------
 
 def _author_label(db: Session, tg_id: Optional[int]) -> Optional[str]:
     if tg_id is None:

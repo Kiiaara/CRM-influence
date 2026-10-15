@@ -252,7 +252,7 @@ function DealPicker({
           autoFocus
           value={q}
           onChange={e => setQ(e.target.value)}
-          placeholder="Поиск по бренду или стримеру"
+          placeholder="Поиск по бренду или инфлюенсеру"
           className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 mb-3"
         />
 

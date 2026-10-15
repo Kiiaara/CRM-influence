@@ -47,7 +47,7 @@ function round2(n: number) {
   return Math.round(n * 100) / 100
 }
 
-// плоская карточка стримера + бренд сделки, для рендера на канбане
+// плоская карточка инфлюенсера + бренд сделки, для рендера на канбане
 interface Card extends Streamer {
   brand: string
   kp_sheet_url: string
@@ -156,7 +156,7 @@ export default function IntegrationsBoard() {
           onClick={() => setPickingBrand(true)}
           className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto"
         >
-          + Стримеры / блогеры на бренд
+          + Инфлюенсеры / блогеры на бренд
         </button>
       </div>
 
@@ -394,7 +394,7 @@ function BrandPickerModal({
   )
 }
 
-// строка выбора в модалке добавления: стример или блогер из соответствующей базы
+// строка выбора в модалке добавления: инфлюенсер или блогер из соответствующей базы
 interface PickItem {
   key: string
   name: string
@@ -418,7 +418,7 @@ function BulkStreamersModal({
   const { data: bloggers = [] } = useQuery({ queryKey: ['blogger-profiles'], queryFn: bloggerProfilesApi.list })
   const { data: legacyNames = [] } = useQuery({ queryKey: ['streamer-names'], queryFn: integrationsApi.streamerNames })
 
-  // выбор храним по обоим типам сразу - можно набрать и стримеров, и блогеров в одну сделку
+  // выбор храним по обоим типам сразу - можно набрать и инфлюенсеров, и блогеров в одну сделку
   const [selected, setSelected] = useState<Record<TalentType, Set<string>>>({ streamer: new Set(), blogger: new Set() })
   const [manualNames, setManualNames] = useState<Record<TalentType, string>>({ streamer: '', blogger: '' })
   const [search, setSearch] = useState('')
@@ -481,7 +481,7 @@ function BulkStreamersModal({
 
   const countFor = (type: TalentType) => selected[type].size + splitNames(manualNames[type]).length
   const totalSelected = countFor('streamer') + countFor('blogger')
-  const baseLabel = talentType === 'streamer' ? 'базы стримеров' : 'базы блогеров'
+  const baseLabel = talentType === 'streamer' ? 'базы инфлюенсеров' : 'базы блогеров'
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
@@ -496,7 +496,7 @@ function BulkStreamersModal({
               onClick={() => { setTalentType(t); setSearch('') }}
               className={`flex-1 text-sm px-3 py-2 rounded-lg border ${talentType === t ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300' : 'border-slate-200 dark:border-brand-800 text-slate-600 dark:text-slate-300'}`}
             >
-              {t === 'streamer' ? '🎮 Стримеры' : '📱 Блогеры'}{countFor(t) > 0 && ` (${countFor(t)})`}
+              {t === 'streamer' ? '🎮 Инфлюенсеры' : '📱 Блогеры'}{countFor(t) > 0 && ` (${countFor(t)})`}
             </button>
           ))}
         </div>
@@ -542,14 +542,14 @@ function BulkStreamersModal({
 
         <div>
           <label className="text-xs text-slate-500 dark:text-slate-400">
-            Или впиши {talentType === 'streamer' ? 'новых стримеров' : 'новых блогеров'} (через запятую или с новой строки)
+            Или впиши {talentType === 'streamer' ? 'новых инфлюенсеров' : 'новых блогеров'} (через запятую или с новой строки)
             {talentType === 'streamer' && legacyNames.length > 0 && ' — уже вводили: ' + legacyNames.slice(0, 5).join(', ')}
           </label>
           <textarea
             value={manualNames[talentType]}
             onChange={e => setManualNames({ ...manualNames, [talentType]: e.target.value })}
             rows={3}
-            placeholder={talentType === 'streamer' ? 'Стример1, Стример2, ...' : 'Блогер1, Блогер2, ...'}
+            placeholder={talentType === 'streamer' ? 'Инфлюенсер1, Инфлюенсер2, ...' : 'Блогер1, Блогер2, ...'}
             className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
           />
         </div>
@@ -557,7 +557,7 @@ function BulkStreamersModal({
         <div className="flex justify-between items-center mt-6">
           <div className="text-xs text-slate-400">
             Выбрано: {totalSelected}
-            {countFor('streamer') > 0 && countFor('blogger') > 0 && ` (стримеров ${countFor('streamer')}, блогеров ${countFor('blogger')})`}
+            {countFor('streamer') > 0 && countFor('blogger') > 0 && ` (инфлюенсеров ${countFor('streamer')}, блогеров ${countFor('blogger')})`}
           </div>
           <div className="flex gap-2">
             <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 rounded-lg">Отмена</button>
@@ -944,7 +944,7 @@ export function StreamerModal({
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 dark:text-slate-400">Налог стримера, %</label>
+              <label className="text-xs text-slate-500 dark:text-slate-400">Налог инфлюенсера, %</label>
               <input
                 type="number"
                 value={form.streamer_tax_percent}
@@ -963,9 +963,9 @@ export function StreamerModal({
                 return (
                   <>
                     <div className="flex justify-between"><span className="text-slate-500 dark:text-slate-400">Цена для клиента</span><span className="text-slate-900 dark:text-slate-100">{form.amount!.toLocaleString('ru-RU')} {form.currency}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500 dark:text-slate-400">Моя комиссия (трясти со стримера)</span><span className="text-brand-600 dark:text-brand-400 font-medium">{commission.toLocaleString('ru-RU')} {form.currency}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500 dark:text-slate-400">Налог стримера ({form.streamer_tax_percent}%)</span><span className="text-slate-600 dark:text-slate-300">{tax.toLocaleString('ru-RU')} {form.currency}</span></div>
-                    <div className="flex justify-between border-t border-slate-200 dark:border-brand-800 pt-1"><span className="text-slate-500 dark:text-slate-400">Стримеру на руки</span><span className="text-emerald-600 dark:text-emerald-400 font-semibold">{net.toLocaleString('ru-RU')} {form.currency}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500 dark:text-slate-400">Моя комиссия (трясти со инфлюенсера)</span><span className="text-brand-600 dark:text-brand-400 font-medium">{commission.toLocaleString('ru-RU')} {form.currency}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500 dark:text-slate-400">Налог инфлюенсера ({form.streamer_tax_percent}%)</span><span className="text-slate-600 dark:text-slate-300">{tax.toLocaleString('ru-RU')} {form.currency}</span></div>
+                    <div className="flex justify-between border-t border-slate-200 dark:border-brand-800 pt-1"><span className="text-slate-500 dark:text-slate-400">Инфлюенсеру на руки</span><span className="text-emerald-600 dark:text-emerald-400 font-semibold">{net.toLocaleString('ru-RU')} {form.currency}</span></div>
                   </>
                 )
               })()}
@@ -1126,7 +1126,7 @@ export function StreamerModal({
 
         <div className="flex justify-between mt-6">
           <div>
-            <button onClick={() => confirm('Удалить стримера из интеграции?') && remove.mutate()} className="text-red-500 hover:text-red-700 text-sm">Удалить</button>
+            <button onClick={() => confirm('Удалить инфлюенсера из интеграции?') && remove.mutate()} className="text-red-500 hover:text-red-700 text-sm">Удалить</button>
           </div>
           <div className="flex gap-2">
             <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 rounded-lg">Отмена</button>

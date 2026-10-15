@@ -177,7 +177,7 @@ def test_deal_kp_link_and_blogger_participant(ctx):
     assert r.status_code == 201
     assert r.json()["talent_type"] == "blogger"
 
-    # по умолчанию - стример, а мусор в типе не принимаем
+    # по умолчанию - инфлюенсер, а мусор в типе не принимаем
     r = client.post(f"/api/integrations/{it['id']}/streamers", json={"streamer_name": "Стример"}, headers=h)
     assert r.json()["talent_type"] == "streamer"
     r = client.patch(f"/api/integrations/streamers/{r.json()['id']}", json={"talent_type": "robot"}, headers=h)

@@ -1,11 +1,11 @@
 """Универсальный редактор CRM в Telegram-боте: сделки, оплаты, кейсы, файлы ТЗ,
-рекламодатели и контакты, задачи, база стримеров и база блогеров.
+рекламодатели и контакты, задачи, база инфлюенсеров и база блогеров.
 
 Каждая сущность описана декларативно (Entity: поля, как искать, как создавать, кто может
 править), а общий код рисует списки, карточки, кнопки полей и принимает ввод. Так бот
 умеет править всё, что есть на сайте, без отдельного диалога под каждую форму.
 
-Карточка стримера/блогера внутри сделки редактируется старым категорийным меню из
+Карточка инфлюенсера/блогера внутри сделки редактируется старым категорийным меню из
 bot_dialog (e:...), здесь для неё только список, удаление и дочерние разделы.
 
 Колбэки (callback_data до 64 байт):
@@ -70,7 +70,7 @@ STAGE_LABELS = {
     "done": "Завершено",
     "cancelled": "Отменено",
 }
-TALENT_LABELS = {"streamer": "Стример", "blogger": "Блогер"}
+TALENT_LABELS = {"streamer": "Инфлюенсер", "blogger": "Блогер"}
 SITE_TAG_LABELS = {"Games": "Игры", "Tournament": "Турниры", "Special Project": "Спецпроекты"}
 TASK_STATUS_LABELS = {"todo": "К выполнению", "doing": "В работе", "done": "Готово"}
 CONTACT_TYPE_LABELS = {
@@ -134,7 +134,7 @@ class Entity:
     model: type
     fields: list[F]
     label: Callable[[Any], str]
-    # пространство объекта (для проверки доступа); None у глобальных баз стримеров/блогеров
+    # пространство объекта (для проверки доступа); None у глобальных баз инфлюенсеров/блогеров
     workspace_of: Callable[[Session, Any], Optional[int]] = lambda db, o: None
     global_base: bool = False
     edit_roles: tuple = ()  # глобальные роли, которым можно править (пусто - всем участникам)
@@ -247,7 +247,7 @@ def _deal_list(ctx: Ctx, parent_id: int):
     return q.order_by(Integration.updated_at.desc())
 
 
-# --- карточка участника (стример/блогер в сделке) ---
+# --- карточка участника (инфлюенсер/блогер в сделке) ---
 
 def _card_label(s: IntegrationStreamer) -> str:
     icon = "📱" if s.talent_type == "blogger" else "🎮"
@@ -464,7 +464,7 @@ def _task_change(ctx: Ctx, t: Task, key: str, old, new) -> Optional[str]:
     return None
 
 
-# --- базы стримеров и блогеров ---
+# --- базы инфлюенсеров и блогеров ---
 
 def _bp_list_extra(ctx: Ctx, parent_id: int) -> list:
     url = blogger_sheet.get_sheet_url(ctx.db)
@@ -617,7 +617,7 @@ _reg(Entity(
 ))
 
 _reg(Entity(
-    code="sp", title="Стример (база)", plural="База стримеров", model=StreamerProfile,
+    code="sp", title="Инфлюенсер (база)", plural="База инфлюенсеров", model=StreamerProfile,
     fields=[
         F("name", "Имя", "text", required=True),
         F("twitch_url", "Ссылка на Twitch", "text"),
@@ -646,7 +646,7 @@ _reg(Entity(
     label=lambda p: p.name + (f" · {p.category}" if p.category else ""),
     global_base=True, edit_roles=("admin", "editor"), delete_roles=("admin",),
     list_query=lambda ctx, pid: ctx.db.query(StreamerProfile).order_by(StreamerProfile.name.asc()),
-    create_prompt="Имя стримера?",
+    create_prompt="Имя инфлюенсера?",
     create=lambda ctx, pid, text: StreamerProfile(name=text.strip()),
 ))
 
@@ -749,7 +749,7 @@ async def show_main_menu(tg_id: int):
         [{"text": "🤝 Сделки", "callback_data": "x:l:deal:0:0"}, {"text": "👥 Карточки", "callback_data": "x:l:card:0:0"}],
         [{"text": "🏢 Рекламодатели", "callback_data": "x:l:adv:0:0"}, {"text": "✅ Задачи", "callback_data": "x:l:task:0:0"}],
         [{"text": "🎬 Кейсы", "callback_data": "x:l:case:0:0"}],
-        [{"text": "📋 База стримеров", "callback_data": "x:l:sp:0:0"}, {"text": "📱 База блогеров", "callback_data": "x:l:bp:0:0"}],
+        [{"text": "📋 База инфлюенсеров", "callback_data": "x:l:sp:0:0"}, {"text": "📱 База блогеров", "callback_data": "x:l:bp:0:0"}],
         [{"text": "🗂 Пространство", "callback_data": "x:a:wslist:0"}, {"text": "⚙️ Уведомления", "callback_data": "s:back"}],
     ]
     title = f"Пространство: <b>{esc(ws.title)}</b>" if ws else "Пространство не выбрано"

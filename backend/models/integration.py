@@ -5,7 +5,7 @@ from database import Base
 
 
 class Integration(Base):
-    """Сделка с брендом. Внутри - пул стримеров (IntegrationStreamer),
+    """Сделка с брендом. Внутри - пул инфлюенсеров (IntegrationStreamer),
     каждый со своими сроками/суммой/статусом."""
     __tablename__ = "integrations"
 
@@ -17,6 +17,8 @@ class Integration(Base):
     # чтобы не трогать весь остальной код, который читает Integration.brand напрямую
     brand: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
+    # кампания, внутри которой живёт сделка (блогеры кампании); при удалении кампании сделка остаётся
+    campaign_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("campaigns.id", ondelete="SET NULL"), index=True, nullable=True)
     # ссылка на гугл-таблицу с расчётом КП по этой сделке
     kp_sheet_url: Mapped[str] = mapped_column(String(512), default="")
 

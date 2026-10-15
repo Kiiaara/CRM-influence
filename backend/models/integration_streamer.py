@@ -5,7 +5,7 @@ from database import Base
 
 
 class IntegrationStreamer(Base):
-    """Стример внутри интеграции с брендом. Каждый со своими сроками, суммой и статусом.
+    """Инфлюенсер внутри интеграции с брендом. Каждый со своими сроками, суммой и статусом.
     stage: negotiation | agreed | awaiting_contract | awaiting_payment | done | cancelled
     payment_status: not_invoiced | invoiced | partial | paid
     content_status: awaiting_brief | filming | filmed
@@ -31,7 +31,7 @@ class IntegrationStreamer(Base):
     amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str] = mapped_column(String(8), default="RUB")
 
-    # для расчёта суммы на руки стримеру: amount - (amount * commission%) - (amount * tax%)
+    # для расчёта суммы на руки инфлюенсеру: amount - (amount * commission%) - (amount * tax%)
     commission_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=15)
     streamer_tax_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=6)
 
@@ -49,7 +49,7 @@ class IntegrationStreamer(Base):
     contract_signed_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     contract_notes: Mapped[str] = mapped_column(Text, default="")
 
-    # ТЗ (техническое задание) для стримера, свободный текст
+    # ТЗ (техническое задание) для инфлюенсера, свободный текст
     brief: Mapped[str] = mapped_column(Text, default="")
 
     # позиция карточки внутри колонки канбана (для сортировки внутри stage)

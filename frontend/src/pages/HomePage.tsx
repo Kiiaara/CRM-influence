@@ -24,8 +24,8 @@ export default function HomePage() {
       <p className="text-slate-500 dark:text-slate-400 mb-8">Сводка по интеграциям.</p>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <StatCard icon="🤝" label="Активных стримеров" value={active.length} to="/integrations" />
-        <StatCard icon="💰" label="Трясти со стримеров, ₽" value={Math.round(toCollect)} to="/integrations" />
+        <StatCard icon="🤝" label="Активных инфлюенсеров" value={active.length} to="/integrations" />
+        <StatCard icon="💰" label="Трясти со инфлюенсеров, ₽" value={Math.round(toCollect)} to="/integrations" />
         <StatCard icon="📄" label="Брендов" value={integrations.length} to="/integrations" />
       </div>
 

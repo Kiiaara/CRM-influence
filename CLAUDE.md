@@ -30,6 +30,7 @@ CRM для инфлюенс-менеджмента: сделки с бренда
   тянет с GitHub, index.html подгружает cases.json к ручным кейсам
 - `backend/case_translate.py` - автоперевод кейса на EN/ZH через Groq (GROQ_API_KEY, бесплатный тариф;
   модель - GROQ_MODEL). Платные LLM API для перевода не используем - дорого
+- `backend/routers/campaigns.py` - кампании; блогеры кампании = стримеры в сделке с `Integration.campaign_id` (GET/POST `/campaigns/{id}/bloggers`), та же запись, что на канбане. В меню канбан скрыт, открывается по `/integrations`
 - `backend/routers/integrations.py` - CRUD + договор (upload/download) + платежи
 - `frontend/src/pages/IntegrationsBoard.tsx` - канбан-доска
 - `frontend/src/pages/HomePage.tsx` - сводка (активные стримеры, к получению, дедлайны)

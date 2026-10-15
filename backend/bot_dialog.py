@@ -42,11 +42,11 @@ STEPS = ["brand", "talent_type", "streamer_name", "amount", "commission_percent"
 
 STEP_PROMPTS = {
     "brand": "Как называется бренд/клиент?",
-    "talent_type": "Кого добавляем: стримера или блогера?",
+    "talent_type": "Кого добавляем: инфлюенсера или блогера?",
     "streamer_name": "Имя (ник)?",
     "amount": "Сумма сделки (число, без пробелов и валюты)?",
     "commission_percent": "Твоя комиссия, % (например 15)?",
-    "streamer_tax_percent": "Налог стримера, % (например 6)?",
+    "streamer_tax_percent": "Налог инфлюенсера, % (например 6)?",
     "integration_date": "Дата интеграции в формате ДД.ММ.ГГГГ (или напиши «нет», если пока неизвестна)?",
 }
 
@@ -73,11 +73,11 @@ PAYMENT_LABELS = {
     "paid": "Оплачен",
 }
 CONTENT_LABELS = {"awaiting_brief": "Ждём ТЗ", "filming": "Снимает контент", "filmed": "Снят контент"}
-TALENT_LABELS = {"streamer": "Стример", "blogger": "Блогер"}
+TALENT_LABELS = {"streamer": "Инфлюенсер", "blogger": "Блогер"}
 CONTRACT_STATUS_LABELS = {
     "not_sent": "Не отправлен",
-    "sent_to_streamer": "Отправлен стримеру",
-    "signed_by_streamer": "Подписан стримером",
+    "sent_to_streamer": "Отправлен инфлюенсеру",
+    "signed_by_streamer": "Подписан инфлюенсером",
     "sent_to_brand": "Отправлен бренду",
     "signed_by_brand": "Подписан брендом",
     "active": "Активен",
@@ -128,19 +128,19 @@ NULLABLE_FIELDS = {
 }
 
 FIELD_LABELS = {
-    "talent_type": "Кто (стример/блогер)",
+    "talent_type": "Кто (инфлюенсер/блогер)",
     "stage": "Стадия",
     "payment_status": "Оплата",
     "content_status": "Статус контента",
     "amount": "Сумма",
     "currency": "Валюта",
     "commission_percent": "Комиссия, %",
-    "streamer_tax_percent": "Налог стримера, %",
+    "streamer_tax_percent": "Налог инфлюенсера, %",
     "deadline": "Дедлайн",
     "integration_date": "Дата интеграции",
     "integration_time": "Время старта стрима",
     "contact": "Контакт",
-    "streamer_name": "Имя стримера",
+    "streamer_name": "Имя инфлюенсера",
     "description": "Описание",
     "contract_status": "Статус договора",
     "contract_sent_date": "Договор отправлен",
@@ -475,7 +475,7 @@ async def _show_category_menu(tg_id: int, sid: int):
             {"text": "🗑 Удалить карточку", "callback_data": f"x:dq:card:{sid}"},
             {"text": "✅ Готово", "callback_data": "e:done"},
         ])
-        kind = "📱 блогер" if s.talent_type == "blogger" else "🎮 стример"
+        kind = "📱 блогер" if s.talent_type == "blogger" else "🎮 инфлюенсер"
         amount = f"{float(s.amount):,.0f}".replace(",", " ") if s.amount is not None else "—"
         await send_message(
             tg_id,
@@ -776,7 +776,7 @@ async def _handle_new_callback(tg_id: int, parts: list) -> bool:
 async def _prompt_step(tg_id: int, step_name: str):
     if step_name == "talent_type":
         keyboard = [[
-            {"text": "🎮 Стример", "callback_data": "n:tt:streamer"},
+            {"text": "🎮 Инфлюенсер", "callback_data": "n:tt:streamer"},
             {"text": "📱 Блогер", "callback_data": "n:tt:blogger"},
         ]]
         await send_message(tg_id, STEP_PROMPTS[step_name], inline_keyboard=keyboard)

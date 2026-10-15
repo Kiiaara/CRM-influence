@@ -5,7 +5,7 @@ from database import Base
 
 
 class BloggerProfile(Base):
-    """База блогеров - аналог базы стримеров (StreamerProfile). Большая гугл-таблица
+    """База блогеров - аналог базы инфлюенсеров (StreamerProfile). Большая гугл-таблица
     ведётся по листам-площадкам (YouTube, Instagram, TikTok...), поэтому у блогера есть
     platform = название листа. Один и тот же человек на разных площадках - разные записи."""
     __tablename__ = "blogger_profiles"

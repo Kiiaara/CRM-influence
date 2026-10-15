@@ -6,7 +6,7 @@ export type ContentStatus = 'awaiting_brief' | 'filming' | 'filmed'
 export type TalentType = 'streamer' | 'blogger'
 
 export const TALENT_LABELS: Record<TalentType, string> = {
-  streamer: 'Стример',
+  streamer: 'Инфлюенсер',
   blogger: 'Блогер',
 }
 
@@ -65,8 +65,8 @@ export type ContractStatus =
 
 export const CONTRACT_STATUS_LABELS: Record<ContractStatus, string> = {
   not_sent: 'Не отправлен',
-  sent_to_streamer: 'Отправлен стримеру',
-  signed_by_streamer: 'Подписан стримером',
+  sent_to_streamer: 'Отправлен инфлюенсеру',
+  signed_by_streamer: 'Подписан инфлюенсером',
   sent_to_brand: 'Отправлен бренду',
   signed_by_brand: 'Подписан брендом',
   active: 'Активен',

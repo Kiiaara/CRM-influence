@@ -11,7 +11,6 @@ import ConnectBotNudge from '../components/ConnectBotNudge'
 const navItems = [
   { to: '/', label: 'Главная', icon: '🏠' },
   { to: '/campaigns', label: 'Кампании', icon: '📣' },
-  { to: '/integrations', label: 'Интеграции', icon: '🤝' },
   { to: '/tasks', label: 'Задачи', icon: '✅' },
   { to: '/chat', label: 'Чат', icon: '💬' },
   { to: '/marking', label: 'Маркировка', icon: '🏷️' },
@@ -20,7 +19,7 @@ const navItems = [
   { to: '/analytics', label: 'Аналитика', icon: '📊' },
   { to: '/cases', label: 'Кейсы', icon: '🎬' },
   { to: '/history', label: 'История', icon: '🗂️' },
-  { to: '/streamers', label: 'База стримеров', icon: '📋' },
+  { to: '/streamers', label: 'База инфлюенсеров', icon: '📋' },
   { to: '/bloggers', label: 'База блогеров', icon: '📱' },
 ]
 
