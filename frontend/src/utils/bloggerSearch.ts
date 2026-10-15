@@ -14,16 +14,43 @@ export function nickFromUrl(url: string): string {
   return tail.replace(/^@/, '').toLowerCase()
 }
 
-/** Все строки, по которым разрешено найти блогера */
-export function searchableParts(s: { name: string; url?: string; telegram?: string }): string[] {
+/** То, что можно искать. Ссылок несколько: у блогера url, у инфлюенсера
+ *  twitch_url и строка social_links со всеми площадками сразу */
+export interface Searchable {
+  name: string
+  url?: string
+  telegram?: string
+  links?: string
+}
+
+/** Все строки, по которым разрешено найти человека */
+export function searchableParts(s: Searchable): string[] {
   const tg = (s.telegram ?? '').replace(/^@/, '')
-  return [s.name, s.url ?? '', tg, nickFromUrl(s.url ?? ''), nickFromUrl(tg)]
+  // social_links - произвольный текст с несколькими ссылками, режем по пробелам и запятым
+  const extra = (s.links ?? '').split(/[\s,;|]+/).filter(Boolean)
+  const urls = [s.url ?? '', ...extra].filter(Boolean)
+  return [s.name, tg, ...urls, ...urls.map(nickFromUrl), nickFromUrl(tg)]
     .filter(Boolean)
     .map(v => v.toLowerCase())
 }
 
+/** Ник для показа в подсказке: из основной ссылки, иначе из телеги или social_links */
+export function displayNick(s: Searchable): string {
+  const fromUrl = nickFromUrl(s.url ?? '')
+  if (fromUrl) return fromUrl
+  const tg = (s.telegram ?? '').replace(/^@/, '')
+  if (tg && !tg.includes('/')) return tg.toLowerCase()
+  const fromTg = nickFromUrl(tg)
+  if (fromTg) return fromTg
+  for (const part of (s.links ?? '').split(/[\s,;|]+/).filter(Boolean)) {
+    const nick = nickFromUrl(part)
+    if (nick) return nick
+  }
+  return ''
+}
+
 /** Совпадение подсказки с введённым текстом */
-export function matchesQuery(s: { name: string; url?: string; telegram?: string }, query: string): boolean {
+export function matchesQuery(s: Searchable, query: string): boolean {
   // в данных собаку срезаем, поэтому и в запросе тоже: "@virginlolita" = "virginlolita"
   const needle = query.trim().replace(/^@/, '').toLowerCase()
   if (!needle) return false

@@ -11,10 +11,11 @@ import type { Campaign, CampaignBlogger, CampaignPayload, CampaignStatus } from 
 import { advertisersApi } from '../api/advertisers'
 import type { Advertiser } from '../api/advertisers'
 import { bloggerProfilesApi } from '../api/bloggerProfiles'
+import { streamerProfilesApi } from '../api/streamerProfiles'
 import { integrationsApi, PAYMENT_LABELS, STAGES } from '../api/integrations'
 import type { TalentType } from '../api/integrations'
 import { tasksApi } from '../api/tasks'
-import { matchesQuery, nickFromUrl } from '../utils/bloggerSearch'
+import { displayNick, matchesQuery } from '../utils/bloggerSearch'
 
 const cellInput =
   'w-full bg-transparent border border-transparent hover:border-slate-200 dark:hover:border-brand-800 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-900 dark:text-slate-100 outline-none'
@@ -27,6 +28,12 @@ type Assignee = { tg_id: number; label: string }
 type SetFn = (id: number, p: CampaignPayload) => void
 
 const fmtMoney = (n: number, currency: string) => `${Math.round(n).toLocaleString('ru-RU')} ${currency}`
+
+// Недописанный блогер по каждой кампании. Живёт вне компонента, поэтому
+// переживает сворачивание панели: свернули случайно - введённое на месте.
+type Draft = { name: string; amount: string; type: TalentType }
+const drafts = new Map<number, Draft>()
+const emptyDraft: Draft = { name: '', amount: '', type: 'blogger' }
 
 export default function CampaignsPage() {
   const qc = useQueryClient()
@@ -162,8 +169,10 @@ export default function CampaignsPage() {
                 <Labeled label="ДЛ подборки"><DateCell value={c.selection_due_at} onSave={v => set(c.id, { selection_due_at: v })} highlight /></Labeled>
                 <Labeled label="ДЛ РК"><DateCell value={c.campaign_due_at} onSave={v => set(c.id, { campaign_due_at: v })} highlight /></Labeled>
               </div>
+              {/* сводка только раскрывает: закрыть можно шевроном, чтобы
+                  случайный тап не схлопнул панель с недописанными данными */}
               <button
-                onClick={() => toggle(c.id)}
+                onClick={() => !open && toggle(c.id)}
                 className="mt-2 w-full text-left text-sm rounded-lg bg-slate-50 dark:bg-brand-900/40 px-3 py-2"
               >
                 <BloggersSummary c={c} />
@@ -242,12 +251,9 @@ function CampaignRow({
   return (
     <>
       <tr
-        // клик по пустому месту строки раскрывает её; по полям ввода и кнопкам - нет
-        onClick={e => {
-          if ((e.target as HTMLElement).closest('input,select,button,a,textarea')) return
-          onToggle()
-        }}
-        className={`border-t border-slate-100 dark:border-brand-900 align-top cursor-pointer hover:bg-slate-50/60 dark:hover:bg-brand-900/20 ${
+        // раскрытие висит ТОЛЬКО на шевроне: раньше клик по пустому месту строки
+        // схлопывал её, и мисклик мимо поля закрывал панель с недописанным блогером
+        className={`border-t border-slate-100 dark:border-brand-900 align-top ${
           open ? 'bg-slate-50/60 dark:bg-brand-900/20' : ''
         }`}
       >
@@ -319,14 +325,26 @@ function DeleteButton({ onClick }: { onClick: () => void }) {
 
 // счётчик и сумма по блогерам видны без раскрытия строки
 function BloggersSummary({ c }: { c: Campaign }) {
+  // если панель свернули с недописанным блогером - показываем, что он не потерян
+  const draft = drafts.get(c.id)
+  const draftMark = draft ? (
+    <span className="text-amber-600 dark:text-amber-400 text-xs"> · черновик: {draft.name || 'без имени'}</span>
+  ) : null
+
   if (c.bloggers_count === 0) {
-    return <span className="text-slate-400 dark:text-slate-500 text-xs">+ добавить блогеров</span>
+    return (
+      <span>
+        <span className="text-slate-400 dark:text-slate-500 text-xs">+ добавить блогеров</span>
+        {draftMark}
+      </span>
+    )
   }
   return (
     <span className="text-slate-700 dark:text-slate-200">
       <span className="font-medium">{c.bloggers_count}</span>
       <span className="text-slate-400 dark:text-slate-500"> · </span>
       {fmtMoney(c.bloggers_total, c.currency)}
+      {draftMark}
     </span>
   )
 }
@@ -443,8 +461,8 @@ function BloggersBlock({ c }: { c: Campaign }) {
 
       {bloggers.length > 0 && (
         <div className="rounded-lg border border-slate-100 dark:border-brand-900 divide-y divide-slate-100 dark:divide-brand-900 mb-3">
-          <div className="hidden sm:grid grid-cols-[minmax(140px,1.6fr)_110px_120px_80px_80px_130px] gap-x-3 px-3 py-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-            <span>Блогер</span><span>Сумма</span><span>Оплата</span><span>Выход</span><span>Дедлайн</span><span>Стадия</span>
+          <div className="hidden sm:grid grid-cols-[minmax(140px,1.6fr)_110px_120px_80px_80px_130px_28px] gap-x-3 px-3 py-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+            <span>Блогер</span><span>Сумма</span><span>Оплата</span><span>Выход</span><span>Дедлайн</span><span>Стадия</span><span />
           </div>
           {bloggers.map(b => <BloggerRow key={b.streamer_id} b={b} />)}
         </div>
@@ -469,10 +487,10 @@ function BloggerRow({ b }: { b: CampaignBlogger }) {
   const paid = b.payment_status === 'paid'
   const cancelled = b.stage === 'cancelled'
   return (
-    // клик ведёт на канбан с открытой карточкой этой сделки
-    <Link
-      to={`/integrations?open=${b.streamer_id}`}
-      className={`grid grid-cols-2 sm:grid-cols-[minmax(140px,1.6fr)_110px_120px_80px_80px_130px] gap-x-3 gap-y-0.5 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-brand-900/30 ${
+    // строка намеренно НЕ ссылка: мисклик уводил со страницы на скрытый канбан.
+    // Переход в карточку сделки - только по стрелке справа
+    <div
+      className={`grid grid-cols-2 sm:grid-cols-[minmax(140px,1.6fr)_110px_120px_80px_80px_130px_28px] gap-x-3 gap-y-0.5 px-3 py-2 text-sm ${
         cancelled ? 'opacity-50' : ''
       }`}
     >
@@ -489,7 +507,14 @@ function BloggerRow({ b }: { b: CampaignBlogger }) {
       <span>
         <span className="inline-block rounded-full px-2 py-0.5 text-xs bg-slate-100 text-slate-600 dark:bg-brand-900 dark:text-slate-300">{stage}</span>
       </span>
-    </Link>
+      <Link
+        to={`/integrations?open=${b.streamer_id}`}
+        title="Открыть карточку сделки"
+        className="justify-self-end text-slate-300 hover:text-brand-600 dark:text-slate-600 dark:hover:text-brand-400"
+      >
+        ↗
+      </Link>
+    </div>
   )
 }
 
@@ -498,20 +523,29 @@ type Suggestion = {
   hint: string
   price: number | null
   type: TalentType
-  // по ним тоже ищем: в базе имя бывает русское, а знают блогера по нику из ссылки
+  // по ним тоже ищем: в базе имя бывает русское, а знают человека по нику из ссылки
   url?: string
   telegram?: string
+  links?: string
 }
 
 // добавление блогера: подсказки из базы блогеров (с ценой) и ранее вводимых имён
 function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: string[]; onAdded: () => void }) {
-  const [name, setName] = useState('')
-  const [amount, setAmount] = useState('')
-  const [type, setType] = useState<TalentType>('blogger')
+  const saved = drafts.get(c.id) ?? emptyDraft
+  const [name, setName] = useState(saved.name)
+  const [amount, setAmount] = useState(saved.amount)
+  const [type, setType] = useState<TalentType>(saved.type)
   const [focus, setFocus] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
+  // пишем черновик на каждое изменение, чтобы он пережил размонтирование
+  useEffect(() => {
+    if (name || amount) drafts.set(c.id, { name, amount, type })
+    else drafts.delete(c.id)
+  }, [c.id, name, amount, type])
+
   const { data: profiles = [] } = useQuery({ queryKey: ['blogger-profiles'], queryFn: bloggerProfilesApi.list })
+  const { data: influencers = [] } = useQuery({ queryKey: ['streamer-profiles'], queryFn: streamerProfilesApi.list })
   const { data: oldNames = [] } = useQuery({ queryKey: ['streamer-names'], queryFn: integrationsApi.streamerNames })
 
   const suggestions = useMemo<Suggestion[]>(() => {
@@ -523,7 +557,17 @@ function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: strin
       url: p.url,
       telegram: p.telegram,
     }))
-    const known = new Set(fromBase.map(s => s.name.toLowerCase()))
+    // вторая база: инфлюенсеры. Раньше их в подсказках не было вообще
+    const fromInfluencers: Suggestion[] = influencers.map(p => ({
+      name: p.name,
+      hint: ['Инфлюенсер', p.category].filter(Boolean).join(' · '),
+      // цен у инфлюенсера несколько, подставляем голосовую как самую частую
+      price: p.voice_integration_price ?? p.special_stream_price ?? null,
+      type: 'streamer',
+      url: p.twitch_url,
+      links: p.social_links,
+    }))
+    const known = new Set([...fromBase, ...fromInfluencers].map(s => s.name.toLowerCase()))
     const fromHistory: Suggestion[] = oldNames
       .filter(n => !known.has(n.toLowerCase()))
       .map(n => ({ name: n, hint: 'ранее добавляли', price: null, type: 'streamer' }))
@@ -550,6 +594,7 @@ function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: strin
         currency: c.currency,
       }),
     onSuccess: () => {
+      drafts.delete(c.id) // блогер добавлен, черновик больше не нужен
       setName(''); setAmount(''); setType('blogger'); setErr(null)
       onAdded()
     },
@@ -585,9 +630,7 @@ function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: strin
                   <span className="min-w-0 truncate">
                     <span className="text-slate-900 dark:text-slate-100">{s.name}</span>
                     {/* ник показываем, иначе непонятно, почему русское имя нашлось по латинице */}
-                    {nickFromUrl(s.url ?? '') && (
-                      <span className="text-slate-400"> @{nickFromUrl(s.url ?? '')}</span>
-                    )}
+                    {displayNick(s) && <span className="text-slate-400"> @{displayNick(s)}</span>}
                   </span>
                   <span className="text-xs text-slate-400 shrink-0">
                     {s.hint}{s.price != null && ` · ${s.price.toLocaleString('ru-RU')}`}

@@ -1,6 +1,6 @@
 // Проверка поиска блогеров в кампании: ищем не только по имени, но и по
 // ссылке и нику после неё. Запуск: node scripts/check_blogger_search.mjs
-import { matchesQuery, nickFromUrl } from '../frontend/src/utils/bloggerSearch.ts'
+import { displayNick, matchesQuery, nickFromUrl } from '../frontend/src/utils/bloggerSearch.ts'
 
 let failed = 0
 const check = (label, got, want) => {
@@ -35,6 +35,25 @@ check('находим по телеге', matchesQuery(tgOnly, 'virginlolita'), 
 check('находим по телеге с @', matchesQuery(tgOnly, '@virginlolita'), true)
 check('чужого не находим', matchesQuery(other, 'virginlolita'), false)
 check('пустой запрос ничего не даёт', matchesQuery(virgin, '   '), false)
+
+// вторая база: инфлюенсеры. Ссылка в twitch_url, остальные площадки в social_links
+console.log('--- база инфлюенсеров ---')
+const infl = { name: 'Вирджин', url: 'https://twitch.tv/virginlolita', links: '' }
+const inflMulti = {
+  name: 'Кто-то',
+  url: 'https://twitch.tv/someone',
+  links: 'https://t.me/virginlolita, https://youtube.com/@othernick',
+}
+check('ник из twitch_url', matchesQuery(infl, 'virginlolita'), true)
+check('ник из social_links', matchesQuery(inflMulti, 'virginlolita'), true)
+check('второй ник из social_links', matchesQuery(inflMulti, 'othernick'), true)
+check('чужой ник не цепляется', matchesQuery(infl, 'othernick'), false)
+
+console.log('--- ник в подсказке ---')
+check('ник из url', displayNick(virgin), 'virginlolita')
+check('ник из телеги', displayNick(tgOnly), 'virginlolita')
+check('ник из social_links, когда url пустой', displayNick({ name: 'X', url: '', links: 'https://t.me/nickhere' }), 'nickhere')
+check('без ссылок ника нет', displayNick({ name: 'Без ссылок' }), '')
 
 console.log(failed ? `\n${failed} провалов` : '\nвсё зелёное')
 process.exit(failed ? 1 : 0)
