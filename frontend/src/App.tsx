@@ -12,6 +12,7 @@ import AnalyticsPage from './pages/AnalyticsPage'
 import CasesPage from './pages/CasesPage'
 import TasksPage from './pages/TasksPage'
 import ChatPage from './pages/ChatPage'
+import CampaignsPage from './pages/CampaignsPage'
 import StreamerProfilesPage from './pages/StreamerProfilesPage'
 import BloggerProfilesPage from './pages/BloggerProfilesPage'
 import SearchPage from './pages/SearchPage'
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="/cases" element={<CasesPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/chat" element={<ChatPage />} />
+        <Route path="/campaigns" element={<CampaignsPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/streamers" element={<StreamerProfilesPage />} />
         <Route path="/bloggers" element={<BloggerProfilesPage />} />

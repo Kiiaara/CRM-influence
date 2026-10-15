@@ -4,12 +4,15 @@ import { Link } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { integrationsApi } from '../api/integrations'
 import type { ContractStatus, Streamer } from '../api/integrations'
+import { campaignsApi } from '../api/campaigns'
 
 interface AlertItem {
   id: number
   brand: string
   streamer: string
   detail: string
+  // куда ведёт строка; по умолчанию - карточка сделки на канбане
+  to?: string
 }
 
 interface AlertGroup {
@@ -28,6 +31,7 @@ type Row = Streamer & { brand: string }
 // алерты всегда синхронны с остальными разделами без дополнительных запросов
 export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void }) {
   const { data: integrations = [] } = useQuery({ queryKey: ['integrations'], queryFn: integrationsApi.list })
+  const { data: campaigns = [] } = useQuery({ queryKey: ['campaigns'], queryFn: campaignsApi.list })
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -107,7 +111,50 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
       r => r.ord_responsible !== 'not_required' && r.ord_reporting_status === 'overdue' && r.stage !== 'cancelled'
     )
 
+    // кампании: подборку надо отдать вовремя, иначе клиент уходит
+    const liveCampaigns = campaigns.filter(c => c.status !== 'cancelled' && c.status !== 'running')
+    const campaignItems = (
+      list: typeof liveCampaigns,
+      detail: (c: (typeof liveCampaigns)[number]) => string
+    ): AlertItem[] =>
+      list.map(c => ({
+        id: c.id,
+        brand: c.advertiser_name ?? 'без бренда',
+        streamer: c.name,
+        detail: detail(c),
+        to: '/campaigns',
+      }))
+
+    const selectionOverdue = liveCampaigns.filter(
+      c => !!c.selection_due_at && dayjs(c.selection_due_at).startOf('day').isBefore(now.startOf('day'))
+    )
+    const selectionSoon = liveCampaigns.filter(c => {
+      if (!c.selection_due_at) return false
+      const diff = dayjs(c.selection_due_at).startOf('day').diff(now.startOf('day'), 'day')
+      return diff >= 0 && diff <= 2
+    })
+    const campaignDueSoon = liveCampaigns.filter(c => {
+      if (!c.campaign_due_at) return false
+      const diff = dayjs(c.campaign_due_at).startOf('day').diff(now.startOf('day'), 'day')
+      return diff >= 0 && diff <= 3
+    })
+
     return [
+      {
+        key: 'selectionOverdue',
+        title: 'Подборка просрочена',
+        items: campaignItems(selectionOverdue, c => dayjs(c.selection_due_at).format('DD.MM')),
+      },
+      {
+        key: 'selectionSoon',
+        title: 'Подборку сдавать через 1-2 дня',
+        items: campaignItems(selectionSoon, c => dayjs(c.selection_due_at).format('DD.MM')),
+      },
+      {
+        key: 'campaignDueSoon',
+        title: 'Дедлайн РК на подходе',
+        items: campaignItems(campaignDueSoon, c => dayjs(c.campaign_due_at).format('DD.MM')),
+      },
       { key: 'drafts', title: 'Черновики без суммы/даты', items: toItems(drafts, () => 'заполните карточку') },
       { key: 'deadlineSoon', title: 'Дедлайн через 1-3 дня', items: toItems(deadlineSoon, r => dayjs(r.deadline).format('DD.MM')) },
       { key: 'deadlineOverdue', title: 'Дедлайн просрочен', items: toItems(deadlineOverdue, r => dayjs(r.deadline).format('DD.MM')) },
@@ -135,7 +182,7 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
       },
       { key: 'caseMissing', title: 'Завершено, нет кейса для сайта', items: toItems(caseMissing, () => 'добавьте кейс') },
     ].filter(g => g.items.length > 0)
-  }, [rows])
+  }, [rows, campaigns])
 
   const total = groups.reduce((sum, g) => sum + g.items.length, 0)
   const hot = total > 0
@@ -182,8 +229,8 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
               </div>
               {g.items.slice(0, 6).map(item => (
                 <Link
-                  key={item.id}
-                  to={`/integrations?open=${item.id}`}
+                  key={`${g.key}-${item.id}`}
+                  to={item.to ?? `/integrations?open=${item.id}`}
                   onClick={close}
                   className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900"
                 >

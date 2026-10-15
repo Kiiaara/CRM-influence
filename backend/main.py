@@ -13,7 +13,7 @@ from models.user import User
 from models.advertiser import Advertiser
 from models.integration import Integration
 from routers import auth as auth_router
-from routers import search, tasks, users, integrations, streamer_profiles, blogger_profiles, site as site_router, workspaces as workspaces_router, advertisers as advertisers_router, chat
+from routers import search, tasks, users, integrations, streamer_profiles, blogger_profiles, site as site_router, workspaces as workspaces_router, advertisers as advertisers_router, chat, campaigns
 from scheduler import start_scheduler, stop_scheduler
 
 
@@ -539,3 +539,4 @@ app.include_router(site_router.router)
 app.include_router(workspaces_router.router)
 app.include_router(advertisers_router.router)
 app.include_router(chat.router)
+app.include_router(campaigns.router)
