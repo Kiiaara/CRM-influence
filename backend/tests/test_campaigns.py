@@ -17,8 +17,8 @@ from models.workspace import Workspace, WorkspaceMember
 from models.advertiser import Advertiser
 from models.campaign import Campaign
 
-LERA_TG = 105001
-OUTSIDER_TG = 105002
+LERA_TG = 108001
+OUTSIDER_TG = 108002
 
 
 @pytest.fixture(scope="module")
