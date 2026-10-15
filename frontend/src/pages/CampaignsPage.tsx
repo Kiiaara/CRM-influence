@@ -15,7 +15,7 @@ import { streamerProfilesApi } from '../api/streamerProfiles'
 import { integrationsApi, PAYMENT_LABELS, STAGES } from '../api/integrations'
 import type { TalentType } from '../api/integrations'
 import { tasksApi } from '../api/tasks'
-import { displayNick, matchesQuery } from '../utils/bloggerSearch'
+import { displayNick, matchesQuery, sheetRowLinks } from '../utils/bloggerSearch'
 
 const cellInput =
   'w-full bg-transparent border border-transparent hover:border-slate-200 dark:hover:border-brand-800 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-900 dark:text-slate-100 outline-none'
@@ -556,6 +556,8 @@ function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: strin
       type: 'blogger',
       url: p.url,
       telegram: p.telegram,
+      // у блогеров из гугл-таблицы url пустой, ссылка только в сырой строке
+      links: sheetRowLinks(p.sheet_row),
     }))
     // вторая база: инфлюенсеры. Раньше их в подсказках не было вообще
     const fromInfluencers: Suggestion[] = influencers.map(p => ({
@@ -637,6 +639,13 @@ function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: strin
                   </span>
                 </button>
               ))}
+            </div>
+          )}
+          {/* в базах 700+ человек, но нужного может не быть. Без этой строки кажется,
+              что поиск сломан, хотя имя просто можно вписать руками */}
+          {focus && name.trim() !== '' && shown.length === 0 && (
+            <div className="absolute z-20 left-0 right-0 mt-1 bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-800 rounded-lg shadow-lg px-3 py-2 text-sm text-slate-500 dark:text-slate-400">
+              В базах никого не нашли. Можно добавить «{name.trim()}» как есть.
             </div>
           )}
         </div>

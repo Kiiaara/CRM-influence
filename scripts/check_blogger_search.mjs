@@ -1,6 +1,6 @@
 // Проверка поиска блогеров в кампании: ищем не только по имени, но и по
 // ссылке и нику после неё. Запуск: node scripts/check_blogger_search.mjs
-import { displayNick, matchesQuery, nickFromUrl } from '../frontend/src/utils/bloggerSearch.ts'
+import { displayNick, matchesQuery, nickFromUrl, sheetRowLinks } from '../frontend/src/utils/bloggerSearch.ts'
 
 let failed = 0
 const check = (label, got, want) => {
@@ -48,6 +48,41 @@ check('ник из twitch_url', matchesQuery(infl, 'virginlolita'), true)
 check('ник из social_links', matchesQuery(inflMulti, 'virginlolita'), true)
 check('второй ник из social_links', matchesQuery(inflMulti, 'othernick'), true)
 check('чужой ник не цепляется', matchesQuery(infl, 'othernick'), false)
+
+// реальный формат прода: twitch_url хранит голый ник, телега отдельной ссылкой
+console.log('--- реальные данные из базы инфлюенсеров ---')
+const real = { name: 'anarabdullaev', url: 'anarabdullaev', links: 'https://t.me/anarabdullaevtwitch' }
+check('голый ник в twitch_url', nickFromUrl('anarabdullaev'), 'anarabdullaev')
+check('домен без пути ника не даёт', nickFromUrl('twitch.tv'), '')
+check('находим по голому нику', matchesQuery(real, 'anarabdullaev'), true)
+check('находим по куску', matchesQuery(real, 'abdul'), true)
+check('находим по нику телеги', matchesQuery(real, 'anarabdullaevtwitch'), true)
+check('ник показывается', displayNick(real), 'anarabdullaev')
+
+// у блогеров из гугл-таблицы url пустой, ссылка лежит только в sheet_row
+console.log('--- блогер из таблицы (реальная запись id=93) ---')
+const lolita = {
+  name: 'Лолита',
+  url: '',
+  telegram: '',
+  links: sheetRowLinks([
+    { h: 'Имя блогера', v: 'Лолита' },
+    { h: 'Категория', v: 'Липсинги, Пов, Бьюти' },
+    { h: 'Ссылки на медиалиц', v: 'https://t.me/virginlolita' },
+  ]),
+}
+const lolitaTt = {
+  name: 'Лолита',
+  url: '',
+  links: sheetRowLinks([{ h: 'Ссылки на медиалиц', v: 'https://www.tiktok.com/@v1rg1nlolita' }]),
+}
+check('вытащили ссылку из sheet_row', lolita.links, 'https://t.me/virginlolita')
+check('находим Лолиту по virginlolita', matchesQuery(lolita, 'virginlolita'), true)
+check('находим по куску ника', matchesQuery(lolita, 'virgin'), true)
+check('находим по имени', matchesQuery(lolita, 'Лолита'), true)
+check('тикток-ник тоже ищется', matchesQuery(lolitaTt, 'v1rg1nlolita'), true)
+check('ник в подсказке', displayNick(lolita), 'virginlolita')
+check('ссылка из поля u', sheetRowLinks([{ h: 'Ссылки', v: 'тык', u: 'https://t.me/abc' }]), 'https://t.me/abc')
 
 console.log('--- ник в подсказке ---')
 check('ник из url', displayNick(virgin), 'virginlolita')

@@ -4,9 +4,13 @@
 
 /** Достаёт ник из ссылки: youtube.com/@virginlolita, t.me/virginlolita, vk.com/virginlolita */
 export function nickFromUrl(url: string): string {
-  if (!url) return ''
+  const raw = (url ?? '').trim()
+  if (!raw) return ''
+  // в базе инфлюенсеров twitch_url хранит голый ник ("anarabdullaev"), а не ссылку:
+  // нет слеша и точки - значит это уже сам ник
+  if (!raw.includes('/') && !raw.includes('.')) return raw.replace(/^@/, '').toLowerCase()
   // отрезаем протокол, домен и query, берём последний непустой сегмент пути
-  const noProto = url.replace(/^[a-z]+:\/\//i, '')
+  const noProto = raw.replace(/^[a-z]+:\/\//i, '')
   const path = noProto.split(/[?#]/)[0]
   const parts = path.split('/').filter(Boolean)
   // первый сегмент - домен, он нам не нужен
@@ -32,6 +36,32 @@ export function searchableParts(s: Searchable): string[] {
   return [s.name, tg, ...urls, ...urls.map(nickFromUrl), nickFromUrl(tg)]
     .filter(Boolean)
     .map(v => v.toLowerCase())
+}
+
+/** Ячейка строки гугл-таблицы: заголовок, значение и ссылка, если она была гиперссылкой */
+export interface SheetCell {
+  h?: string
+  v?: string
+  u?: string
+}
+
+/** Ссылки из сырой строки таблицы. У блогеров из гугл-таблицы поля url и telegram
+ *  пустые: импорт не раскладывает колонки, всё лежит в sheet_row. Собираем оттуда. */
+export function sheetRowLinks(row: SheetCell[] | undefined): string {
+  if (!Array.isArray(row)) return ''
+  const found: string[] = []
+  for (const cell of row) {
+    // гиперссылка ячейки
+    if (cell?.u) found.push(cell.u)
+    // и ссылки прямо в тексте значения
+    const text = cell?.v ?? ''
+    if (text.includes('://') || text.includes('t.me/')) {
+      for (const part of text.split(/[\s,;|]+/)) {
+        if (part.includes('://') || part.includes('t.me/')) found.push(part)
+      }
+    }
+  }
+  return found.join(' ')
 }
 
 /** Ник для показа в подсказке: из основной ссылки, иначе из телеги или social_links */
