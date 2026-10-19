@@ -188,7 +188,7 @@ function formatAuditDate(v: string): string {
 }
 
 export function formatAuditValue(field: AuditField, value: string | null): string {
-  if (value == null) return '—'
+  if (value == null) return '-'
   const map = AUDIT_VALUE_LABELS[field]
   if (map) return map[value] ?? value
   if (field === 'amount') return `${Number(value).toLocaleString('ru-RU')} ₽`
@@ -302,6 +302,11 @@ export const integrationsApi = {
 
   async addStreamer(integrationId: number, payload: Partial<Streamer>) {
     const { data } = await api.post<Streamer>(`/integrations/${integrationId}/streamers`, payload)
+    return data
+  },
+  // одна сделка инфлюенсера по id (модалка блогера внутри рекламной кампании)
+  async getStreamer(streamerId: number) {
+    const { data } = await api.get<Streamer>(`/integrations/streamers/${streamerId}`)
     return data
   },
   async updateStreamer(streamerId: number, payload: Partial<Streamer>) {

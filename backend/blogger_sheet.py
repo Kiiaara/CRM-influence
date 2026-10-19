@@ -26,10 +26,11 @@ _SHEET_ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9_-]+)")
 
 # поле -> ключевые слова в заголовке колонки (в нижнем регистре, ищем вхождение).
 # Порядок важен: telegram проверяем раньше url, чтобы "Ссылка на ТГ" не стала ссылкой на блогера.
+# "ссылк" без окончания, чтобы ловить и "Ссылка", и "Ссылки на медиалиц".
 _HEADER_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ("telegram", ("тг", "telegram", "телеграм", "tg")),
     ("name", ("имя", "ник", "блогер", "name", "инфлюенсер")),
-    ("url", ("ссылка", "link", "url", "канал", "профиль", "аккаунт")),
+    ("url", ("ссылк", "link", "url", "канал", "профиль", "аккаунт", "медиалиц")),
     ("subscribers", ("подписчик", "subscribers", "followers", "фолловер")),
     ("avg_views", ("просмотр", "охват", "views", "reach")),
     ("price", ("стоимость", "цена", "прайс", "price")),
@@ -38,6 +39,10 @@ _HEADER_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ("manager", ("менеджер", "manager")),
     ("notes", ("комментар", "примечан", "заметк", "notes")),
 ]
+
+# Из таблицы берём только это. Прайсы лежат в тех же листах, и тянуть их в CRM
+# не нужно: база блогеров - это справочник "кто и где", а не прайс-лист.
+_IMPORT_FIELDS = {"name", "url", "telegram"}
 
 _INT_FIELDS = {"subscribers", "avg_views"}
 _FLOAT_FIELDS = {"price"}
@@ -209,8 +214,14 @@ def parse_workbook_with_tabs(content: bytes) -> tuple[list[dict], list[str]]:
         if header_idx < 0:
             continue
         platform = ws.title.strip()[:64]
-        # все подписанные колонки листа - чтобы показать вкладку в CRM так же, как в таблице
-        headers = {ci: _cell_text(c) for ci, c in enumerate(rows[header_idx]) if _cell_text(c)}
+        # в sheet_row кладём только разрешённые колонки: иначе прайс из таблицы
+        # приехал бы в CRM сырой строкой в обход белого списка
+        allowed_cols = {ci for ci, f in col_map.items() if f in _IMPORT_FIELDS}
+        headers = {
+            ci: _cell_text(c)
+            for ci, c in enumerate(rows[header_idx])
+            if _cell_text(c) and ci in allowed_cols
+        }
         found = False
         for row in rows[header_idx + 1:]:
             item: dict = {"platform": platform}
@@ -227,7 +238,7 @@ def parse_workbook_with_tabs(content: bytes) -> tuple[list[dict], list[str]]:
             item["sheet_row"] = sheet_row
             name_hyperlink = ""
             for ci, field in col_map.items():
-                if ci >= len(row):
+                if ci >= len(row) or field not in _IMPORT_FIELDS:
                     continue
                 cell = row[ci]
                 text = _cell_text(cell)
@@ -260,9 +271,10 @@ def parse_workbook_with_tabs(content: bytes) -> tuple[list[dict], list[str]]:
     return result, tabs
 
 
-# поля, которые берутся из таблицы; пустая ячейка = пустое поле (таблица - единственный источник)
-_SYNC_TEXT_FIELDS = ("platform", "url", "telegram", "category", "geo", "manager", "notes")
-_SYNC_NUM_FIELDS = ("subscribers", "avg_views", "price")
+# поля, которые берутся из таблицы; пустая ячейка = пустое поле (таблица - единственный источник).
+# Цены, подписчики и прочее сюда не входят: см. _IMPORT_FIELDS
+_SYNC_TEXT_FIELDS = ("platform", "url", "telegram")
+_SYNC_NUM_FIELDS = ()
 
 
 def upsert_bloggers(db: Session, items: list[dict], tabs: Optional[list[str]] = None) -> dict:

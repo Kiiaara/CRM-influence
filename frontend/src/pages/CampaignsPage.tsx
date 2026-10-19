@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import {
@@ -15,6 +14,7 @@ import { streamerProfilesApi } from '../api/streamerProfiles'
 import { integrationsApi, PAYMENT_LABELS, STAGES } from '../api/integrations'
 import type { TalentType } from '../api/integrations'
 import { tasksApi } from '../api/tasks'
+import CampaignBloggerModal from '../components/CampaignBloggerModal'
 import { displayNick, matchesQuery, sheetRowLinks } from '../utils/bloggerSearch'
 
 const cellInput =
@@ -349,15 +349,74 @@ function BloggersSummary({ c }: { c: Campaign }) {
   )
 }
 
+// служебное значение пункта «+ Новый рекламодатель», настоящим id быть не может
+const NEW_ADVERTISER = '__new__'
+
 function AdvertiserSelect({ c, advertisers, set }: { c: Campaign; advertisers: Advertiser[]; set: SetFn }) {
+  const qc = useQueryClient()
+  const [creating, setCreating] = useState(false)
+  const [name, setName] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+
+  // создаём рекламодателя и сразу назначаем кампании; список в разделе «Рекламодатели» обновится сам
+  const create = useMutation({
+    mutationFn: (n: string) => advertisersApi.create({ name: n }),
+    onSuccess: adv => {
+      qc.invalidateQueries({ queryKey: ['advertisers'] })
+      qc.invalidateQueries({ queryKey: ['campaigns'] })
+      set(c.id, { advertiser_id: adv.id })
+      setCreating(false); setName(''); setErr(null)
+    },
+    onError: (e: any) => setErr(e?.response?.data?.detail ?? 'Не удалось создать'),
+  })
+
+  const cancel = () => { setCreating(false); setName(''); setErr(null) }
+  const submit = () => { if (name.trim() && !create.isPending) create.mutate(name.trim()) }
+
+  if (creating) {
+    return (
+      <div className="min-w-[160px]">
+        <div className="flex gap-1">
+          <input
+            autoFocus
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') submit()
+              if (e.key === 'Escape') cancel()
+            }}
+            placeholder="Название бренда"
+            className={`${boxInput} min-w-0 !py-1`}
+          />
+          <button
+            onClick={submit}
+            disabled={!name.trim() || create.isPending}
+            title="Создать"
+            className="shrink-0 px-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm"
+          >
+            ✓
+          </button>
+          <button onClick={cancel} title="Отмена" className="shrink-0 px-2 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-brand-900 text-sm">
+            ✕
+          </button>
+        </div>
+        {err && <div className="text-xs text-red-500 mt-1">{err}</div>}
+      </div>
+    )
+  }
+
   return (
     <select
       value={c.advertiser_id ?? ''}
-      onChange={e => set(c.id, { advertiser_id: e.target.value ? Number(e.target.value) : null })}
+      onChange={e => {
+        if (e.target.value === NEW_ADVERTISER) { setCreating(true); return }
+        set(c.id, { advertiser_id: e.target.value ? Number(e.target.value) : null })
+      }}
       className={`${cellInput} min-w-[120px]`}
     >
       <option value="">-</option>
       {advertisers.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+      <option value={NEW_ADVERTISER}>+ Новый рекламодатель</option>
     </select>
   )
 }
@@ -443,6 +502,8 @@ const dateShort = (v: string | null) => (v ? dayjs(v).format('DD.MM.YY') : '-')
 
 function BloggersBlock({ c }: { c: Campaign }) {
   const qc = useQueryClient()
+  // id открытого в модалке блогера (сделки)
+  const [openId, setOpenId] = useState<number | null>(null)
   const { data: bloggers = [], isLoading } = useQuery({
     queryKey: ['campaign-bloggers', c.id],
     queryFn: () => campaignsApi.bloggers(c.id),
@@ -461,11 +522,15 @@ function BloggersBlock({ c }: { c: Campaign }) {
 
       {bloggers.length > 0 && (
         <div className="rounded-lg border border-slate-100 dark:border-brand-900 divide-y divide-slate-100 dark:divide-brand-900 mb-3">
-          <div className="hidden sm:grid grid-cols-[minmax(140px,1.6fr)_110px_120px_80px_80px_130px_28px] gap-x-3 px-3 py-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-            <span>Блогер</span><span>Сумма</span><span>Оплата</span><span>Выход</span><span>Дедлайн</span><span>Стадия</span><span />
+          <div className="hidden sm:grid grid-cols-[minmax(140px,1.6fr)_110px_120px_80px_80px_130px] gap-x-3 px-3 py-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+            <span>Блогер</span><span>Сумма</span><span>Оплата</span><span>Выход</span><span>Дедлайн</span><span>Стадия</span>
           </div>
-          {bloggers.map(b => <BloggerRow key={b.streamer_id} b={b} />)}
+          {bloggers.map(b => <BloggerRow key={b.streamer_id} b={b} onOpen={() => setOpenId(b.streamer_id)} />)}
         </div>
+      )}
+
+      {openId !== null && (
+        <CampaignBloggerModal streamerId={openId} campaignId={c.id} onClose={() => setOpenId(null)} />
       )}
 
       <AddBloggerForm
@@ -481,16 +546,19 @@ function BloggersBlock({ c }: { c: Campaign }) {
   )
 }
 
-function BloggerRow({ b }: { b: CampaignBlogger }) {
+function BloggerRow({ b, onOpen }: { b: CampaignBlogger; onOpen: () => void }) {
   const stage = STAGES.find(s => s.key === b.stage)?.label ?? b.stage
   const pay = PAYMENT_LABELS[b.payment_status] ?? b.payment_status
   const paid = b.payment_status === 'paid'
   const cancelled = b.stage === 'cancelled'
   return (
-    // строка намеренно НЕ ссылка: мисклик уводил со страницы на скрытый канбан.
-    // Переход в карточку сделки - только по стрелке справа
+    // клик по строке открывает модалку правки; на канбан отсюда не уходим
     <div
-      className={`grid grid-cols-2 sm:grid-cols-[minmax(140px,1.6fr)_110px_120px_80px_80px_130px_28px] gap-x-3 gap-y-0.5 px-3 py-2 text-sm ${
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
+      className={`grid grid-cols-2 sm:grid-cols-[minmax(140px,1.6fr)_110px_120px_80px_80px_130px] gap-x-3 gap-y-0.5 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-brand-900/40 ${
         cancelled ? 'opacity-50' : ''
       }`}
     >
@@ -507,13 +575,6 @@ function BloggerRow({ b }: { b: CampaignBlogger }) {
       <span>
         <span className="inline-block rounded-full px-2 py-0.5 text-xs bg-slate-100 text-slate-600 dark:bg-brand-900 dark:text-slate-300">{stage}</span>
       </span>
-      <Link
-        to={`/integrations?open=${b.streamer_id}`}
-        title="Открыть карточку сделки"
-        className="justify-self-end text-slate-300 hover:text-brand-600 dark:text-slate-600 dark:hover:text-brand-400"
-      >
-        ↗
-      </Link>
     </div>
   )
 }

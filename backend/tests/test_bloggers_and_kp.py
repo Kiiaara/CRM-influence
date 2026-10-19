@@ -51,15 +51,16 @@ def test_parse_workbook_reads_all_sheets():
     assert ivan["platform"] == "YouTube"
     assert ivan["telegram"] == "@ivan_games"
     assert ivan["url"] == "https://youtube.com/@ivangames"
-    assert ivan["subscribers"] == 1_200_000
-    assert ivan["price"] == 150_000
-    assert ivan["category"] == "игры"
+    # прайсы и статистика из таблицы не импортируются, база блогеров - справочник "кто и где"
+    assert "subscribers" not in ivan
+    assert "price" not in ivan
+    assert "category" not in ivan
 
     katya = by_name["katya.style"]
     assert katya["platform"] == "Instagram"
     assert katya["url"] == "https://instagram.com/katya.style"
     assert katya["telegram"] == "https://t.me/katya"
-    assert katya["avg_views"] == 200_000
+    assert "avg_views" not in katya
 
 
 def test_export_url_from_sheet_link():
@@ -153,9 +154,10 @@ def test_sheet_url_setting_syncs_tabs_and_columns(ctx, monkeypatch):
 
     ivan = next(b for b in client.get("/api/blogger-profiles", headers=h).json() if b["name"] == "Иван Игры")
     assert ivan["source"] == "sheet"
-    # все колонки листа как в таблице, по порядку, со ссылкой из гиперссылки
-    assert [c["h"] for c in ivan["sheet_row"]] == ["Блогер", "ТГ для связи", "Подписчики", "Стоимость интеграции", "Тематика"]
+    # из таблицы берём только ник и ссылки: прайсы и статистика в CRM не нужны
+    assert [c["h"] for c in ivan["sheet_row"]] == ["Блогер", "ТГ для связи"]
     assert ivan["sheet_row"][0] == {"h": "Блогер", "v": "Иван Игры", "u": "https://youtube.com/@ivangames"}
+    assert "Стоимость интеграции" not in str(ivan["sheet_row"])
 
     hv = _as(client, "blog-viewer", data["ws_id"])
     assert client.put("/api/blogger-profiles/sheet", json={"url": ""}, headers=hv).status_code == 403

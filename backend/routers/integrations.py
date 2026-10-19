@@ -562,6 +562,12 @@ def create_streamer(
     return s
 
 
+@router.get("/streamers/{streamer_id}", response_model=StreamerOut)
+def get_streamer(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    """Одна сделка по id (модалка блогера в кампании). Чужое пространство даёт 404."""
+    return _get_streamer_or_404(db, ws, streamer_id)
+
+
 @router.patch("/streamers/{streamer_id}", response_model=StreamerOut)
 def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace), user: User = Depends(get_current_user)):
     s = _get_streamer_or_404(db, ws, streamer_id)
