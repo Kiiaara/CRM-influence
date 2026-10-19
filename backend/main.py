@@ -14,7 +14,7 @@ from models.advertiser import Advertiser
 from models.integration import Integration
 from routers import auth as auth_router
 from routers import search, tasks, users, integrations, streamer_profiles, blogger_profiles, site as site_router, workspaces as workspaces_router, advertisers as advertisers_router, chat, campaigns
-from scheduler import start_scheduler, stop_scheduler
+from scheduler import start_scheduler, stop_scheduler, start_polling, stop_polling
 
 
 def _migrate_users_add_pinned():
@@ -517,7 +517,10 @@ async def lifespan(app: FastAPI):
         await set_my_commands()
     # планировщик нужен и без бота - он же подтягивает базу блогеров из гугл-таблицы
     start_scheduler(with_bot=bool(settings.auth_bot_token))
+    # long polling бота - постоянная задача вне APScheduler (без токена не стартует)
+    start_polling()
     yield
+    await stop_polling()
     stop_scheduler()
 
 

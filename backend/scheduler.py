@@ -1,7 +1,8 @@
 """APScheduler: проверяет задачи и шлёт уведомления.
 - сразу после создания задачи с assignee - notified_assigned (через хук в роутере)
 - за ~30 минут до дедлайна - один раз notified_deadline
-- бот-листенер по long-polling параллельно: фиксирует /start чтобы tg_chat_ready=True"""
+- бот-листенер по long-polling отдельной asyncio-задачей (start_polling/stop_polling):
+  фиксирует /start чтобы tg_chat_ready=True"""
 import asyncio
 import logging
 from datetime import datetime, timedelta
@@ -303,82 +304,136 @@ async def _check_hot_tasks_push():
 
 # ── Long-polling listener для /start ────────────────────────
 _tg_offset = 0
+_poll_task: asyncio.Task | None = None  # постоянная фоновая задача long polling
+_sleep = asyncio.sleep  # отдельное имя, чтобы тесты подменяли паузу backoff
 
 
-async def _poll_telegram_updates():
-    """Слушает getUpdates: /start, текстовые команды/шаги диалога, нажатия инлайн-кнопок
+def _backoff_delay(fails: int) -> float:
+    """Пауза после подряд идущих сбоев: 2, 4, 8 ... но не больше 60 секунд."""
+    return float(min(60, 2 ** max(1, min(fails, 10))))
+
+
+async def _handle_update(upd: dict):
+    """Обрабатывает один апдейт: /start, текстовые команды/шаги диалога, нажатия инлайн-кнопок
     редактирования (callback_query) и присланные документы/фото (договор, файлы ТЗ, фото кейса)."""
-    global _tg_offset
-    if not settings.auth_bot_token:
+    cq = upd.get("callback_query")
+    if cq:
+        tg_id = (cq.get("from") or {}).get("id")
+        cq_id = cq.get("id")
+        if tg_id and cq_id:
+            await notifier.answer_callback_query(cq_id)
+            await bot_dialog.handle_callback(tg_id, cq.get("data") or "")
         return
-    try:
-        async with httpx.AsyncClient(timeout=35.0) as client:
-            r = await client.get(
-                f"{settings.telegram_api_base}/bot{settings.auth_bot_token}/getUpdates",
-                params={"offset": _tg_offset, "timeout": 25, "allowed_updates": '["message","callback_query"]'},
-            )
-            if r.status_code != 200:
-                return
-            data = r.json()
-            for upd in data.get("result", []):
-                _tg_offset = upd["update_id"] + 1
 
-                cq = upd.get("callback_query")
-                if cq:
-                    tg_id = (cq.get("from") or {}).get("id")
-                    cq_id = cq.get("id")
-                    if tg_id and cq_id:
-                        await notifier.answer_callback_query(cq_id)
-                        await bot_dialog.handle_callback(tg_id, cq.get("data") or "")
-                    continue
+    msg = upd.get("message") or {}
+    from_ = msg.get("from") or {}
+    tg_id = from_.get("id")
+    if not tg_id:
+        return
 
-                msg = upd.get("message") or {}
-                from_ = msg.get("from") or {}
-                tg_id = from_.get("id")
-                if not tg_id:
-                    continue
+    doc = msg.get("document")
+    if doc:
+        await bot_dialog.handle_document(tg_id, doc.get("file_id"), doc.get("file_name"))
+        return
+    photos = msg.get("photo")
+    if photos:
+        # фото приходит несколькими размерами - берём самое большое (последнее)
+        biggest = photos[-1]
+        await bot_dialog.handle_document(tg_id, biggest.get("file_id"), f"photo_{biggest.get('file_unique_id', 'tg')}.jpg")
+        return
 
-                doc = msg.get("document")
-                if doc:
-                    await bot_dialog.handle_document(tg_id, doc.get("file_id"), doc.get("file_name"))
-                    continue
-                photos = msg.get("photo")
-                if photos:
-                    # фото приходит несколькими размерами - берём самое большое (последнее)
-                    biggest = photos[-1]
-                    await bot_dialog.handle_document(tg_id, biggest.get("file_id"), f"photo_{biggest.get('file_unique_id', 'tg')}.jpg")
-                    continue
+    text = msg.get("text") or ""
+    if text.startswith("/start"):
+        _mark_chat_ready(tg_id, from_)
+        await send_message(
+            tg_id,
+            "Привет 👋 Я буду присылать тебе уведомления по интеграциям из CRM-influence.\n\n"
+            "Жми кнопку ниже или пиши /new_integration, чтобы добавить интеграцию, "
+            "/edit_integration - чтобы отредактировать карточку, "
+            "/menu - чтобы открыть всё остальное: сделки и КП, рекламодателей, задачи, кейсы, "
+            "базы инфлюенсеров и блогеров.",
+            with_keyboard=True,
+        )
+        return
+    if text.strip() == "❌ Отменить диалог":
+        text = "/cancel"
+    elif text.strip() == "➕ Новая интеграция":
+        text = "/new_integration"
+    elif text.strip() == "✏️ Редактировать":
+        text = "/edit_integration"
+    elif text.strip() == "🔥 Горячие задачи":
+        text = "/hot_tasks"
+    elif text.strip() == "⚙️ Настройки":
+        text = "/settings"
+    elif text.strip() == "📂 Меню":
+        text = "/menu"
+    if await bot_dialog.handle_command(tg_id, text):
+        return
+    await bot_dialog.handle_message(tg_id, text)
 
-                text = msg.get("text") or ""
-                if text.startswith("/start"):
-                    _mark_chat_ready(tg_id, from_)
-                    await send_message(
-                        tg_id,
-                        "Привет 👋 Я буду присылать тебе уведомления по интеграциям из CRM-influence.\n\n"
-                        "Жми кнопку ниже или пиши /new_integration, чтобы добавить интеграцию, "
-                        "/edit_integration - чтобы отредактировать карточку, "
-                        "/menu - чтобы открыть всё остальное: сделки и КП, рекламодателей, задачи, кейсы, "
-                        "базы инфлюенсеров и блогеров.",
-                        with_keyboard=True,
-                    )
-                    continue
-                if text.strip() == "❌ Отменить диалог":
-                    text = "/cancel"
-                elif text.strip() == "➕ Новая интеграция":
-                    text = "/new_integration"
-                elif text.strip() == "✏️ Редактировать":
-                    text = "/edit_integration"
-                elif text.strip() == "🔥 Горячие задачи":
-                    text = "/hot_tasks"
-                elif text.strip() == "⚙️ Настройки":
-                    text = "/settings"
-                elif text.strip() == "📂 Меню":
-                    text = "/menu"
-                if await bot_dialog.handle_command(tg_id, text):
-                    continue
-                await bot_dialog.handle_message(tg_id, text)
-    except Exception:
-        log.exception("Ошибка getUpdates")
+
+async def _poll_once():
+    """Один long-poll запрос getUpdates (до 25 с) и обработка пачки апдейтов.
+    Сетевую ошибку и не-200 пробрасываем наверх: backoff решает цикл _poll_loop."""
+    global _tg_offset
+    async with httpx.AsyncClient(timeout=35.0) as client:
+        r = await client.get(
+            f"{settings.telegram_api_base}/bot{settings.auth_bot_token}/getUpdates",
+            params={"offset": _tg_offset, "timeout": 25, "allowed_updates": '["message","callback_query"]'},
+        )
+    if r.status_code != 200:
+        raise RuntimeError(f"getUpdates вернул HTTP {r.status_code}")
+    for upd in r.json().get("result", []):
+        _tg_offset = upd["update_id"] + 1
+        try:
+            await _handle_update(upd)
+        except Exception:
+            # сбой одного апдейта не должен терять остальные из пачки
+            log.exception("Ошибка обработки апдейта %s", upd.get("update_id"))
+
+
+async def _poll_loop():
+    """Бесконечный цикл long polling. Сбой сети не убивает задачу: пауза с backoff и новая попытка.
+    В лог пишем первый сбой серии и каждый десятый, чтобы долгая недоступность Telegram не спамила."""
+    fails = 0
+    while True:
+        try:
+            await _poll_once()
+            if fails:
+                log.info("getUpdates снова работает после %s сбоев", fails)
+            fails = 0
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            fails += 1
+            if fails == 1 or fails % 10 == 0:
+                log.warning("Ошибка getUpdates (подряд сбоев: %s): %s: %s", fails, type(e).__name__, e)
+            await _sleep(_backoff_delay(fails))
+
+
+def start_polling() -> "asyncio.Task | None":
+    """Запускает фоновую задачу long polling. Нет токена бота - не запускаем.
+    Повторный вызов при живой задаче возвращает её же, второй цикл не плодится."""
+    global _poll_task
+    if not settings.auth_bot_token:
+        return None
+    if _poll_task and not _poll_task.done():
+        return _poll_task
+    _poll_task = asyncio.get_running_loop().create_task(_poll_loop(), name="tg_poll")
+    log.info("Telegram long polling запущен")
+    return _poll_task
+
+
+async def stop_polling():
+    """Корректно останавливает задачу long polling (вызывается при shutdown)."""
+    global _poll_task
+    task, _poll_task = _poll_task, None
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 def _mark_chat_ready(tg_id: int, from_user: dict):
@@ -430,7 +485,8 @@ def start_scheduler(with_bot: bool = True):
     interval = max(15, settings.scheduler_interval_seconds)
     _scheduler.add_job(_check_deadlines, "interval", seconds=interval, id="deadlines")
     _scheduler.add_job(_notify_assigned, "interval", seconds=30, id="assigned")
-    _scheduler.add_job(_poll_telegram_updates, "interval", seconds=2, id="tg_poll", max_instances=1, coalesce=True)
+    # long polling getUpdates здесь НЕ регистрируем: он идёт отдельной задачей (start_polling в lifespan),
+    # иначе интервал короче таймаута запроса даёт спам "maximum number of running instances reached"
     # напоминания по интеграциям: за день утром (брендинг - фикс. время),
     # дальше цепочка от времени старта стрима - старт / +2ч скриншот / +20мин отчёт
     _scheduler.add_job(_check_branding_reminders, CronTrigger(hour=10, minute=0), id="branding_reminder")
