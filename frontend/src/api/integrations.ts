@@ -116,6 +116,7 @@ export interface Streamer {
   ord_reporting_status: OrdReportingStatus
   ord_link: string
   ord_report_link: string
+  erid: string
   position: number
   created_by_tg_id: number | null
   has_case: boolean

@@ -48,7 +48,7 @@ export default function WorkspaceSettingsPage() {
   const isOwner = current?.my_role === 'owner'
   const canEditTitle = current?.my_role === 'owner' || current?.my_role === 'lead'
 
-  // после сохранения обновляем список пространств: оттуда расчёт маржи берут модалка блогера и кампании
+  // после сохранения обновляем список пространств: оттуда расчёт дохода берут модалка блогера и кампании
   const saveTitle = useMutation({
     mutationFn: (value: string) => workspacesApi.update(current!.id, value),
     onSuccess: () => {
@@ -84,7 +84,7 @@ export default function WorkspaceSettingsPage() {
     <div className="p-4 sm:p-10 max-w-2xl">
       <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-slate-100 mb-2">Настройки</h1>
       <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
-        Название пространства и коэффициент, по которому считается маржа.
+        Название пространства и коэффициент, по которому считается наш доход.
       </p>
 
       <div className="space-y-4">
@@ -119,7 +119,7 @@ export default function WorkspaceSettingsPage() {
         </div>
 
         <div className={card}>
-          <label className={labelCls} htmlFor="ws-divisor">Коэффициент маржи</label>
+          <label className={labelCls} htmlFor="ws-divisor">Коэффициент дохода</label>
           <div className="flex flex-col sm:flex-row gap-2 mt-1">
             <input
               id="ws-divisor"
@@ -143,7 +143,7 @@ export default function WorkspaceSettingsPage() {
           </div>
           {!isOwner && (
             <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Коэффициент меняет только владелец пространства: от него зависят суммы блогерам и наша маржа.
+              Коэффициент меняет только владелец пространства: от него зависят суммы блогерам и наш доход.
             </div>
           )}
           {liveErr && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{liveErr}</div>}
@@ -153,7 +153,7 @@ export default function WorkspaceSettingsPage() {
           <div className="mt-4 rounded-lg bg-brand-50 dark:bg-brand-900/30 px-3 py-2 text-sm text-slate-800 dark:text-slate-200">
             {example ? (
               <>
-                При клиентской сумме {fmtRub(EXAMPLE_AMOUNT)} блогеру уйдёт {fmtRub(example.toBlogger)}, наша маржа{' '}
+                При клиентской сумме {fmtRub(EXAMPLE_AMOUNT)} блогеру уйдёт {fmtRub(example.toBlogger)}, наш доход{' '}
                 {fmtRub(example.margin)} ({fmtPercent(example.marginPercent)}%)
               </>
             ) : (
@@ -164,7 +164,7 @@ export default function WorkspaceSettingsPage() {
           <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
             Как это считается. Блогер хочет получить 100 000 на руки. Мы накидываем 25% агентских и ещё 10% сверху,
             выходит клиентская сумма 137 500. Множитель 1,25 * 1,10 = 1,375. Чтобы понять, сколько из клиентской
-            суммы наши деньги, делим её на этот коэффициент: 137 500 / 1,375 = 100 000 блогеру, остальное маржа.
+            суммы наши деньги, делим её на этот коэффициент: 137 500 / 1,375 = 100 000 блогеру, остальное - наш доход.
           </p>
         </div>
       </div>

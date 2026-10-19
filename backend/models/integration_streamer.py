@@ -62,6 +62,8 @@ class IntegrationStreamer(Base):
     # ссылки в кабинет ОРД: где получен erid и где сдан отчёт по размещению
     ord_link: Mapped[str] = mapped_column(String(512), default="")
     ord_report_link: Mapped[str] = mapped_column(String(512), default="")
+    # сам идентификатор рекламы (erid), который вставляют в текст поста
+    erid: Mapped[str] = mapped_column(String(128), default="")
 
     # флаги напоминаний бота по integration_date (чтобы не слать повторно)
     notified_branding_check: Mapped[bool] = mapped_column(default=False)

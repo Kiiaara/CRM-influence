@@ -202,6 +202,7 @@ class StreamerOut(BaseModel):
     ord_reporting_status: str
     ord_link: str = ""
     ord_report_link: str = ""
+    erid: str = ""
     position: int
     created_by_tg_id: Optional[int] = None
     has_case: bool = False
@@ -257,6 +258,7 @@ class StreamerCreate(BaseModel):
     ord_reporting_status: str = "not_submitted"
     ord_link: str = ""
     ord_report_link: str = ""
+    erid: str = ""
 
 
 class StreamerUpdate(BaseModel):
@@ -285,6 +287,7 @@ class StreamerUpdate(BaseModel):
     ord_reporting_status: Optional[str] = None
     ord_link: Optional[str] = None
     ord_report_link: Optional[str] = None
+    erid: Optional[str] = None
     position: Optional[int] = None
 
 
@@ -548,6 +551,7 @@ def create_streamer(
         ord_reporting_status=data.ord_reporting_status,
         ord_link=data.ord_link,
         ord_report_link=data.ord_report_link,
+        erid=data.erid,
         position=(max_pos.position + 1) if max_pos else 0,
         created_by_tg_id=user.tg_id,
     )

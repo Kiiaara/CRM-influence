@@ -251,6 +251,18 @@ def _migrate_streamers_add_ord_links():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN ord_report_link VARCHAR(512) DEFAULT ''"))
 
 
+def _migrate_streamers_add_erid():
+    """Добавляем поле erid (идентификатор рекламы) участнику сделки, если его нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "integration_streamers" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("integration_streamers")]
+    if "erid" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN erid VARCHAR(128) DEFAULT ''"))
+
+
 def _migrate_talent_type_and_kp_link():
     """Тип участника сделки (инфлюенсер/блогер), ссылка на КП у сделки и выбранное в боте пространство."""
     from sqlalchemy import text, inspect
@@ -485,6 +497,7 @@ async def lifespan(app: FastAPI):
     _migrate_streamers_add_time_and_creator()
     _migrate_streamers_add_case_reminder()
     _migrate_streamers_add_ord_links()
+    _migrate_streamers_add_erid()
     _migrate_talent_type_and_kp_link()
     _migrate_bloggers_sheet_columns()
     _migrate_case_studies_site_fields()

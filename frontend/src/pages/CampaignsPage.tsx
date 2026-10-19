@@ -511,7 +511,7 @@ function BloggersBlock({ c }: { c: Campaign }) {
     queryFn: () => campaignsApi.bloggers(c.id),
   })
 
-  // суммарная маржа кампании: тот же коэффициент пространства, что и в модалке блогера
+  // суммарный доход (маржа) кампании: тот же коэффициент пространства, что и в модалке блогера
   const { current } = useWorkspace()
   const total = calcMargin(c.bloggers_total, current?.margin_divisor)
 
@@ -519,11 +519,11 @@ function BloggersBlock({ c }: { c: Campaign }) {
     <div className="min-w-0">
       <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
         Блогеры кампании {bloggers.length > 0 && `(${bloggers.length})`}
-        {/* клиентская сумма и маржа по живым блогерам (отменённые бэк уже исключил) */}
+        {/* клиентская сумма и наш доход по живым блогерам (отменённые бэк уже исключил) */}
         {total && c.bloggers_count > 0 && (
           <span className="font-normal">
             {' · '}Клиентская сумма: {fmtMoney(c.bloggers_total, c.currency)}
-            {' · '}Маржа: <span className="font-medium text-emerald-600 dark:text-emerald-400">{fmtMoney(total.margin, c.currency)} ({fmtPercent(total.marginPercent)}%)</span>
+            {' · '}Наш доход: <span className="font-medium text-emerald-600 dark:text-emerald-400">{fmtMoney(total.margin, c.currency)} ({fmtPercent(total.marginPercent)}%)</span>
           </span>
         )}
       </div>

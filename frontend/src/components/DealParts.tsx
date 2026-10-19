@@ -92,6 +92,57 @@ export function BriefFiles({ streamerId }: { streamerId: number }) {
   )
 }
 
+// поле erid: сам идентификатор рекламы, рядом кнопка "копировать" (erid вставляют в текст поста)
+export function ErridInput({
+  value,
+  onChange,
+  onBlur,
+  inputClassName = 'bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100',
+}: {
+  value: string
+  onChange: (v: string) => void
+  // сохранение по уходу из поля (модалка блогера кампании сохраняет текст на blur)
+  onBlur?: (v: string) => void
+  inputClassName?: string
+}) {
+  const [copied, setCopied] = useState(false)
+  const text = (value ?? '').trim()
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // буфер недоступен (http без разрешения): ничего не ломаем, текст можно выделить руками
+    }
+  }
+
+  return (
+    <div>
+      <label className="text-xs text-slate-500 dark:text-slate-400">erid</label>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={value ?? ''}
+          placeholder="Вставьте erid"
+          onChange={e => onChange(e.target.value)}
+          onBlur={e => onBlur?.(e.target.value)}
+          className={`flex-1 min-w-0 ${inputClassName}`}
+        />
+        <button
+          type="button"
+          onClick={copy}
+          disabled={!text}
+          className="shrink-0 px-3 py-2 rounded-lg border border-slate-200 dark:border-brand-800 text-sm text-slate-500 dark:text-slate-300 hover:border-brand-400 disabled:opacity-40 disabled:hover:border-slate-200"
+        >
+          {copied ? 'Скопировано' : 'Копировать'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // поле ссылки на ОРД: рядом с инпутом кнопка "открыть", чтобы не копировать руками
 export function OrdLinkInput({
   label,

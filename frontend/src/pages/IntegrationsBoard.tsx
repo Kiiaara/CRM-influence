@@ -35,7 +35,7 @@ import type {
 import { advertisersApi } from '../api/advertisers'
 import { streamerProfilesApi } from '../api/streamerProfiles'
 import { bloggerProfilesApi } from '../api/bloggerProfiles'
-import { BriefFiles, OrdLinkInput } from '../components/DealParts'
+import { BriefFiles, ErridInput, OrdLinkInput } from '../components/DealParts'
 
 const PAYMENT_COLORS: Record<PaymentStatus, string> = {
   not_invoiced: 'bg-slate-100 text-slate-600 dark:bg-brand-900 dark:text-slate-300',
@@ -331,7 +331,7 @@ function BrandPickerModal({
             onChange={e => setSelectedId(Number(e.target.value))}
             className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
           >
-            <option value="">— выбери бренд —</option>
+            <option value="">- выбери бренд -</option>
             {integrations.map(it => (
               <option key={it.id} value={it.id}>{it.brand} ({it.streamers.length})</option>
             ))}
@@ -358,7 +358,7 @@ function BrandPickerModal({
                 onChange={e => setSelectedAdvId(Number(e.target.value))}
                 className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
               >
-                <option value="">— выбери рекламодателя —</option>
+                <option value="">- выбери рекламодателя -</option>
                 {advertisers.map(a => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
@@ -516,7 +516,7 @@ function BulkStreamersModal({
             <input type="number" value={commonTax} onChange={e => setCommonTax(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100" />
           </div>
         </div>
-        <p className="text-xs text-slate-400 mb-4">Сумму, стадию и статус контента каждому выставишь отдельно в его карточке — они у всех разные.</p>
+        <p className="text-xs text-slate-400 mb-4">Сумму, стадию и статус контента каждому выставишь отдельно в его карточке - они у всех разные.</p>
 
         {current.length > 0 && (
           <div className="mb-4">
@@ -544,7 +544,7 @@ function BulkStreamersModal({
         <div>
           <label className="text-xs text-slate-500 dark:text-slate-400">
             Или впиши {talentType === 'streamer' ? 'новых инфлюенсеров' : 'новых блогеров'} (через запятую или с новой строки)
-            {talentType === 'streamer' && legacyNames.length > 0 && ' — уже вводили: ' + legacyNames.slice(0, 5).join(', ')}
+            {talentType === 'streamer' && legacyNames.length > 0 && ' - уже вводили: ' + legacyNames.slice(0, 5).join(', ')}
           </label>
           <textarea
             value={manualNames[talentType]}
@@ -727,6 +727,7 @@ export function StreamerModal({
       ord_responsible: form.ord_responsible,
       ord_status: form.ord_status,
       ord_reporting_status: form.ord_reporting_status,
+      erid: (form.erid ?? '').trim(),
       ord_link: form.ord_link,
       ord_report_link: form.ord_report_link,
     }
@@ -832,7 +833,7 @@ export function StreamerModal({
               />
             </div>
             <div>
-              <label className="text-xs text-slate-500 dark:text-slate-400">Время старта стрима (если есть)</label>
+              <label className="text-xs text-slate-500 dark:text-slate-400">Время запуска</label>
               <input
                 type="time"
                 value={form.integration_time ?? ''}
@@ -849,7 +850,7 @@ export function StreamerModal({
               onChange={e => setForm({ ...form, content_status: (e.target.value || null) as ContentStatus | null })}
               className="w-full bg-slate-50 dark:bg-brand-950/60 border border-slate-200 dark:border-brand-800 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100"
             >
-              <option value="">— не задан —</option>
+              <option value="">- не задан -</option>
               {Object.entries(CONTENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
@@ -894,6 +895,13 @@ export function StreamerModal({
             </div>
             {form.ord_responsible !== 'not_required' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                {/* сначала сам erid, потом где его получили; тот же компонент, что в модалке блогера */}
+                <div className="sm:col-span-2">
+                  <ErridInput
+                    value={form.erid ?? ''}
+                    onChange={v => setForm({ ...form, erid: v })}
+                  />
+                </div>
                 <OrdLinkInput
                   label="Ссылка на ОРД"
                   placeholder="https://ord.vk.com/..."
@@ -1086,7 +1094,7 @@ export function StreamerModal({
               {payments.map((p: Payment) => (
                 <div key={p.id} className="flex items-center justify-between text-sm">
                   <span className="text-slate-700 dark:text-slate-300">
-                    {p.amount.toLocaleString('ru-RU')} {p.currency} — {new Date(p.paid_at).toLocaleDateString('ru-RU')}
+                    {p.amount.toLocaleString('ru-RU')} {p.currency} - {new Date(p.paid_at).toLocaleDateString('ru-RU')}
                     {p.comment && <span className="text-slate-400"> ({p.comment})</span>}
                   </span>
                   <button onClick={() => removePayment.mutate(p.id)} className="text-slate-300 hover:text-red-500 text-xs">×</button>
@@ -1291,15 +1299,15 @@ export function CaseStudyCard({
         <textarea value={value('description')} placeholder={placeholder('description')} onChange={e => setValue('description', e.target.value)} rows={2} className={fieldCls} />
       </div>
       <div>
-        <label className={labelCls}>Что сделано — каждый пункт с новой строки</label>
+        <label className={labelCls}>Что сделано - каждый пункт с новой строки</label>
         <textarea value={value('what_was_done')} placeholder={placeholder('what_was_done')} onChange={e => setValue('what_was_done', e.target.value)} rows={3} className={fieldCls} />
       </div>
       <div>
-        <label className={labelCls}>Результат — каждый пункт с новой строки</label>
+        <label className={labelCls}>Результат - каждый пункт с новой строки</label>
         <textarea value={value('result')} placeholder={placeholder('result')} onChange={e => setValue('result', e.target.value)} rows={3} className={fieldCls} />
       </div>
       {lang !== 'ru' && (
-        <div className="text-[11px] text-slate-400">Пустое поле перевода — на сайте покажется русский текст.</div>
+        <div className="text-[11px] text-slate-400">Пустое поле перевода - на сайте покажется русский текст.</div>
       )}
 
       {dirty && (

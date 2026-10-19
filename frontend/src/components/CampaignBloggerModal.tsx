@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   integrationsApi,
-  describeAuditEntry,
   CONTENT_LABELS,
   CONTRACT_STATUS_LABELS,
   ORD_REPORTING_LABELS,
@@ -26,7 +25,7 @@ import type {
 } from '../api/integrations'
 import { useWorkspace } from '../workspaceContext'
 import { calcMargin, fmtPercent } from '../utils/margin'
-import { BriefFiles, OrdLinkInput } from './DealParts'
+import { BriefFiles, ErridInput, OrdLinkInput } from './DealParts'
 
 const fmtMoney = (n: number, currency: string) => `${Math.round(n).toLocaleString('ru-RU')} ${currency}`
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -52,6 +51,7 @@ type Form = {
   ord_responsible: OrdResponsible
   ord_status: OrdStatus
   ord_reporting_status: OrdReportingStatus
+  erid: string
   ord_link: string
   ord_report_link: string
   contract_status: ContractStatus
@@ -92,6 +92,7 @@ const toForm = (s: Streamer): Form => ({
   ord_responsible: s.ord_responsible,
   ord_status: s.ord_status,
   ord_reporting_status: s.ord_reporting_status,
+  erid: s.erid ?? '',
   ord_link: s.ord_link ?? '',
   ord_report_link: s.ord_report_link ?? '',
   contract_status: s.contract_status,
@@ -176,7 +177,6 @@ function PaymentsBlock({
     },
     onSuccess: fresh => {
       qc.invalidateQueries({ queryKey: key })
-      qc.invalidateQueries({ queryKey: ['audit-log', streamerId] })
       onChanged(fresh)
       setAmount('')
       setComment('')
@@ -246,27 +246,6 @@ function PaymentsBlock({
   )
 }
 
-// История изменений по сделке. Монтируется только при раскрытии - запрос уходит по требованию.
-function AuditBlock({ streamerId }: { streamerId: number }) {
-  const { data = [], isLoading } = useQuery({
-    queryKey: ['audit-log', streamerId],
-    queryFn: () => integrationsApi.auditLog(streamerId),
-  })
-  if (isLoading) return <div className="text-xs text-slate-400">Загрузка...</div>
-  if (data.length === 0) return <div className="text-xs text-slate-400">Изменений ещё не было</div>
-  return (
-    <div className="space-y-1.5 max-h-56 overflow-y-auto">
-      {data.map(e => (
-        <div key={e.id} className="text-xs text-slate-600 dark:text-slate-300">
-          <span className="text-slate-400">{new Date(e.created_at).toLocaleString('ru-RU')}</span>
-          {e.author_label && <span className="text-slate-400"> · {e.author_label}</span>}
-          <div>{describeAuditEntry(e)}</div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // Модалка блогера внутри кампании: полная карточка сделки, как на канбане, без захода туда.
 // Каждое поле сохраняется само (select - сразу, остальные - на blur),
 // поэтому закрытие модалки данные не теряет.
@@ -307,7 +286,6 @@ export default function CampaignBloggerModal({
     mutationFn: (p: Partial<Streamer>) => integrationsApi.updateStreamer(streamerId, p),
     onSuccess: s => {
       qc.setQueryData(['streamer', streamerId], s)
-      qc.invalidateQueries({ queryKey: ['audit-log', streamerId] })
       refreshLists()
       setErr(null)
       setSavedAt(true)
@@ -320,7 +298,6 @@ export default function CampaignBloggerModal({
     mutationFn: (file: File) => integrationsApi.uploadContract(streamerId, file),
     onSuccess: s => {
       qc.setQueryData(['streamer', streamerId], s)
-      qc.invalidateQueries({ queryKey: ['audit-log', streamerId] })
       refreshLists()
       setErr(null)
     },
@@ -426,7 +403,7 @@ export default function CampaignBloggerModal({
       onMouseDown={e => { pressedOnBackdrop.current = e.target === e.currentTarget }}
       onClick={e => { if (e.target === e.currentTarget && pressedOnBackdrop.current) tryClose() }}
     >
-      <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-4xl w-full p-4 sm:p-6 max-h-[92vh] overflow-y-auto">
+      <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-4xl w-full p-4 sm:p-6 max-h-[92vh] overflow-y-auto scroll-pb-20">
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="min-w-0">
             <div className="text-xs text-slate-400">Блогер кампании</div>
@@ -448,8 +425,9 @@ export default function CampaignBloggerModal({
 
         {form && data && (
           // на десктопе две колонки, на мобилке одна (порядок: деньги, оплаты, ОРД, ТЗ, прочее, договор)
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-            <div className="space-y-4 min-w-0">
+          // pb-16: запас под высоту липкого подвала, чтобы последнее поле не пряталось под ним
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start pb-16">
+            <div className="flex flex-col gap-4 min-w-0">
               <Section title="Деньги и сроки" defaultOpen>
                 <div className="grid grid-cols-[1fr_110px] gap-3">
                   <div>
@@ -470,7 +448,7 @@ export default function CampaignBloggerModal({
                       <span className="font-medium text-slate-900 dark:text-slate-100">{fmtMoney(calc.toBlogger, form.currency)}</span>
                     </div>
                     <div className="flex justify-between gap-3">
-                      <span className="text-slate-500 dark:text-slate-400">Наша маржа</span>
+                      <span className="text-slate-500 dark:text-slate-400">Наш доход</span>
                       <span className="font-medium text-emerald-600 dark:text-emerald-400">
                         {fmtMoney(calc.margin, form.currency)} ({fmtPercent(calc.marginPercent)}%)
                       </span>
@@ -495,7 +473,7 @@ export default function CampaignBloggerModal({
                     {textInput('integration_date', 'date')}
                   </div>
                   <div>
-                    <label className={labelCls}>Время старта стрима (если есть)</label>
+                    <label className={labelCls}>Время запуска</label>
                     {textInput('integration_time', 'time')}
                   </div>
                   <div>
@@ -536,6 +514,13 @@ export default function CampaignBloggerModal({
                 </div>
                 {form.ord_responsible !== 'not_required' && (
                   <div className="grid grid-cols-1 gap-3">
+                    {/* сначала сам erid, потом где его получили */}
+                    <ErridInput
+                      value={form.erid}
+                      onChange={v => patch({ erid: v })}
+                      onBlur={v => commit('erid', v.trim())}
+                      inputClassName={field}
+                    />
                     <OrdLinkInput
                       label="Ссылка на ОРД"
                       placeholder="https://ord.vk.com/..."
@@ -557,7 +542,7 @@ export default function CampaignBloggerModal({
               </Section>
             </div>
 
-            <div className="space-y-4 min-w-0">
+            <div className="flex flex-col gap-4 min-w-0">
               <Section title="Контент и ТЗ" defaultOpen>
                 <div>
                   <label className={labelCls}>Статус контента</label>
@@ -640,10 +625,6 @@ export default function CampaignBloggerModal({
                       </div>
                     )
                   })()}
-                </Section>
-
-                <Section title="История изменений" nested>
-                  <AuditBlock streamerId={streamerId} />
                 </Section>
               </Section>
 
