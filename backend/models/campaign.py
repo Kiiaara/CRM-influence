@@ -36,5 +36,9 @@ class Campaign(Base):
     # ссылка на КП (гугл-таблица с расчётом) по всей кампании
     kp_url: Mapped[str] = mapped_column(String(512), default="")
 
+    # когда РК отметили завершённой (кнопка "Готово"); null = активная.
+    # Отдельное поле, а не статус: так видно, на какой стадии РК закончилась
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

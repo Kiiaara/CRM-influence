@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { bloggerProfilesApi } from '../api/bloggerProfiles'
 import type { BloggerProfile, SheetCell, SheetInfo, SheetSyncResult } from '../api/bloggerProfiles'
 import { authApi } from '../api/auth'
+import { ownBloggersApi } from '../api/ownBloggers'
+import OwnBloggersTab from '../components/OwnBloggersTab'
 
 function errorText(e: unknown, fallback: string): string {
   const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
@@ -30,7 +32,7 @@ function formatSyncTime(iso: string): string {
 
 // ячейка листа: ссылка, если в таблице была гиперссылка или текст - URL
 function SheetCellView({ cell }: { cell?: SheetCell }) {
-  if (!cell) return <span className="text-slate-300 dark:text-slate-600">—</span>
+  if (!cell) return <span className="text-slate-300 dark:text-slate-600">-</span>
   const href = cell.u || (/^https?:\/\//.test(cell.v) ? cell.v : null) || telegramHref(cell.v.startsWith('@') ? cell.v : '')
   if (href) {
     return (
@@ -50,7 +52,40 @@ function matches(b: BloggerProfile, q: string): boolean {
     || b.sheet_row.some(c => c.v.toLowerCase().includes(s))
 }
 
+// раздел «База блогеров»: две вкладки верхнего уровня. Внутри «Базы агентства» свои вкладки-площадки (листы таблицы)
 export default function BloggerProfilesPage() {
+  const [base, setBase] = useState<'agency' | 'own'>('agency')
+  const { data: own = [] } = useQuery({ queryKey: ['own-bloggers'], queryFn: ownBloggersApi.list })
+  const { data: agency = [] } = useQuery({ queryKey: ['blogger-profiles'], queryFn: bloggerProfilesApi.list })
+
+  return (
+    <div className="p-4 sm:p-10">
+      <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-slate-100 mb-4">База блогеров</h1>
+      <div className="flex gap-1 bg-slate-100 dark:bg-brand-900 rounded-lg p-1 w-fit mb-5">
+        {([
+          ['agency', 'База агентства', agency.length],
+          ['own', 'Наши блогеры', own.length],
+        ] as const).map(([key, label, count]) => (
+          <button
+            key={key}
+            onClick={() => setBase(key)}
+            className={`px-4 py-1.5 rounded-md text-sm ${
+              base === key
+                ? 'bg-white dark:bg-brand-950 text-brand-700 dark:text-brand-300 font-medium shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+            }`}
+          >
+            {label} <span className="text-xs text-slate-400">{count}</span>
+          </button>
+        ))}
+      </div>
+      {base === 'agency' ? <AgencyBloggers /> : <OwnBloggersTab />}
+    </div>
+  )
+}
+
+// база агентства: тянется из гугл-таблицы, в CRM только для чтения
+function AgencyBloggers() {
   const qc = useQueryClient()
   const { data: bloggers = [] } = useQuery({ queryKey: ['blogger-profiles'], queryFn: bloggerProfilesApi.list })
   const { data: sheet } = useQuery({ queryKey: ['blogger-sheet'], queryFn: bloggerProfilesApi.sheetInfo })
@@ -116,7 +151,7 @@ export default function BloggerProfilesPage() {
   const lastSync = sheet?.last_sync
   const emptyText = bloggers.length > 0
     ? 'Ничего не найдено'
-    : sheetUrl ? 'Блогеров пока нет — нажми «Обновить сейчас» или проверь таблицу' : 'Блогеров нет — вставь ссылку на гугл-таблицу выше'
+    : sheetUrl ? 'Блогеров пока нет - нажми «Обновить сейчас» или проверь таблицу' : 'Блогеров нет - вставь ссылку на гугл-таблицу выше'
   const th = 'text-left px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap'
   const td = 'px-3 py-2 text-slate-600 dark:text-slate-300'
 
@@ -127,10 +162,9 @@ export default function BloggerProfilesPage() {
   )
 
   return (
-    <div className="p-4 sm:p-10">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-        <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-slate-100">База блогеров</h1>
-        <div className="flex flex-wrap gap-2">
+    <div>
+      {sheetUrl && (
+        <div className="flex flex-wrap gap-2 mb-4">
           {sheetUrl && (
             <a href={sheetUrl} target="_blank" rel="noreferrer" className={btnGhost}>📗 Таблица блогеров</a>
           )}
@@ -140,7 +174,7 @@ export default function BloggerProfilesPage() {
             </button>
           )}
         </div>
-      </div>
+      )}
 
       {(canEdit || lastSync) && (
         <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-3 mb-4 text-sm">
@@ -166,7 +200,7 @@ export default function BloggerProfilesPage() {
           ) : (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-500 dark:text-slate-400">
               <span>
-                Блогеры подтягиваются только из таблицы: добавлять, править и удалять их — в самой таблице. Листы = вкладки ниже.
+                Блогеры подтягиваются только из таблицы: добавлять, править и удалять их - в самой таблице. Листы = вкладки ниже.
                 {sheet && sheet.sync_minutes > 0 && ` Обновляется сама каждые ${sheet.sync_minutes} мин.`}
               </span>
               {lastSync && !lastSync.error && <span>Последнее обновление: {formatSyncTime(lastSync.at)}.</span>}
@@ -279,15 +313,15 @@ export default function BloggerProfilesPage() {
               return (
                 <tr key={b.id} className="border-t border-slate-100 dark:border-brand-900 hover:bg-slate-50 dark:hover:bg-brand-900/30">
                   <td className="px-3 py-2 text-slate-900 dark:text-slate-100 cursor-pointer whitespace-nowrap" onClick={() => setEditing(b)}>{b.name}</td>
-                  <td className={`${td} whitespace-nowrap`}>{b.platform || '—'}</td>
+                  <td className={`${td} whitespace-nowrap`}>{b.platform || '-'}</td>
                   <td className="px-3 py-2 max-w-[220px] truncate">
-                    {b.url ? <a href={b.url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">{b.url}</a> : '—'}
+                    {b.url ? <a href={b.url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">{b.url}</a> : '-'}
                   </td>
                   <td className={`${td} max-w-[160px] truncate`}>
-                    {tg ? <a href={tg} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">{b.telegram}</a> : (b.telegram || '—')}
+                    {tg ? <a href={tg} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">{b.telegram}</a> : (b.telegram || '-')}
                   </td>
-                  <td className={`${td} whitespace-nowrap`}>{b.subscribers != null ? b.subscribers.toLocaleString('ru-RU') : '—'}</td>
-                  <td className={`${td} whitespace-nowrap`}>{b.price != null ? `${b.price.toLocaleString('ru-RU')} ₽` : '—'}</td>
+                  <td className={`${td} whitespace-nowrap`}>{b.subscribers != null ? b.subscribers.toLocaleString('ru-RU') : '-'}</td>
+                  <td className={`${td} whitespace-nowrap`}>{b.price != null ? `${b.price.toLocaleString('ru-RU')} ₽` : '-'}</td>
                   {actions(b)}
                 </tr>
               )
@@ -317,7 +351,7 @@ function BloggerModal({ blogger, sheetUrl, onClose }: { blogger: BloggerProfile;
       <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-2xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <h2 className="text-xl font-semibold mb-1 text-slate-900 dark:text-slate-100">{blogger.name}</h2>
         <p className="text-xs text-slate-400 mb-4">
-          {blogger.platform && `Лист «${blogger.platform}». `}Изменить данные можно только в гугл-таблице — CRM подтянет их сама.
+          {blogger.platform && `Лист «${blogger.platform}». `}Изменить данные можно только в гугл-таблице - CRM подтянет их сама.
         </p>
 
         <dl className="grid grid-cols-1 sm:grid-cols-[minmax(0,180px)_1fr] gap-x-3 gap-y-1.5 text-sm">

@@ -87,6 +87,8 @@ class CampaignOut(BaseModel):
     owner_label: Optional[str] = None
     notes: str
     kp_url: str = ""
+    # дата завершения РК; null = активная
+    archived_at: Optional[datetime] = None
     # счётчик и сумма по живым (не отменённым) блогерам кампании, чтобы видеть без раскрытия
     bloggers_count: int = 0
     bloggers_total: float = 0
@@ -143,6 +145,8 @@ class CampaignUpdate(BaseModel):
     owner_tg_id: Optional[int] = None
     notes: Optional[str] = None
     kp_url: Optional[str] = None
+    # true - отметить завершённой (проставит дату), false - вернуть в активные
+    archived: Optional[bool] = None
 
 
 def _stats(db: Session, campaign_ids: List[int]) -> dict:
@@ -187,13 +191,15 @@ def _blogger_out(s: IntegrationStreamer) -> CampaignBloggerOut:
 
 
 @router.get("", response_model=List[CampaignOut])
-def list_campaigns(db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
-    rows = (
-        db.query(Campaign)
-        .filter(Campaign.workspace_id == ws.id)
-        .order_by(Campaign.created_at.desc())
-        .all()
-    )
+def list_campaigns(
+    archived: bool = False,
+    db: Session = Depends(get_db),
+    ws: Workspace = Depends(get_current_workspace),
+):
+    """По умолчанию только активные; archived=true - только завершённые."""
+    q = db.query(Campaign).filter(Campaign.workspace_id == ws.id)
+    q = q.filter(Campaign.archived_at.is_not(None) if archived else Campaign.archived_at.is_(None))
+    rows = q.order_by(Campaign.created_at.desc()).all()
     stats = _stats(db, [c.id for c in rows])
     return [_out(db, c, stats) for c in rows]
 
@@ -251,6 +257,13 @@ def update_campaign(
         raise HTTPException(400, "Название не может быть пустым")
 
     for k, v in data.model_dump(exclude_unset=True).items():
+        if k == "archived":
+            # "Готово" ставит дату один раз (повтор её не сдвигает), "Вернуть" снимает; null игнорируем
+            if v is True and c.archived_at is None:
+                c.archived_at = datetime.now()
+            elif v is False:
+                c.archived_at = None
+            continue
         if k == "kp_url":
             v = (v or "").strip()
         setattr(c, k, v.strip() if k == "name" and isinstance(v, str) else v)

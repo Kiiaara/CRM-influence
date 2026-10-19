@@ -15,4 +15,5 @@ from .brand_contact import BrandContact  # noqa: F401
 from .discussion_message import DiscussionMessage  # noqa: F401
 from .audit_log import AuditLogEntry  # noqa: F401
 from .blogger_profile import BloggerProfile  # noqa: F401
+from .own_blogger import OwnBlogger  # noqa: F401
 from .app_setting import AppSetting  # noqa: F401

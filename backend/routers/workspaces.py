@@ -58,7 +58,14 @@ class WorkspaceOut(BaseModel):
     my_role: str = "viewer"
     # Numeric в БД отдаёт Decimal, наружу всегда число; None в старой строке = дефолт
     margin_divisor: float = DEFAULT_MARGIN_DIVISOR
+    # показывать ли раздел "Кейсы"; None в старой строке = включено
+    cases_enabled: bool = True
     model_config = {"from_attributes": True}
+
+    @field_validator("cases_enabled", mode="before")
+    @classmethod
+    def _cases_default(cls, v):
+        return True if v is None else bool(v)
 
     @field_validator("margin_divisor", mode="before")
     @classmethod
@@ -71,9 +78,10 @@ class WorkspaceCreate(BaseModel):
 
 
 class WorkspaceUpdate(BaseModel):
-    # оба поля необязательны: старый клиент шлёт только title
+    # все поля необязательны: старый клиент шлёт только title
     title: Optional[str] = None
     margin_divisor: Optional[float] = None
+    cases_enabled: Optional[bool] = None
 
 
 class MemberOut(BaseModel):
@@ -132,7 +140,7 @@ def update_workspace(
     ws = db.get(Workspace, workspace_id)
     if not ws:
         raise HTTPException(404)
-    if data.title is None and data.margin_divisor is None:
+    if data.title is None and data.margin_divisor is None and data.cases_enabled is None:
         raise HTTPException(400, "Нечего менять")
     if data.title is not None:
         title = data.title.strip()
@@ -148,6 +156,11 @@ def update_workspace(
         if not math.isfinite(d) or d <= 0 or d >= MAX_MARGIN_DIVISOR:
             raise HTTPException(400, f"Коэффициент должен быть больше 0 и меньше {MAX_MARGIN_DIVISOR}")
         ws.margin_divisor = d
+    if data.cases_enabled is not None:
+        # видимость раздела - настройка пространства, как и коэффициент: только владелец
+        if role != "owner":
+            raise HTTPException(403, "Показ раздела Кейсы меняет только владелец пространства")
+        ws.cases_enabled = data.cases_enabled
     ws.updated_at = datetime.now()
     db.commit()
     db.refresh(ws)

@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, DateTime, Integer, BigInteger, ForeignKey, Numeric
+from sqlalchemy import String, DateTime, Integer, BigInteger, Boolean, ForeignKey, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 from database import Base
 
@@ -14,6 +14,8 @@ class Workspace(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
     # делитель клиентской суммы: блогеру = клиентская / margin_divisor (25% комиссии и 10% сверху = 1.375)
     margin_divisor: Mapped[float] = mapped_column(Numeric(6, 4), default=1.375)
+    # показывать ли раздел "Кейсы" в меню и напоминания о кейсах (не у всех пространств они нужны)
+    cases_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class WorkspaceMember(Base):

@@ -18,6 +18,7 @@ from models.audit_log import AuditLogEntry
 from models.integration import Integration
 from models.integration_streamer import IntegrationStreamer
 from models.user import User
+from models.workspace import Workspace
 import notifier
 from notifier import send_message
 
@@ -196,9 +197,9 @@ def _current_value_label(s: IntegrationStreamer, field: str) -> str:
     v = getattr(s, field)
     if field in ENUM_FIELDS:
         labels, _ = ENUM_FIELDS[field]
-        return "—" if v is None else labels.get(v, v)
+        return "-" if v is None else labels.get(v, v)
     if v is None:
-        return "—"
+        return "-"
     if isinstance(v, datetime):
         return v.strftime("%d.%m.%Y")
     return str(v)[:24]
@@ -248,7 +249,9 @@ def compute_hot_tasks(db: Session, workspace_id: int) -> tuple[int, str]:
         s for s in rows
         if s.payment_status not in ("paid", "not_invoiced") and s.deadline and s.stage != "cancelled" and _day_start(s.deadline) < today
     ]
-    case_missing = [s for s in rows if s.stage == "done" and not s.has_case]
+    # в пространстве с выключенным разделом Кейсы напоминание про кейс не показываем
+    ws = db.get(Workspace, workspace_id)
+    case_missing = [] if (ws and ws.cases_enabled is False) else [s for s in rows if s.stage == "done" and not s.has_case]
 
     sections = [
         ("📝 Черновики без суммы/даты", drafts, lambda s: "заполните карточку"),
@@ -269,7 +272,7 @@ def compute_hot_tasks(db: Session, workspace_id: int) -> tuple[int, str]:
             continue
         lines.append(f"<b>{title}</b> · {len(items)}")
         for s in items[:8]:
-            lines.append(f"  {s.integration.brand} × {s.streamer_name} — {detail_fn(s)}")
+            lines.append(f"  {s.integration.brand} × {s.streamer_name} - {detail_fn(s)}")
         if len(items) > 8:
             lines.append(f"  и ещё {len(items) - 8}…")
         lines.append("")
@@ -292,7 +295,7 @@ async def send_hot_tasks(tg_id: int):
 # ---------- настройки уведомлений: сводка "Горячие задачи" (интервал, тихие часы) ----------
 
 INTERVAL_CHOICES = (1, 2, 4, 6, 12, 24)
-_QUIET_HOURS_RE = re.compile(r"^(\d{1,2})\s*[-–—]\s*(\d{1,2})$")
+_QUIET_HOURS_RE = re.compile(r"^(\d{1,2})\s*[-–-]\s*(\d{1,2})$")
 
 
 def in_quiet_hours(now: datetime, start: Optional[int], end: Optional[int]) -> bool:
@@ -476,7 +479,7 @@ async def _show_category_menu(tg_id: int, sid: int):
             {"text": "✅ Готово", "callback_data": "e:done"},
         ])
         kind = "📱 блогер" if s.talent_type == "blogger" else "🎮 инфлюенсер"
-        amount = f"{float(s.amount):,.0f}".replace(",", " ") if s.amount is not None else "—"
+        amount = f"{float(s.amount):,.0f}".replace(",", " ") if s.amount is not None else "-"
         await send_message(
             tg_id,
             f"<b>{bot_editor.esc(it.brand)} × {bot_editor.esc(s.streamer_name)}</b> ({kind})\n"

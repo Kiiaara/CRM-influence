@@ -11,6 +11,8 @@ export interface Workspace {
   my_role: WorkspaceRole
   // делитель клиентской суммы (блогеру = клиентская / margin_divisor), дефолт 1.375
   margin_divisor?: number
+  // показывать ли раздел «Кейсы»; false скрывает пункт меню и напоминания о кейсах
+  cases_enabled?: boolean
 }
 
 export interface WorkspaceMember {
@@ -44,6 +46,11 @@ export const workspacesApi = {
   // менять может только владелец пространства, иначе бэк вернёт 403
   async updateMarginDivisor(id: number, margin_divisor: number) {
     const { data } = await api.put<Workspace>(`/workspaces/${id}`, { margin_divisor })
+    return data
+  },
+  // тоже только владелец, иначе 403
+  async updateCasesEnabled(id: number, cases_enabled: boolean) {
+    const { data } = await api.put<Workspace>(`/workspaces/${id}`, { cases_enabled })
     return data
   },
   async remove(id: number) {

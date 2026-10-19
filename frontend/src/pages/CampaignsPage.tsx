@@ -11,6 +11,7 @@ import { advertisersApi } from '../api/advertisers'
 import type { Advertiser } from '../api/advertisers'
 import { bloggerProfilesApi } from '../api/bloggerProfiles'
 import { streamerProfilesApi } from '../api/streamerProfiles'
+import { ownBloggersApi } from '../api/ownBloggers'
 import { integrationsApi, PAYMENT_LABELS, STAGES } from '../api/integrations'
 import type { TalentType } from '../api/integrations'
 import { tasksApi } from '../api/tasks'
@@ -46,7 +47,14 @@ export default function CampaignsPage() {
   // раскрытые кампании (блок с деталями и блогерами)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
 
-  const { data: campaigns = [] } = useQuery({ queryKey: ['campaigns'], queryFn: campaignsApi.list })
+  // вкладка: активные или завершённые (кнопка «Готово» уводит РК во вторую)
+  const [tab, setTab] = useState<'active' | 'archived'>('active')
+  // ключ ['campaigns'] - активные (его же читают алерты), ['campaigns', 'archived'] - завершённые;
+  // invalidate по префиксу ['campaigns'] обновляет оба
+  const { data: activeCampaigns = [] } = useQuery({ queryKey: ['campaigns'], queryFn: () => campaignsApi.list() })
+  const { data: archivedCampaigns = [] } = useQuery({ queryKey: ['campaigns', 'archived'], queryFn: () => campaignsApi.list(true) })
+  const archivedTab = tab === 'archived'
+  const campaigns = archivedTab ? archivedCampaigns : activeCampaigns
   const { data: advertisers = [] } = useQuery({ queryKey: ['advertisers'], queryFn: advertisersApi.list })
   const { data: assignees = [] } = useQuery({ queryKey: ['task-assignees'], queryFn: tasksApi.assignees })
 
@@ -93,6 +101,8 @@ export default function CampaignsPage() {
       else next.add(id)
       return next
     })
+  // «Готово» / «Вернуть»: РК уходит в завершённые и обратно
+  const setDone = (c: Campaign, done: boolean) => set(c.id, { archived: done })
   const askRemove = (c: Campaign) => confirm(`Удалить «${c.name}»? Сделки блогеров останутся на канбане.`) && remove.mutate(c.id)
 
   return (
@@ -117,6 +127,24 @@ export default function CampaignsPage() {
           placeholder="Поиск по названию или бренду"
           className="w-full sm:w-64 bg-slate-100 dark:bg-brand-900 border border-transparent focus:border-brand-500 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none"
         />
+        <div className="flex gap-1 bg-slate-100 dark:bg-brand-900 rounded-lg p-1">
+          {([
+            ['active', 'Активные'],
+            ['archived', archivedCampaigns.length > 0 ? `Завершённые (${archivedCampaigns.length})` : 'Завершённые'],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`px-3 py-1.5 rounded-md text-sm ${
+                tab === key
+                  ? 'bg-white dark:bg-brand-950 text-brand-700 dark:text-brand-300 font-medium shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {error && <div className="text-sm text-red-500 mb-3">{error}</div>}
@@ -161,6 +189,7 @@ export default function CampaignsPage() {
                 <div className="flex-1 min-w-0">
                   <TextCell value={c.name} onSave={v => v.trim() && set(c.id, { name: v })} />
                 </div>
+                <DoneButton archived={archivedTab} onClick={() => setDone(c, !archivedTab)} />
                 <DeleteButton onClick={() => askRemove(c)} />
               </div>
               <div className="grid grid-cols-2 gap-2 mt-2">
@@ -214,6 +243,8 @@ export default function CampaignsPage() {
                   advertisers={advertisers}
                   assignees={assignees}
                   set={set}
+                  archived={archivedTab}
+                  onDone={() => setDone(c, !archivedTab)}
                   onRemove={() => askRemove(c)}
                 />
               )
@@ -225,7 +256,9 @@ export default function CampaignsPage() {
       {rows.length === 0 && (
         <div className="text-sm text-slate-400 text-center py-10">
           {campaigns.length === 0
-            ? 'Кампаний пока нет. Нажмите «Новая РК», чтобы завести первую.'
+            ? archivedTab
+              ? 'Завершённых кампаний пока нет. Нажмите «Готово» у кампании, чтобы она переехала сюда.'
+              : 'Кампаний пока нет. Нажмите «Новая РК», чтобы завести первую.'
             : 'Ничего не найдено'}
         </div>
       )}
@@ -240,6 +273,8 @@ function CampaignRow({
   advertisers,
   assignees,
   set,
+  archived,
+  onDone,
   onRemove,
 }: {
   c: Campaign
@@ -248,6 +283,8 @@ function CampaignRow({
   advertisers: Advertiser[]
   assignees: Assignee[]
   set: SetFn
+  archived: boolean
+  onDone: () => void
   onRemove: () => void
 }) {
   return (
@@ -278,7 +315,10 @@ function CampaignRow({
           <BloggersSummary c={c} />
         </td>
         <td className="px-2 py-1.5"><OwnerSelect c={c} assignees={assignees} set={set} /></td>
-        <td className="px-2 py-1.5 text-right"><DeleteButton onClick={onRemove} /></td>
+        <td className="px-2 py-1.5 text-right whitespace-nowrap">
+          <DoneButton archived={archived} onClick={onDone} />
+          <DeleteButton onClick={onRemove} />
+        </td>
       </tr>
       {open && (
         <tr className="bg-slate-50/60 dark:bg-brand-900/20">
@@ -313,6 +353,19 @@ function Chevron({ open, onClick }: { open: boolean; onClick: () => void }) {
       className="w-6 h-6 shrink-0 flex items-center justify-center rounded text-slate-400 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-brand-900"
     >
       <span className={`inline-block transition-transform text-xs ${open ? 'rotate-90' : ''}`}>▶</span>
+    </button>
+  )
+}
+
+// «Готово» уводит РК в завершённые, на вкладке завершённых та же кнопка называется «Вернуть»
+function DoneButton({ archived, onClick }: { archived: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={archived ? 'Вернуть в активные' : 'Отметить кампанию завершённой'}
+      className="shrink-0 text-xs px-2 py-1 mr-1 rounded-lg border border-slate-200 dark:border-brand-800 text-slate-500 dark:text-slate-300 hover:border-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-400"
+    >
+      {archived ? 'Вернуть' : 'Готово'}
     </button>
   )
 }
@@ -515,6 +568,21 @@ function BloggersBlock({ c }: { c: Campaign }) {
   const { current } = useWorkspace()
   const total = calcMargin(c.bloggers_total, current?.margin_divisor)
 
+  // удаление блогера из кампании: удаляется сама сделка со всей её историей, поэтому спрашиваем
+  const removeBlogger = useMutation({
+    mutationFn: (streamerId: number) => integrationsApi.removeStreamer(streamerId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaign-bloggers', c.id] })
+      qc.invalidateQueries({ queryKey: ['campaigns'] })
+      qc.invalidateQueries({ queryKey: ['integrations'] })
+    },
+  })
+  const askRemoveBlogger = (b: CampaignBlogger) => {
+    if (confirm(`Убрать ${b.name} из кампании? Сделка со всеми суммами и файлами будет удалена.`)) {
+      removeBlogger.mutate(b.streamer_id)
+    }
+  }
+
   return (
     <div className="min-w-0">
       <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
@@ -535,10 +603,17 @@ function BloggersBlock({ c }: { c: Campaign }) {
 
       {bloggers.length > 0 && (
         <div className="rounded-lg border border-slate-100 dark:border-brand-900 divide-y divide-slate-100 dark:divide-brand-900 mb-3">
-          <div className="hidden sm:grid grid-cols-[minmax(140px,1.6fr)_110px_120px_80px_80px_130px] gap-x-3 px-3 py-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-            <span>Блогер</span><span>Сумма</span><span>Оплата</span><span>Выход</span><span>Дедлайн</span><span>Стадия</span>
+          <div className="hidden sm:grid grid-cols-[minmax(140px,1.6fr)_110px_120px_80px_80px_130px_28px] gap-x-3 px-3 py-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+            <span>Блогер</span><span>Сумма</span><span>Оплата</span><span>Выход</span><span>Дедлайн</span><span>Стадия</span><span />
           </div>
-          {bloggers.map(b => <BloggerRow key={b.streamer_id} b={b} onOpen={() => setOpenId(b.streamer_id)} />)}
+          {bloggers.map(b => (
+            <BloggerRow
+              key={b.streamer_id}
+              b={b}
+              onOpen={() => setOpenId(b.streamer_id)}
+              onRemove={() => askRemoveBlogger(b)}
+            />
+          ))}
         </div>
       )}
 
@@ -559,7 +634,7 @@ function BloggersBlock({ c }: { c: Campaign }) {
   )
 }
 
-function BloggerRow({ b, onOpen }: { b: CampaignBlogger; onOpen: () => void }) {
+function BloggerRow({ b, onOpen, onRemove }: { b: CampaignBlogger; onOpen: () => void; onRemove: () => void }) {
   const stage = STAGES.find(s => s.key === b.stage)?.label ?? b.stage
   const pay = PAYMENT_LABELS[b.payment_status] ?? b.payment_status
   const paid = b.payment_status === 'paid'
@@ -571,7 +646,7 @@ function BloggerRow({ b, onOpen }: { b: CampaignBlogger; onOpen: () => void }) {
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
-      className={`grid grid-cols-2 sm:grid-cols-[minmax(140px,1.6fr)_110px_120px_80px_80px_130px] gap-x-3 gap-y-0.5 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-brand-900/40 ${
+      className={`grid grid-cols-2 sm:grid-cols-[minmax(140px,1.6fr)_110px_120px_80px_80px_130px_28px] gap-x-3 gap-y-0.5 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-brand-900/40 ${
         cancelled ? 'opacity-50' : ''
       }`}
     >
@@ -588,6 +663,14 @@ function BloggerRow({ b, onOpen }: { b: CampaignBlogger; onOpen: () => void }) {
       <span>
         <span className="inline-block rounded-full px-2 py-0.5 text-xs bg-slate-100 text-slate-600 dark:bg-brand-900 dark:text-slate-300">{stage}</span>
       </span>
+      {/* убрать случайно добавленного блогера; stopPropagation, иначе откроется модалка */}
+      <button
+        onClick={e => { e.stopPropagation(); onRemove() }}
+        title="Убрать блогера из кампании"
+        className="justify-self-end text-slate-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400"
+      >
+        ✕
+      </button>
     </div>
   )
 }
@@ -621,8 +704,19 @@ function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: strin
   const { data: profiles = [] } = useQuery({ queryKey: ['blogger-profiles'], queryFn: bloggerProfilesApi.list })
   const { data: influencers = [] } = useQuery({ queryKey: ['streamer-profiles'], queryFn: streamerProfilesApi.list })
   const { data: oldNames = [] } = useQuery({ queryKey: ['streamer-names'], queryFn: integrationsApi.streamerNames })
+  // вторая база блогеров: свои, заведённые руками в этом пространстве
+  const { data: own = [] } = useQuery({ queryKey: ['own-bloggers'], queryFn: ownBloggersApi.list })
 
   const suggestions = useMemo<Suggestion[]>(() => {
+    const fromOwn: Suggestion[] = own.map(o => ({
+      name: o.name,
+      hint: ['Наш блогер', o.platform, o.category].filter(Boolean).join(' · '),
+      price: null,
+      type: 'blogger',
+      url: o.url,
+      // контакт может быть ником, почтой или телефоном - ищем по нему через общий поиск ссылок
+      links: o.contact,
+    }))
     const fromBase: Suggestion[] = profiles.map(p => ({
       name: p.name,
       hint: [p.platform, p.category].filter(Boolean).join(' · '),
@@ -643,12 +737,14 @@ function AddBloggerForm({ c, existing, onAdded }: { c: Campaign; existing: strin
       url: p.twitch_url,
       links: p.social_links,
     }))
-    const known = new Set([...fromBase, ...fromInfluencers].map(s => s.name.toLowerCase()))
+    const known = new Set([...fromOwn, ...fromBase, ...fromInfluencers].map(s => s.name.toLowerCase()))
     const fromHistory: Suggestion[] = oldNames
       .filter(n => !known.has(n.toLowerCase()))
       .map(n => ({ name: n, hint: 'ранее добавляли', price: null, type: 'streamer' }))
-    return [...fromBase, ...fromHistory]
-  }, [profiles, oldNames])
+    // свои идут первыми: их завели осознанно, и в большой базе агентства они иначе тонут.
+    // Инфлюенсеры раньше собирались, но в итог не попадали (в подсказках их не было)
+    return [...fromOwn, ...fromBase, ...fromInfluencers, ...fromHistory]
+  }, [own, profiles, influencers, oldNames])
 
   const needle = name.trim().toLowerCase()
   const shown = needle ? suggestions.filter(s => matchesQuery(s, name)).slice(0, 8) : []

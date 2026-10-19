@@ -36,6 +36,7 @@ export default function WorkspaceSettingsPage() {
   const [divisorSaved, setDivisorSaved] = useState(false)
   const [titleErr, setTitleErr] = useState<string | null>(null)
   const [divisorErr, setDivisorErr] = useState<string | null>(null)
+  const [casesErr, setCasesErr] = useState<string | null>(null)
 
   // подставляем значения при смене пространства и после обновления списка
   useEffect(() => {
@@ -71,6 +72,16 @@ export default function WorkspaceSettingsPage() {
     onError: e => setDivisorErr(errText(e)),
   })
 
+  // галочка «Показывать раздел Кейсы»: сохраняется сразу по клику, только владелец
+  const saveCases = useMutation({
+    mutationFn: (value: boolean) => workspacesApi.updateCasesEnabled(current!.id, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workspaces'] })
+      setCasesErr(null)
+    },
+    onError: e => setCasesErr(errText(e)),
+  })
+
   if (!current) return null
 
   const parsed = parseMarginDivisor(divisor)
@@ -84,7 +95,7 @@ export default function WorkspaceSettingsPage() {
     <div className="p-4 sm:p-10 max-w-2xl">
       <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-slate-100 mb-2">Настройки</h1>
       <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
-        Название пространства и коэффициент, по которому считается наш доход.
+        Название пространства, коэффициент, по которому считается наш доход, и показ раздела Кейсы.
       </p>
 
       <div className="space-y-4">
@@ -166,6 +177,25 @@ export default function WorkspaceSettingsPage() {
             выходит клиентская сумма 137 500. Множитель 1,25 * 1,10 = 1,375. Чтобы понять, сколько из клиентской
             суммы наши деньги, делим её на этот коэффициент: 137 500 / 1,375 = 100 000 блогеру, остальное - наш доход.
           </p>
+        </div>
+
+        <div className={card}>
+          <label className="flex items-center gap-3 text-sm text-slate-800 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={current.cases_enabled !== false}
+              onChange={e => saveCases.mutate(e.target.checked)}
+              disabled={!isOwner || saveCases.isPending}
+              className="w-4 h-4"
+            />
+            Показывать раздел Кейсы
+          </label>
+          <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            Если выключить, пункт «Кейсы» пропадёт из меню, а напоминания «завершено, нет кейса» перестанут
+            появляться в горячих задачах и в боте. Прямая ссылка на раздел продолжит открываться.
+            {!isOwner && ' Менять может только владелец пространства.'}
+          </div>
+          {casesErr && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{casesErr}</div>}
         </div>
       </div>
     </div>

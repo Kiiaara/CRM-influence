@@ -35,6 +35,7 @@ import type {
 import { advertisersApi } from '../api/advertisers'
 import { streamerProfilesApi } from '../api/streamerProfiles'
 import { bloggerProfilesApi } from '../api/bloggerProfiles'
+import { ownBloggersApi } from '../api/ownBloggers'
 import { BriefFiles, ErridInput, OrdLinkInput } from '../components/DealParts'
 
 const PAYMENT_COLORS: Record<PaymentStatus, string> = {
@@ -417,6 +418,7 @@ function BulkStreamersModal({
   const [talentType, setTalentType] = useState<TalentType>('streamer')
   const { data: profiles = [] } = useQuery({ queryKey: ['streamer-profiles'], queryFn: streamerProfilesApi.list })
   const { data: bloggers = [] } = useQuery({ queryKey: ['blogger-profiles'], queryFn: bloggerProfilesApi.list })
+  const { data: ownBloggers = [] } = useQuery({ queryKey: ['own-bloggers'], queryFn: ownBloggersApi.list })
   const { data: legacyNames = [] } = useQuery({ queryKey: ['streamer-names'], queryFn: integrationsApi.streamerNames })
 
   // выбор храним по обоим типам сразу - можно набрать и инфлюенсеров, и блогеров в одну сделку
@@ -432,13 +434,23 @@ function BulkStreamersModal({
     streamer: profiles.map(p => ({
       key: `s${p.id}`, name: p.name, hint: p.category, price: p.post_price, contact: p.social_links,
     })),
-    blogger: bloggers.map(b => ({
-      key: `b${b.id}`,
-      name: b.name,
-      hint: [b.platform, b.category].filter(Boolean).join(' · '),
-      price: b.price,
-      contact: b.telegram || b.url,
-    })),
+    blogger: [
+      // свои блогеры пространства идут первыми, затем база агентства
+      ...ownBloggers.map(o => ({
+        key: `o${o.id}`,
+        name: o.name,
+        hint: ['Наш блогер', o.platform, o.category].filter(Boolean).join(' · '),
+        price: null as number | null,
+        contact: o.contact || o.url,
+      })),
+      ...bloggers.map(b => ({
+        key: `b${b.id}`,
+        name: b.name,
+        hint: [b.platform, b.category].filter(Boolean).join(' · '),
+        price: b.price,
+        contact: b.telegram || b.url,
+      })),
+    ],
   }
   const current = items[talentType]
   const filtered = current.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.hint.toLowerCase().includes(search.toLowerCase()))

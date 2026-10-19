@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import { integrationsApi } from '../api/integrations'
 import type { ContractStatus, Streamer } from '../api/integrations'
 import { campaignsApi } from '../api/campaigns'
+import { useWorkspace } from '../workspaceContext'
 
 interface AlertItem {
   id: number
@@ -31,7 +32,10 @@ type Row = Streamer & { brand: string }
 // алерты всегда синхронны с остальными разделами без дополнительных запросов
 export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void }) {
   const { data: integrations = [] } = useQuery({ queryKey: ['integrations'], queryFn: integrationsApi.list })
-  const { data: campaigns = [] } = useQuery({ queryKey: ['campaigns'], queryFn: campaignsApi.list })
+  const { data: campaigns = [] } = useQuery({ queryKey: ['campaigns'], queryFn: () => campaignsApi.list() })
+  // выключен ли раздел Кейсы в этом пространстве: тогда напоминание про кейс не показываем
+  const { current } = useWorkspace()
+  const casesEnabled = current?.cases_enabled !== false
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -81,7 +85,7 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
         dayjs(r.deadline).startOf('day').isBefore(now.startOf('day'))
     )
 
-    const caseMissing = rows.filter(r => r.stage === 'done' && !r.has_case)
+    const caseMissing = casesEnabled ? rows.filter(r => r.stage === 'done' && !r.has_case) : []
 
     // срок действия договора убрали с карточки канбана - ловим его здесь
     const contractExpiring = rows.filter(r => {
@@ -112,7 +116,8 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
     )
 
     // кампании: подборку надо отдать вовремя, иначе клиент уходит
-    const liveCampaigns = campaigns.filter(c => c.status !== 'cancelled' && c.status !== 'running')
+    // завершённые (archived_at) в алерты не попадают, даже если список вдруг пришёл с ними
+    const liveCampaigns = campaigns.filter(c => c.status !== 'cancelled' && c.status !== 'running' && !c.archived_at)
     const campaignItems = (
       list: typeof liveCampaigns,
       detail: (c: (typeof liveCampaigns)[number]) => string
@@ -182,7 +187,7 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
       },
       { key: 'caseMissing', title: 'Завершено, нет кейса для сайта', items: toItems(caseMissing, () => 'добавьте кейс') },
     ].filter(g => g.items.length > 0)
-  }, [rows, campaigns])
+  }, [rows, campaigns, casesEnabled])
 
   const total = groups.reduce((sum, g) => sum + g.items.length, 0)
   const hot = total > 0

@@ -7,6 +7,7 @@ import TopSearch from '../components/TopSearch'
 import WorkspaceSelector from '../components/WorkspaceSelector'
 import AlertsPanel from '../components/AlertsPanel'
 import ConnectBotNudge from '../components/ConnectBotNudge'
+import { useWorkspace } from '../workspaceContext'
 
 const navItems = [
   { to: '/', label: 'Главная', icon: '🏠' },
@@ -17,7 +18,8 @@ const navItems = [
   { to: '/documents', label: 'Документы', icon: '📄' },
   { to: '/advertisers', label: 'Рекламодатели', icon: '🏢' },
   { to: '/analytics', label: 'Аналитика', icon: '📊' },
-  { to: '/cases', label: 'Кейсы', icon: '🎬' },
+  // скрывается настройкой пространства cases_enabled; сам роут остаётся рабочим
+  { to: '/cases', label: 'Кейсы', icon: '🎬', needsCases: true },
   { to: '/history', label: 'История', icon: '🗂️' },
   { to: '/streamers', label: 'База инфлюенсеров', icon: '📋' },
   { to: '/bloggers', label: 'База блогеров', icon: '📱' },
@@ -30,6 +32,7 @@ export default function WorkspacePage() {
   const loc = useLocation()
   const nav = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  const { current } = useWorkspace()
 
   const logout = async () => {
     await authApi.logout()
@@ -46,7 +49,7 @@ export default function WorkspacePage() {
         <WorkspaceSelector />
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {navItems.map(it => {
+        {navItems.filter(it => !it.needsCases || current?.cases_enabled !== false).map(it => {
           const active = it.to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(it.to)
           return (
             <Link

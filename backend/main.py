@@ -13,7 +13,7 @@ from models.user import User
 from models.advertiser import Advertiser
 from models.integration import Integration
 from routers import auth as auth_router
-from routers import search, tasks, users, integrations, streamer_profiles, blogger_profiles, site as site_router, workspaces as workspaces_router, advertisers as advertisers_router, chat, campaigns
+from routers import search, tasks, users, integrations, streamer_profiles, blogger_profiles, site as site_router, workspaces as workspaces_router, advertisers as advertisers_router, chat, campaigns, own_bloggers
 from scheduler import start_scheduler, stop_scheduler, start_polling, stop_polling
 
 
@@ -391,6 +391,31 @@ def _migrate_integrations_add_campaign():
                 conn.execute(text("ALTER TABLE campaigns ADD COLUMN kp_url VARCHAR(512) DEFAULT ''"))
 
 
+def _migrate_campaigns_add_archived_at():
+    """Завершённые РК: campaigns.archived_at (null = активная), у старых строк остаётся null."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "campaigns" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("campaigns")]
+    if "archived_at" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE campaigns ADD COLUMN archived_at DATETIME"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campaigns_archived_at ON campaigns (archived_at)"))
+
+
+def _migrate_workspaces_add_cases_enabled():
+    """Настройка пространства 'показывать раздел Кейсы': у старых строк включено."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "workspaces" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("workspaces")]
+    if "cases_enabled" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE workspaces ADD COLUMN cases_enabled BOOLEAN DEFAULT 1"))
+
+
 def _migrate_brand_contacts_add_advertiser():
     """Добавляем advertiser_id в brand_contacts, если его нет (было integration_id)."""
     from sqlalchemy import text, inspect
@@ -509,6 +534,8 @@ async def lifespan(app: FastAPI):
     _migrate_brand_contacts_drop_integration_not_null()
     _migrate_workspaces_add_owner()
     _migrate_workspaces_add_margin_divisor()
+    _migrate_campaigns_add_archived_at()
+    _migrate_workspaces_add_cases_enabled()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство
     db = SessionLocal()
@@ -588,3 +615,4 @@ app.include_router(workspaces_router.router)
 app.include_router(advertisers_router.router)
 app.include_router(chat.router)
 app.include_router(campaigns.router)
+app.include_router(own_bloggers.router)

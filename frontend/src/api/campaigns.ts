@@ -47,6 +47,8 @@ export interface Campaign {
   notes: string
   // ссылка на КП (гугл-таблица с расчётом)
   kp_url: string
+  // когда РК отметили завершённой; null = активная
+  archived_at: string | null
   // живые (не отменённые) блогеры кампании: сколько и на какую сумму
   bloggers_count: number
   bloggers_total: number
@@ -66,6 +68,8 @@ export interface CampaignPayload {
   owner_tg_id?: number | null
   notes?: string
   kp_url?: string
+  // true - отметить завершённой, false - вернуть в активные
+  archived?: boolean
 }
 
 // блогер кампании = инфлюенсер в сделке кампании (та же запись, что на канбане)
@@ -90,8 +94,9 @@ export interface CampaignBloggerPayload {
 }
 
 export const campaignsApi = {
-  async list() {
-    const { data } = await api.get<Campaign[]>('/campaigns')
+  // по умолчанию только активные; archived=true - только завершённые
+  async list(archived = false) {
+    const { data } = await api.get<Campaign[]>('/campaigns', { params: { archived } })
     return data
   },
   async create(payload: CampaignPayload & { name: string }) {

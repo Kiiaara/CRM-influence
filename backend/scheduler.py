@@ -15,6 +15,7 @@ from config import settings
 from database import SessionLocal
 from models.task import Task
 from models.user import User
+from models.workspace import Workspace
 from models.integration_streamer import IntegrationStreamer
 from notifier import send_message
 import notifier
@@ -266,8 +267,10 @@ async def _check_case_reminders():
             )
             .all()
         )
+        # пространства, где раздел Кейсы выключен: напоминать про кейс там не нужно
+        no_cases = {w.id for w in db.query(Workspace).filter(Workspace.cases_enabled == False).all()}  # noqa: E712
         for s in rows:
-            if s.has_case:
+            if s.has_case or s.integration.workspace_id in no_cases:
                 s.notified_case_reminder = True
                 continue
             await _notify_creator(db, s, f"🎬 Интеграция с <b>{s.streamer_name}</b> ({s.integration.brand}) завершена. Не забудь добавить кейс для сайта!")
