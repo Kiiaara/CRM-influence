@@ -202,7 +202,7 @@ export default function CampaignBloggerModal({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className={labelCls}>Стадия</label>
+                <label className={labelCls}>Стадия работы по блогеру</label>
                 <select value={form.stage} onChange={e => pick('stage', e.target.value)} className={field}>
                   {STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                 </select>

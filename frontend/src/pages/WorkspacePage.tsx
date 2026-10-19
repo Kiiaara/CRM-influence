@@ -21,6 +21,7 @@ const navItems = [
   { to: '/history', label: 'История', icon: '🗂️' },
   { to: '/streamers', label: 'База инфлюенсеров', icon: '📋' },
   { to: '/bloggers', label: 'База блогеров', icon: '📱' },
+  { to: '/settings', label: 'Настройки', icon: '🛠️' },
 ]
 
 export default function WorkspacePage() {

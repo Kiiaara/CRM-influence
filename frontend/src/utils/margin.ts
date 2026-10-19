@@ -30,5 +30,25 @@ export function calcMargin(
   return { toBlogger, margin, marginPercent }
 }
 
+// Верхняя граница коэффициента, совпадает с MAX_MARGIN_DIVISOR на бэке (колонка Numeric(6,4))
+export const MAX_MARGIN_DIVISOR = 100
+
+// Разбор поля коэффициента на экране настроек. Те же правила, что на бэке (> 0 и < 100),
+// плюс не больше 4 знаков после запятой - столько хранит колонка. Запятая тоже принимается.
+export function parseMarginDivisor(raw: string): { value: number } | { error: string } {
+  const text = raw.trim().replace(',', '.')
+  if (!text) return { error: 'Введите коэффициент, например 1,375' }
+  if (!/^\d+(\.\d+)?$/.test(text)) {
+    return { error: 'Коэффициент - это число, например 1,375. Минус и буквы не подходят' }
+  }
+  const value = Number(text)
+  if (!(value > 0)) return { error: 'Коэффициент должен быть больше нуля: на ноль делить нельзя' }
+  if (value >= MAX_MARGIN_DIVISOR) {
+    return { error: `Коэффициент должен быть меньше ${MAX_MARGIN_DIVISOR}` }
+  }
+  if (!/^\d+(\.\d{1,4})?$/.test(text)) return { error: 'Не больше 4 знаков после запятой' }
+  return { value }
+}
+
 // "27,3" вместо "27.3" - как принято в интерфейсе
 export const fmtPercent = (p: number) => p.toLocaleString('ru-RU', { maximumFractionDigits: 1 })

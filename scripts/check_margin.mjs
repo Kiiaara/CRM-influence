@@ -1,6 +1,6 @@
 // Проверка расчёта маржи: блогеру = клиентская сумма / коэффициент, маржа = клиентская - блогеру.
 // Запуск: node --experimental-strip-types scripts\check_margin.mjs
-import { DEFAULT_MARGIN_DIVISOR, calcMargin } from '../frontend/src/utils/margin.ts'
+import { DEFAULT_MARGIN_DIVISOR, calcMargin, parseMarginDivisor } from '../frontend/src/utils/margin.ts'
 
 let failed = 0
 const check = (label, got, want) => {
@@ -34,5 +34,18 @@ check('divisor отрицательный', calcMargin(137500, -1.375), null)
 check('divisor NaN', calcMargin(137500, NaN), null)
 check('divisor Infinity', calcMargin(137500, Infinity), null)
 
-console.log(failed ? `\n${failed} провалов` : '\nвсё зелёное')
+console.log('--- разбор поля коэффициента на экране настроек ---')
+check('обычное число', parseMarginDivisor('1.375'), { value: 1.375 })
+check('запятая как разделитель', parseMarginDivisor('1,4'), { value: 1.4 })
+check('пробелы по краям', parseMarginDivisor(' 1.5 '), { value: 1.5 })
+check('пустое поле', parseMarginDivisor('').error !== undefined, true)
+check('не число', parseMarginDivisor('abc').error !== undefined, true)
+check('ноль', parseMarginDivisor('0').error !== undefined, true)
+check('отрицательное', parseMarginDivisor('-1').error !== undefined, true)
+check('ровно 100', parseMarginDivisor('100').error !== undefined, true)
+check('больше 100', parseMarginDivisor('250').error !== undefined, true)
+check('99.9999 допустимо', parseMarginDivisor('99.9999'), { value: 99.9999 })
+check('больше 4 знаков после запятой', parseMarginDivisor('1.37512').error !== undefined, true)
+
+console.log(failed ?`\n${failed} провалов` : '\nвсё зелёное')
 process.exit(failed ? 1 : 0)

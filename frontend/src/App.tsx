@@ -18,6 +18,7 @@ import BloggerProfilesPage from './pages/BloggerProfilesPage'
 import SearchPage from './pages/SearchPage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import ProfilePage from './pages/ProfilePage'
+import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage'
 import { authApi } from './api/auth'
 import { WorkspaceProvider } from './workspaceContext'
 
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="/search" element={<SearchPage />} />
         <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/settings" element={<WorkspaceSettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
