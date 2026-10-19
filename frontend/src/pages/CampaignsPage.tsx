@@ -16,6 +16,8 @@ import type { TalentType } from '../api/integrations'
 import { tasksApi } from '../api/tasks'
 import CampaignBloggerModal from '../components/CampaignBloggerModal'
 import { displayNick, matchesQuery, sheetRowLinks } from '../utils/bloggerSearch'
+import { calcMargin, fmtPercent } from '../utils/margin'
+import { useWorkspace } from '../workspaceContext'
 
 const cellInput =
   'w-full bg-transparent border border-transparent hover:border-slate-200 dark:hover:border-brand-800 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-900 dark:text-slate-100 outline-none'
@@ -509,10 +511,21 @@ function BloggersBlock({ c }: { c: Campaign }) {
     queryFn: () => campaignsApi.bloggers(c.id),
   })
 
+  // суммарная маржа кампании: тот же коэффициент пространства, что и в модалке блогера
+  const { current } = useWorkspace()
+  const total = calcMargin(c.bloggers_total, current?.margin_divisor)
+
   return (
     <div className="min-w-0">
       <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
         Блогеры кампании {bloggers.length > 0 && `(${bloggers.length})`}
+        {/* клиентская сумма и маржа по живым блогерам (отменённые бэк уже исключил) */}
+        {total && c.bloggers_count > 0 && (
+          <span className="font-normal">
+            {' · '}Клиентская сумма: {fmtMoney(c.bloggers_total, c.currency)}
+            {' · '}Маржа: <span className="font-medium text-emerald-600 dark:text-emerald-400">{fmtMoney(total.margin, c.currency)} ({fmtPercent(total.marginPercent)}%)</span>
+          </span>
+        )}
       </div>
 
       {isLoading && <div className="text-sm text-slate-400 py-2">Загрузка...</div>}

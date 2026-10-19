@@ -1,9 +1,10 @@
 """CRUD для рабочих пространств (Workspaces) + участники с ролями."""
+import math
 from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -16,6 +17,10 @@ from models.task import Task
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 ROLES = ("owner", "lead", "viewer")
+
+# дефолт делителя: 100 на руки * 1.25 (комиссия) * 1.10 = 137.5 клиентских, 137.5 / 1.375 = 100
+DEFAULT_MARGIN_DIVISOR = 1.375
+MAX_MARGIN_DIVISOR = 100  # колонка Numeric(6,4) вмещает до 99.9999
 
 
 def _member_role(db: Session, workspace_id: int, tg_id: int) -> Optional[str]:
@@ -51,7 +56,14 @@ class WorkspaceOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     my_role: str = "viewer"
+    # Numeric в БД отдаёт Decimal, наружу всегда число; None в старой строке = дефолт
+    margin_divisor: float = DEFAULT_MARGIN_DIVISOR
     model_config = {"from_attributes": True}
+
+    @field_validator("margin_divisor", mode="before")
+    @classmethod
+    def _divisor_default(cls, v):
+        return DEFAULT_MARGIN_DIVISOR if v is None else float(v)
 
 
 class WorkspaceCreate(BaseModel):
@@ -59,7 +71,9 @@ class WorkspaceCreate(BaseModel):
 
 
 class WorkspaceUpdate(BaseModel):
-    title: str
+    # оба поля необязательны: старый клиент шлёт только title
+    title: Optional[str] = None
+    margin_divisor: Optional[float] = None
 
 
 class MemberOut(BaseModel):
@@ -118,10 +132,22 @@ def update_workspace(
     ws = db.get(Workspace, workspace_id)
     if not ws:
         raise HTTPException(404)
-    title = data.title.strip()
-    if not title:
-        raise HTTPException(400, "Название не может быть пустым")
-    ws.title = title
+    if data.title is None and data.margin_divisor is None:
+        raise HTTPException(400, "Нечего менять")
+    if data.title is not None:
+        title = data.title.strip()
+        if not title:
+            raise HTTPException(400, "Название не может быть пустым")
+        ws.title = title
+    if data.margin_divisor is not None:
+        # коэффициент меняет только владелец: от него зависят суммы блогерам и маржа
+        if role != "owner":
+            raise HTTPException(403, "Коэффициент маржи меняет только владелец пространства")
+        d = data.margin_divisor
+        # делим на него, поэтому 0 и минус недопустимы; потолок - предел колонки Numeric(6,4)
+        if not math.isfinite(d) or d <= 0 or d >= MAX_MARGIN_DIVISOR:
+            raise HTTPException(400, f"Коэффициент должен быть больше 0 и меньше {MAX_MARGIN_DIVISOR}")
+        ws.margin_divisor = d
     ws.updated_at = datetime.now()
     db.commit()
     db.refresh(ws)

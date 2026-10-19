@@ -9,6 +9,8 @@ export interface Workspace {
   created_at: string
   updated_at: string
   my_role: WorkspaceRole
+  // делитель клиентской суммы (блогеру = клиентская / margin_divisor), дефолт 1.375
+  margin_divisor?: number
 }
 
 export interface WorkspaceMember {
@@ -37,6 +39,11 @@ export const workspacesApi = {
   },
   async update(id: number, title: string) {
     const { data } = await api.put<Workspace>(`/workspaces/${id}`, { title })
+    return data
+  },
+  // менять может только владелец пространства, иначе бэк вернёт 403
+  async updateMarginDivisor(id: number, margin_divisor: number) {
+    const { data } = await api.put<Workspace>(`/workspaces/${id}`, { margin_divisor })
     return data
   },
   async remove(id: number) {

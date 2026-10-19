@@ -100,6 +100,19 @@ def _migrate_workspaces_add_owner():
             conn.execute(text("ALTER TABLE workspaces ADD COLUMN updated_at DATETIME"))
 
 
+def _migrate_workspaces_add_margin_divisor():
+    """Добавляем workspaces.margin_divisor (делитель клиентской суммы), у старых строк - 1.375."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "workspaces" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("workspaces")]
+    if "margin_divisor" not in cols:
+        with engine.begin() as conn:
+            # DEFAULT в ADD COLUMN сразу заполняет существующие строки
+            conn.execute(text("ALTER TABLE workspaces ADD COLUMN margin_divisor NUMERIC(6, 4) DEFAULT 1.375"))
+
+
 def _backfill_workspace_owners_and_members():
     """Для существующих workspace без owner_tg_id проставляем первого админа
     и создаём workspace_members на основе уже существующих юзеров."""
@@ -482,6 +495,7 @@ async def lifespan(app: FastAPI):
     _backfill_advertisers()
     _migrate_brand_contacts_drop_integration_not_null()
     _migrate_workspaces_add_owner()
+    _migrate_workspaces_add_margin_divisor()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство
     db = SessionLocal()

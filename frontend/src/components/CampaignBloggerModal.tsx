@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { integrationsApi, CONTENT_LABELS, PAYMENT_LABELS, STAGES } from '../api/integrations'
 import type { ContentStatus, PaymentStatus, Stage, Streamer } from '../api/integrations'
+import { useWorkspace } from '../workspaceContext'
+import { calcMargin, fmtPercent } from '../utils/margin'
+
+const fmtMoney = (n: number, currency: string) => `${Math.round(n).toLocaleString('ru-RU')} ${currency}`
 
 // общий вид полей, как в модалке сделки на канбане
 const field =
@@ -90,6 +94,10 @@ export default function CampaignBloggerModal({
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  // коэффициент берём из текущего пространства; не пришёл - дефолт 1.375 (внутри calcMargin)
+  const { current } = useWorkspace()
+  const calc = form ? calcMargin(form.amount.trim() === '' ? null : Number(form.amount), current?.margin_divisor) : null
+
   const patch = (p: Partial<Form>) => { setForm(f => (f ? { ...f, ...p } : f)); setSavedAt(false) }
 
   // сохранение одного поля: сравниваем с сервером, чтобы не слать пустые запросы
@@ -157,7 +165,7 @@ export default function CampaignBloggerModal({
           <div className="space-y-3">
             <div className="grid grid-cols-[1fr_110px] gap-3">
               <div>
-                <label className={labelCls}>Сумма</label>
+                <label className={labelCls}>Клиентская сумма</label>
                 <input
                   type="number"
                   value={form.amount}
@@ -176,17 +184,33 @@ export default function CampaignBloggerModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className={labelCls}>Оплата</label>
-                <select value={form.payment_status} onChange={e => pick('payment_status', e.target.value)} className={field}>
-                  {Object.entries(PAYMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+            {/* живой расчёт: пересчитывается на каждый символ в поле суммы; пустая сумма или кривой коэффициент - блока нет */}
+            {calc && (
+              <div className="rounded-lg bg-slate-50 dark:bg-brand-900/40 border border-slate-100 dark:border-brand-900 px-3 py-2 text-sm space-y-0.5">
+                <div className="flex justify-between gap-3">
+                  <span className="text-slate-500 dark:text-slate-400">Блогеру на руки</span>
+                  <span className="font-medium text-slate-900 dark:text-slate-100">{fmtMoney(calc.toBlogger, form.currency)}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-slate-500 dark:text-slate-400">Наша маржа</span>
+                  <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                    {fmtMoney(calc.margin, form.currency)} ({fmtPercent(calc.marginPercent)}%)
+                  </span>
+                </div>
               </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Стадия</label>
                 <select value={form.stage} onChange={e => pick('stage', e.target.value)} className={field}>
                   {STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Оплата</label>
+                <select value={form.payment_status} onChange={e => pick('payment_status', e.target.value)} className={field}>
+                  {Object.entries(PAYMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
               </div>
             </div>
