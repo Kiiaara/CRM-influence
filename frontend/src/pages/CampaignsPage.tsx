@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import {
@@ -18,6 +19,7 @@ import { tasksApi } from '../api/tasks'
 import CampaignBloggerModal from '../components/CampaignBloggerModal'
 import { displayNick, matchesQuery, sheetRowLinks } from '../utils/bloggerSearch'
 import { calcMargin, fmtPercent } from '../utils/margin'
+import { parseBloggerLink } from '../utils/dealLinks'
 import { useWorkspace } from '../workspaceContext'
 
 const cellInput =
@@ -59,6 +61,28 @@ export default function CampaignsPage() {
   const { data: assignees = [] } = useQuery({ queryKey: ['task-assignees'], queryFn: tasksApi.assignees })
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['campaigns'] })
+
+  // открытие модалки блогера по ссылке ?blogger=<streamer_id>&campaign=<id>
+  // (горячие задачи, поиск, аналитика): раскрываем кампанию и открываем модалку,
+  // параметры сразу убираем из адреса, чтобы после закрытия она не открылась снова
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [deepOpen, setDeepOpen] = useState<{ streamerId: number; campaignId: number } | null>(null)
+  useEffect(() => {
+    const link = parseBloggerLink(searchParams.toString())
+    if (!link) return
+    setDeepOpen(link)
+    setExpanded(prev => new Set(prev).add(link.campaignId))
+    searchParams.delete('blogger')
+    searchParams.delete('campaign')
+    setSearchParams(searchParams, { replace: true })
+  }, [searchParams, setSearchParams])
+  // кампания из ссылки может лежать среди завершённых: переключаем вкладку, чтобы строка была видна
+  useEffect(() => {
+    if (!deepOpen) return
+    const inActive = activeCampaigns.some(c => c.id === deepOpen.campaignId)
+    const inArchived = archivedCampaigns.some(c => c.id === deepOpen.campaignId)
+    if (!inActive && inArchived) setTab('archived')
+  }, [deepOpen, activeCampaigns, archivedCampaigns])
 
   const create = useMutation({
     mutationFn: (name: string) => campaignsApi.create({ name }),
@@ -261,6 +285,16 @@ export default function CampaignsPage() {
               : 'Кампаний пока нет. Нажмите «Новая РК», чтобы завести первую.'
             : 'Ничего не найдено'}
         </div>
+      )}
+
+      {/* модалка, открытая по ссылке: одна на страницу, чтобы не дублироваться
+          в мобильной и десктопной вёрстке */}
+      {deepOpen && (
+        <CampaignBloggerModal
+          streamerId={deepOpen.streamerId}
+          campaignId={deepOpen.campaignId}
+          onClose={() => setDeepOpen(null)}
+        />
       )}
     </div>
   )

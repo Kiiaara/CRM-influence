@@ -80,13 +80,18 @@ def test_lead_cannot_change_cases_flag(ctx):
 def test_case_reminder_hidden_when_cases_disabled(ctx):
     """Сводка бота не напоминает про кейс в пространстве, где раздел выключен."""
     from bot_dialog import compute_hot_tasks
+    from models.campaign import Campaign
     from models.integration import Integration
     from models.integration_streamer import IntegrationStreamer
     client, ws_id = ctx
     _as(client, "cs-owner")
     db = SessionLocal()
     try:
-        it = Integration(workspace_id=ws_id, brand="КейсБренд")
+        # сводка бота, как и сайт, показывает только сделки внутри кампании
+        camp = Campaign(workspace_id=ws_id, name="РК для кейсов")
+        db.add(camp)
+        db.commit()
+        it = Integration(workspace_id=ws_id, brand="КейсБренд", campaign_id=camp.id)
         db.add(it)
         db.commit()
         db.add(IntegrationStreamer(integration_id=it.id, streamer_name="Без кейса", stage="done"))

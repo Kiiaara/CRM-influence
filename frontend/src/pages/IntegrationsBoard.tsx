@@ -36,7 +36,7 @@ import { advertisersApi } from '../api/advertisers'
 import { streamerProfilesApi } from '../api/streamerProfiles'
 import { bloggerProfilesApi } from '../api/bloggerProfiles'
 import { ownBloggersApi } from '../api/ownBloggers'
-import { BriefFiles, ErridInput, OrdLinkInput } from '../components/DealParts'
+import { BriefFiles, ErridInput, OrdLinkInput, Screenshots } from '../components/DealParts'
 
 const PAYMENT_COLORS: Record<PaymentStatus, string> = {
   not_invoiced: 'bg-slate-100 text-slate-600 dark:bg-brand-900 dark:text-slate-300',
@@ -735,6 +735,8 @@ export function StreamerModal({
       contract_sent_date: form.contract_sent_date,
       contract_signed_date: form.contract_signed_date,
       contract_notes: form.contract_notes,
+      contract_url: (form.contract_url ?? '').trim(),
+      publication_url: (form.publication_url ?? '').trim(),
       brief: form.brief,
       ord_responsible: form.ord_responsible,
       ord_status: form.ord_status,
@@ -1013,6 +1015,14 @@ export function StreamerModal({
               </label>
             )}
 
+            {/* ссылка не исключает файл: можно оба сразу */}
+            <OrdLinkInput
+              label="Ссылка на договор"
+              placeholder="https://disk.yandex.ru/... или сервис подписания"
+              value={form.contract_url ?? ''}
+              onChange={v => setForm({ ...form, contract_url: v })}
+            />
+
             <div>
               <label className="text-xs text-slate-500 dark:text-slate-400">Статус</label>
               <select
@@ -1079,6 +1089,21 @@ export function StreamerModal({
               <div className="text-xs text-slate-400 mt-2">Файлы можно будет приложить после сохранения карточки</div>
             ) : (
               <BriefFiles streamerId={streamer.id} />
+            )}
+
+            <div className="mt-3">
+              <OrdLinkInput
+                label="Ссылка на вышедшую интеграцию"
+                placeholder="https://t.me/... или https://youtube.com/..."
+                value={form.publication_url ?? ''}
+                onChange={v => setForm({ ...form, publication_url: v })}
+              />
+            </div>
+            {!isNew && (
+              <div className="mt-3">
+                <label className="text-xs text-slate-500 dark:text-slate-400">Скриншоты интеграции</label>
+                <Screenshots streamerId={streamer.id} />
+              </div>
             )}
           </div>
 

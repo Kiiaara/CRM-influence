@@ -390,7 +390,7 @@ function BrandContactForm({
         <select value={contactType} onChange={e => setContactType(e.target.value as ContactType)} className={fieldCls}>
           {Object.entries(CONTACT_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{CONTACT_TYPE_ICONS[k as ContactType]} {v}</option>)}
         </select>
-        <input value={value} onChange={e => setValue(e.target.value)} onKeyDown={onEnter} placeholder="Значение" className={fieldCls} />
+        <input value={value} onChange={e => setValue(e.target.value)} onKeyDown={onEnter} placeholder="Контакт" className={fieldCls} />
       </div>
       <div className="grid grid-cols-2 gap-1.5">
         <input value={label} onChange={e => setLabel(e.target.value)} onKeyDown={onEnter} placeholder="Роль (менеджер, директор…)" className={fieldCls} />

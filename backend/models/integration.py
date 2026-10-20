@@ -25,6 +25,9 @@ class Integration(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
 
+    # рекламодатель грузим join'ом сразу: контакты уходят в каждого участника, без N+1 на списках
+    advertiser: Mapped["Advertiser | None"] = relationship(lazy="joined")
+
     streamers: Mapped[list["IntegrationStreamer"]] = relationship(
         back_populates="integration", cascade="all, delete-orphan", order_by="IntegrationStreamer.position"
     )

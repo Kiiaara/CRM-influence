@@ -2,7 +2,7 @@
 Сравнение регистронезависимое делаем на стороне Python (str.lower()), а не через
 SQL ilike/lower() - в SQLite эти функции фолдят регистр только для ASCII,
 кириллица (Иван -> иван) не матчится."""
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
@@ -21,6 +21,8 @@ class SearchHit(BaseModel):
     id: int
     title: str
     snippet: str
+    # кампания сделки: по ней фронт открывает модалку блогера; null = сделка вне кампании
+    campaign_id: Optional[int] = None
 
 
 @router.get("", response_model=List[SearchHit])
@@ -51,6 +53,7 @@ def search(q: str = Query(..., min_length=1), db: Session = Depends(get_db), ws:
             id=s.id,
             title=f"{s.integration.brand} × {s.streamer_name}",
             snippet=s.description[:200] if s.description else s.contact,
+            campaign_id=s.integration.campaign_id,
         )
         for s in matched
     ]

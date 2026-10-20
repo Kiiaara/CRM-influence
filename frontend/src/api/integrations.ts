@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { BrandContact } from './advertisers'
 
 export type Stage = 'negotiation' | 'agreed' | 'awaiting_contract' | 'awaiting_payment' | 'done' | 'cancelled'
 export type PaymentStatus = 'not_invoiced' | 'invoiced' | 'partial' | 'paid'
@@ -84,6 +85,14 @@ export const CONTRACT_STATUS_COLOR: Record<ContractStatus, 'red' | 'yellow' | 'g
   expired: 'red',
 }
 
+// рекламодатель сделки с его контактами из BrandContact, основной первым
+// (приходит вложенным в участника, только чтение)
+export interface AdvertiserContacts {
+  id: number
+  name: string
+  contacts: Pick<BrandContact, 'id' | 'contact_type' | 'value' | 'label' | 'is_primary'>[]
+}
+
 export interface Streamer {
   id: number
   integration_id: number
@@ -110,6 +119,9 @@ export interface Streamer {
   contract_sent_date: string | null
   contract_signed_date: string | null
   contract_notes: string
+  contract_url: string
+  publication_url: string
+  advertiser: AdvertiserContacts | null
   brief: string
   ord_responsible: OrdResponsible
   ord_status: OrdStatus
@@ -216,6 +228,8 @@ export function describeAuditEntry(e: AuditLogEntry): string {
 export interface Integration {
   id: number
   advertiser_id: number | null
+  // кампания, в которой живёт сделка; null = сделка вне кампании
+  campaign_id: number | null
   brand: string
   description: string
   kp_sheet_url: string
@@ -234,6 +248,14 @@ export interface Payment {
 }
 
 export interface BriefFile {
+  id: number
+  streamer_id: number
+  file_name: string
+  size_bytes: number
+  created_at: string
+}
+
+export interface Screenshot {
   id: number
   streamer_id: number
   file_name: string
@@ -362,6 +384,28 @@ export const integrationsApi = {
   },
   async removeBriefFile(fileId: number) {
     await api.delete(`/integrations/brief-files/${fileId}`)
+  },
+
+  async screenshots(streamerId: number) {
+    const { data } = await api.get<Screenshot[]>(`/integrations/streamers/${streamerId}/screenshots`)
+    return data
+  },
+  async uploadScreenshot(streamerId: number, file: File) {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await api.post<Screenshot>(`/integrations/streamers/${streamerId}/screenshots`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  // картинку тянем через axios (с заголовком пространства), а не прямой ссылкой в <img>:
+  // иначе в неосновном пространстве превью получило бы 404
+  async screenshotBlob(screenshotId: number) {
+    const { data } = await api.get<Blob>(`/integrations/screenshots/${screenshotId}`, { responseType: 'blob' })
+    return data
+  },
+  async removeScreenshot(screenshotId: number) {
+    await api.delete(`/integrations/screenshots/${screenshotId}`)
   },
 
   async cases(streamerId: number) {

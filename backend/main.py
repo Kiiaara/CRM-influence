@@ -416,6 +416,18 @@ def _migrate_workspaces_add_cases_enabled():
             conn.execute(text("ALTER TABLE workspaces ADD COLUMN cases_enabled BOOLEAN DEFAULT 1"))
 
 
+def _migrate_workspaces_add_draft_alerts_enabled():
+    """Настройка пространства 'напоминать про черновики сделок': у старых строк включено."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "workspaces" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("workspaces")]
+    if "draft_alerts_enabled" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE workspaces ADD COLUMN draft_alerts_enabled BOOLEAN DEFAULT 1"))
+
+
 def _migrate_brand_contacts_add_advertiser():
     """Добавляем advertiser_id в brand_contacts, если его нет (было integration_id)."""
     from sqlalchemy import text, inspect
@@ -508,6 +520,30 @@ def _backfill_advertisers():
         db.close()
 
 
+def _migrate_streamers_add_contract_url():
+    """Договор ссылкой: contract_url у участника сделки, если колонки нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "integration_streamers" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("integration_streamers")]
+    if "contract_url" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN contract_url VARCHAR(512) DEFAULT ''"))
+
+
+def _migrate_streamers_add_publication_url():
+    """Ссылка на вышедшую интеграцию: publication_url у участника сделки, если колонки нет."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "integration_streamers" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("integration_streamers")]
+    if "publication_url" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN publication_url VARCHAR(512) DEFAULT ''"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -536,6 +572,9 @@ async def lifespan(app: FastAPI):
     _migrate_workspaces_add_margin_divisor()
     _migrate_campaigns_add_archived_at()
     _migrate_workspaces_add_cases_enabled()
+    _migrate_workspaces_add_draft_alerts_enabled()
+    _migrate_streamers_add_contract_url()
+    _migrate_streamers_add_publication_url()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство
     db = SessionLocal()

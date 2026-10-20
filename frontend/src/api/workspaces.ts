@@ -13,6 +13,8 @@ export interface Workspace {
   margin_divisor?: number
   // показывать ли раздел «Кейсы»; false скрывает пункт меню и напоминания о кейсах
   cases_enabled?: boolean
+  // напоминать ли про «Черновики без суммы/даты» в горячих задачах; false их скрывает
+  draft_alerts_enabled?: boolean
 }
 
 export interface WorkspaceMember {
@@ -51,6 +53,11 @@ export const workspacesApi = {
   // тоже только владелец, иначе 403
   async updateCasesEnabled(id: number, cases_enabled: boolean) {
     const { data } = await api.put<Workspace>(`/workspaces/${id}`, { cases_enabled })
+    return data
+  },
+  // тоже только владелец, иначе 403
+  async updateDraftAlertsEnabled(id: number, draft_alerts_enabled: boolean) {
+    const { data } = await api.put<Workspace>(`/workspaces/${id}`, { draft_alerts_enabled })
     return data
   },
   async remove(id: number) {

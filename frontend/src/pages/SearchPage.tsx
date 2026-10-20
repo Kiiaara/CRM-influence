@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { api } from '../api/client'
 import { Link } from 'react-router-dom'
+import { campaignBloggerLink } from '../utils/dealLinks'
 
 interface Hit {
   kind: 'integration'
   id: number
   title: string
   snippet: string
+  // кампания сделки; null - сделка вне кампании
+  campaign_id: number | null
 }
 
 export default function SearchPage() {
@@ -39,17 +42,24 @@ export default function SearchPage() {
       </form>
       {loading && <div className="text-slate-400">Ищу…</div>}
       <div className="space-y-2">
-        {hits.map((h, i) => (
-          <Link
-            key={i}
-            to={`/integrations?open=${h.id}`}
-            className="block bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-4 hover:border-brand-400"
-          >
-            <div className="text-xs text-slate-400 mb-1">🤝 Интеграция</div>
-            <div className="font-medium text-slate-900 dark:text-slate-100">{h.title}</div>
-            <div className="text-sm text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">{h.snippet}</div>
-          </Link>
-        ))}
+        {hits.map((h, i) => {
+          const body = (
+            <>
+              <div className="text-xs text-slate-400 mb-1">🤝 Интеграция{h.campaign_id == null && ' · вне кампании'}</div>
+              <div className="font-medium text-slate-900 dark:text-slate-100">{h.title}</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">{h.snippet}</div>
+            </>
+          )
+          const box = 'block bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-4'
+          // сделка вне кампании: ссылки нет, показываем текстом
+          return h.campaign_id == null ? (
+            <div key={i} className={`${box} opacity-70`}>{body}</div>
+          ) : (
+            <Link key={i} to={campaignBloggerLink(h.campaign_id, h.id)} className={`${box} hover:border-brand-400`}>
+              {body}
+            </Link>
+          )
+        })}
         {!loading && hits.length === 0 && q && <div className="text-slate-500">Ничего не найдено.</div>}
       </div>
     </div>

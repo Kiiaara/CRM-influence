@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shutil
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -21,6 +22,7 @@ from models.integration_streamer import IntegrationStreamer
 from models.integration_payment import IntegrationPayment
 from models.case_study import CaseStudy
 from models.brief_file import BriefFile
+from models.integration_screenshot import IntegrationScreenshot
 from models.advertiser import Advertiser
 from models.audit_log import AuditLogEntry
 from models.user import User
@@ -118,10 +120,36 @@ CONTRACT_STATUSES = (
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "contracts")
 CASE_PHOTO_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "case_photos")
 BRIEF_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "briefs")
+SCREENSHOT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "screenshots")
 
 # ограничение на файл ТЗ - чтобы случайным перетаскиванием видоса не забить диск
 MAX_BRIEF_FILE_BYTES = 25 * 1024 * 1024
 
+# скриншоты интеграции: только картинки и не тяжелее 10 МБ
+MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024
+SCREENSHOT_EXTS = ("png", "jpg", "jpeg", "webp", "gif")
+SCREENSHOT_MIME = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp", "gif": "image/gif"}
+
+
+def _sniff_image(content: bytes) -> Optional[str]:
+    """Тип картинки по сигнатуре файла (png/jpg/webp/gif), а не по имени: переименованный
+    текст или svg с js внутри не пройдёт. Не картинка - None."""
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if content.startswith((b"GIF87a", b"GIF89a")):
+        return "gif"
+    if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+def _remove_screenshot_files(s: IntegrationStreamer):
+    """Строки скриншотов уйдут каскадом, а файлы с диска надо убрать руками."""
+    for sh in s.screenshots:
+        if os.path.exists(sh.file_path):
+            os.remove(sh.file_path)
 
 def _validate_stage(stage: str):
     if stage not in STAGES:
@@ -173,6 +201,25 @@ def _validate_integration_time(v: Optional[str]):
 
 # ---------- схемы ----------
 
+class AdvertiserContactBrief(BaseModel):
+    """Контакт рекламодателя (BrandContact) для блока в модалке блогера."""
+    id: int
+    contact_type: str
+    value: str
+    label: str = ""
+    is_primary: bool = False
+    model_config = {"from_attributes": True}
+
+
+class AdvertiserContactsOut(BaseModel):
+    """Рекламодатель сделки с его контактами из BrandContact (основной первым) -
+    для блока в модалке блогера (только чтение)."""
+    id: int
+    name: str
+    contacts: List[AdvertiserContactBrief] = []
+    model_config = {"from_attributes": True}
+
+
 class StreamerOut(BaseModel):
     id: int
     integration_id: int
@@ -196,6 +243,10 @@ class StreamerOut(BaseModel):
     contract_sent_date: Optional[datetime] = None
     contract_signed_date: Optional[datetime] = None
     contract_notes: str
+    contract_url: str = ""
+    publication_url: str = ""
+    # рекламодатель сделки (null, если у сделки его нет)
+    advertiser: Optional[AdvertiserContactsOut] = None
     brief: str
     ord_responsible: str
     ord_status: str
@@ -281,6 +332,8 @@ class StreamerUpdate(BaseModel):
     contract_sent_date: Optional[datetime] = None
     contract_signed_date: Optional[datetime] = None
     contract_notes: Optional[str] = None
+    contract_url: Optional[str] = None
+    publication_url: Optional[str] = None
     brief: Optional[str] = None
     ord_responsible: Optional[str] = None
     ord_status: Optional[str] = None
@@ -294,6 +347,8 @@ class StreamerUpdate(BaseModel):
 class IntegrationOut(BaseModel):
     id: int
     advertiser_id: Optional[int] = None
+    # кампания, в которой живёт сделка; null = сделка вне кампании (горячие задачи такие не показывают)
+    campaign_id: Optional[int] = None
     brand: str
     description: str
     kp_sheet_url: str = ""
@@ -341,6 +396,15 @@ class PaymentCreate(BaseModel):
 
 
 class BriefFileOut(BaseModel):
+    id: int
+    streamer_id: int
+    file_name: str
+    size_bytes: int
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class ScreenshotOut(BaseModel):
     id: int
     streamer_id: int
     file_name: str
@@ -489,6 +553,7 @@ def delete_integration(integration_id: int, db: Session = Depends(get_db), ws: W
     for s in it.streamers:
         if s.contract_file_path and os.path.exists(s.contract_file_path):
             os.remove(s.contract_file_path)
+        _remove_screenshot_files(s)
     db.delete(it)
     db.commit()
     return {"ok": True}
@@ -641,6 +706,7 @@ def delete_streamer(streamer_id: int, db: Session = Depends(get_db), ws: Workspa
     for bf in db.query(BriefFile).filter(BriefFile.streamer_id == s.id).all():
         if os.path.exists(bf.file_path):
             os.remove(bf.file_path)
+    _remove_screenshot_files(s)
     db.delete(s)
     db.commit()
     return {"ok": True}
@@ -763,6 +829,117 @@ def delete_brief_file(file_id: int, db: Session = Depends(get_db), ws: Workspace
     return {"ok": True}
 
 
+# ---------- скриншоты интеграции ----------
+
+@router.get("/streamers/{streamer_id}/screenshots", response_model=List[ScreenshotOut])
+def list_screenshots(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    _get_streamer_or_404(db, ws, streamer_id)
+    return (
+        db.query(IntegrationScreenshot)
+        .filter(IntegrationScreenshot.streamer_id == streamer_id)
+        .order_by(IntegrationScreenshot.created_at.asc(), IntegrationScreenshot.id.asc())
+        .all()
+    )
+
+
+@router.post("/streamers/{streamer_id}/screenshots", response_model=ScreenshotOut, status_code=201)
+async def upload_screenshot(streamer_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    streamer = _get_streamer_or_404(db, ws, streamer_id)
+
+    content = await file.read()
+    if len(content) > MAX_SCREENSHOT_BYTES:
+        raise HTTPException(400, f"Файл больше {MAX_SCREENSHOT_BYTES // (1024 * 1024)} МБ")
+    # и расширение, и содержимое должны быть картинкой
+    name_ext = os.path.splitext(file.filename or "")[1].lstrip(".").lower()
+    real_ext = _sniff_image(content)
+    if name_ext not in SCREENSHOT_EXTS or real_ext is None:
+        raise HTTPException(400, f"Нужна картинка: {', '.join(SCREENSHOT_EXTS)}")
+
+    os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+    # на диске имя и расширение свои, по реальному типу, а не по присланному
+    dest_path = os.path.join(SCREENSHOT_DIR, f"{uuid.uuid4().hex}.{real_ext}")
+    with open(dest_path, "wb") as f:
+        f.write(content)
+
+    # кейс заводим только на ПЕРВЫЙ скриншот: считаем до добавления нового
+    is_first = db.query(IntegrationScreenshot).filter(IntegrationScreenshot.streamer_id == streamer_id).count() == 0
+
+    sh = IntegrationScreenshot(
+        streamer_id=streamer_id,
+        file_path=dest_path,
+        file_name=file.filename or f"screenshot.{real_ext}",
+        size_bytes=len(content),
+    )
+    db.add(sh)
+    db.commit()
+    db.refresh(sh)
+    if is_first:
+        _auto_create_case(db, ws, streamer, sh)
+    return sh
+
+
+def _auto_create_case(db: Session, ws: Workspace, streamer: IntegrationStreamer, shot: IntegrationScreenshot):
+    """Первый скриншот интеграции сам заводит кейс-черновик, чтобы его потом дополнить руками:
+    заголовок "бренд - блогер", остальное пустое, на сайт не публикуется (show_on_site=False).
+    Не заводим, если раздел «Кейсы» в пространстве выключен или кейс у участника уже есть."""
+    if ws.cases_enabled is False:
+        return
+    if db.query(CaseStudy).filter(CaseStudy.streamer_id == streamer.id).first():
+        return
+    brand = streamer.integration.brand if streamer.integration else ""
+    c = CaseStudy(streamer_id=streamer.id, title=f"{brand} - {streamer.streamer_name}".strip(" -"))
+    _copy_screenshot_to_case(c, shot)
+    db.add(c)
+    db.commit()
+
+
+def _copy_screenshot_to_case(c: CaseStudy, shot: IntegrationScreenshot):
+    """Фото кейса - копия скриншота (удаление фото кейса сам скриншот не трогает)."""
+    if not os.path.exists(shot.file_path):
+        return
+    try:
+        os.makedirs(CASE_PHOTO_DIR, exist_ok=True)
+        dest = os.path.join(CASE_PHOTO_DIR, f"{uuid.uuid4().hex}{os.path.splitext(shot.file_path)[1]}")
+        shutil.copyfile(shot.file_path, dest)
+    except OSError:
+        return  # нет места или прав: кейс заведём без фото, фото можно добавить руками
+    c.photo_path = dest
+    c.photo_name = shot.file_name
+
+
+def _get_screenshot_or_404(db: Session, ws: Workspace, screenshot_id: int) -> IntegrationScreenshot:
+    sh = db.get(IntegrationScreenshot, screenshot_id)
+    if not sh:
+        raise HTTPException(404)
+    _get_streamer_or_404(db, ws, sh.streamer_id)
+    return sh
+
+
+@router.get("/screenshots/{screenshot_id}")
+def download_screenshot(screenshot_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    sh = _get_screenshot_or_404(db, ws, screenshot_id)
+    if not os.path.exists(sh.file_path):
+        raise HTTPException(404, "Файл не найден")
+    ext = os.path.splitext(sh.file_path)[1].lstrip(".").lower()
+    # inline: превью и полный размер открываются прямо во вкладке, а не скачиваются
+    return FileResponse(
+        sh.file_path,
+        media_type=SCREENSHOT_MIME.get(ext, "application/octet-stream"),
+        filename=sh.file_name,
+        content_disposition_type="inline",
+    )
+
+
+@router.delete("/screenshots/{screenshot_id}")
+def delete_screenshot(screenshot_id: int, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
+    sh = _get_screenshot_or_404(db, ws, screenshot_id)
+    if os.path.exists(sh.file_path):
+        os.remove(sh.file_path)
+    db.delete(sh)
+    db.commit()
+    return {"ok": True}
+
+
 # ---------- платежи ----------
 
 @router.get("/streamers/{streamer_id}/payments", response_model=List[PaymentOut])
@@ -837,6 +1014,15 @@ def list_cases(streamer_id: int, db: Session = Depends(get_db), ws: Workspace = 
 def create_case(streamer_id: int, data: CaseStudyCreate, db: Session = Depends(get_db), ws: Workspace = Depends(get_current_workspace)):
     _get_streamer_or_404(db, ws, streamer_id)
     c = CaseStudy(streamer_id=streamer_id, **data.model_dump())
+    # первый скриншот интеграции подставляем фото кейса (копией: удаление фото кейса скриншот не трогает)
+    first = (
+        db.query(IntegrationScreenshot)
+        .filter(IntegrationScreenshot.streamer_id == streamer_id)
+        .order_by(IntegrationScreenshot.created_at.asc(), IntegrationScreenshot.id.asc())
+        .first()
+    )
+    if first:
+        _copy_screenshot_to_case(c, first)
     db.add(c)
     db.commit()
     db.refresh(c)

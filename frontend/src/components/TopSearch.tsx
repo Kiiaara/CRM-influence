@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
+import { campaignBloggerLink } from '../utils/dealLinks'
 
 interface Hit {
   kind: 'integration'
   id: number
   title: string
   snippet: string
+  // кампания сделки; null - сделка вне кампании, открыть её негде
+  campaign_id: number | null
 }
 
 export default function TopSearch() {
@@ -56,9 +59,11 @@ export default function TopSearch() {
   }, [])
 
   const go = (h: Hit) => {
+    // сделка вне кампании: модалки нет, выбор игнорируем
+    if (h.campaign_id == null) return
     setOpen(false)
     setQ('')
-    nav(`/integrations?open=${h.id}`)
+    nav(campaignBloggerLink(h.campaign_id, h.id))
   }
 
   return (
@@ -86,9 +91,11 @@ export default function TopSearch() {
               key={`${h.kind}-${h.id}-${i}`}
               onClick={() => go(h)}
               onMouseEnter={() => setActive(i)}
-              className={`w-full text-left px-4 py-2 text-sm ${i === active ? 'bg-brand-50 dark:bg-brand-900/30' : ''} hover:bg-brand-50 dark:hover:bg-brand-900/30 border-b border-slate-100 dark:border-brand-900 last:border-0`}
+              // вне кампании - просто текст без перехода
+              disabled={h.campaign_id == null}
+              className={`w-full text-left px-4 py-2 text-sm ${i === active ? 'bg-brand-50 dark:bg-brand-900/30' : ''} hover:bg-brand-50 dark:hover:bg-brand-900/30 border-b border-slate-100 dark:border-brand-900 last:border-0 disabled:opacity-60 disabled:cursor-default`}
             >
-              <div className="text-xs text-slate-400">🤝 Интеграция</div>
+              <div className="text-xs text-slate-400">🤝 Интеграция{h.campaign_id == null && ' · вне кампании'}</div>
               <div className="font-medium text-slate-900 dark:text-slate-100 truncate">{h.title}</div>
               {h.snippet && <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{h.snippet}</div>}
             </button>

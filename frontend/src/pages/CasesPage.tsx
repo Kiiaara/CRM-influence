@@ -184,7 +184,7 @@ export default function CasesPage() {
         )}
         {filtered.length === 0 && waiting.length > 0 && (
           <div className="text-sm text-slate-400 text-center py-8 bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl">
-            Заполненных кейсов ещё нет — выберите сделку выше
+            Заполненных кейсов ещё нет - выберите сделку выше
           </div>
         )}
       </div>
@@ -286,29 +286,57 @@ function CasePickerModal({
   )
 }
 
+// текст ошибки из ответа сервера; без detail (502 от nginx, сеть) пишем код, чтобы ошибка не терялась
+function errorText(e: unknown, fallback: string): string {
+  const err = e as { response?: { status?: number; data?: { detail?: unknown } }; message?: string }
+  const detail = err?.response?.data?.detail
+  if (typeof detail === 'string' && detail) return detail
+  const status = err?.response?.status
+  if (status) return `${fallback} (ответ сервера ${status})`
+  return `${fallback}: нет связи с сервером`
+}
+
 function SitePublishBar() {
   const qc = useQueryClient()
-  const { data: status } = useQuery({ queryKey: ['site-status'], queryFn: siteApi.status })
+  const { data: status, isError: statusFailed, error: statusError } = useQuery({ queryKey: ['site-status'], queryFn: siteApi.status, retry: false })
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: authApi.me, retry: false })
-  const [result, setResult] = useState<{ ok: boolean; text: string; link?: string } | null>(null)
+  const [result, setResult] = useState<{ ok: boolean; text: string; link?: string; warnings?: string[] } | null>(null)
 
   const publish = useMutation({
     mutationFn: siteApi.publish,
     onSuccess: (r: PublishResult) => {
       qc.invalidateQueries({ queryKey: ['site-status'] })
       qc.invalidateQueries({ queryKey: ['streamers'] })
-      setResult(r.changed
-        ? { ok: true, text: `Опубликовано кейсов: ${r.count}. Сайт обновится, как только сервер заберёт изменения с GitHub.`, link: r.commit_url ?? undefined }
-        : { ok: true, text: 'На сайте и так всё актуально.' })
+      const translated = r.translated > 0 ? ` Переведено на EN/中文: ${r.translated}.` : ''
+      const warnings = r.warnings ?? []
+      if (r.changed) {
+        setResult({
+          ok: true,
+          text: `Опубликовано кейсов: ${r.count}.${translated} Сайт обновится, как только сервер заберёт изменения с GitHub.`,
+          link: r.commit_url ?? undefined,
+          warnings,
+        })
+      } else if (r.count === 0) {
+        // публиковать нечего: «всё актуально» тут было бы неправдой
+        setResult({ ok: false, text: 'Нечего публиковать: ни у одного кейса нет галочки «Показывать на сайте».', warnings })
+      } else {
+        setResult({ ok: true, text: 'На сайте и так всё актуально.', warnings })
+      }
     },
-    onError: (e: unknown) => {
-      const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-      setResult({ ok: false, text: typeof detail === 'string' ? detail : 'Не удалось опубликовать' })
-    },
+    onError: (e: unknown) => setResult({ ok: false, text: errorText(e, 'Не удалось опубликовать') }),
   })
 
+  // статус не загрузился: не прячем панель молча, иначе непонятно, почему публикации нет
+  if (statusFailed) {
+    return (
+      <div className="bg-white dark:bg-brand-950 border border-red-300 dark:border-red-900 rounded-xl p-3 mb-6 text-sm text-red-600 dark:text-red-400">
+        Не удалось получить состояние публикации на сайт. {errorText(statusError, 'Ошибка')}. Обновите страницу; если не помогает, проверьте, что сервер работает.
+      </div>
+    )
+  }
   if (!status) return null
   const isAdmin = me?.role === 'admin'
+  const missing = status.missing ?? []
 
   return (
     <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-3 mb-6 text-sm">
@@ -318,7 +346,7 @@ function SitePublishBar() {
           <a href={status.site_url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">
             {status.site_url.replace(/^https?:\/\//, '')}
           </a>
-          : {status.count ? `кейсов из CRM — ${status.count}` : 'пока ни одного кейса из CRM — поставь галочку «Показывать на сайте»'}
+          : {status.count ? `кейсов из CRM - ${status.count}` : 'пока ни одного кейса из CRM - поставь галочку «Показывать на сайте»'}
           {status.unpublished > 0 && <span className="text-amber-600"> · ждут публикации: {status.unpublished}</span>}
           {status.last_published_at && (
             <span className="text-slate-400"> · обновлено {new Date(status.last_published_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
@@ -326,22 +354,38 @@ function SitePublishBar() {
         </div>
         {isAdmin && (
           <button
-            onClick={() => publish.mutate()}
+            onClick={() => { setResult(null); publish.mutate() }}
             disabled={publish.isPending || !status.configured}
-            title={status.configured ? '' : 'Нужен SITE_GITHUB_TOKEN в backend/.env'}
+            title={status.configured ? '' : `Нужно настроить: ${missing.join(', ')}`}
             className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium shrink-0"
           >
-            {publish.isPending ? 'Публикую…' : '🚀 Опубликовать на сайт'}
+            {publish.isPending ? 'Публикую и перевожу…' : '🚀 Опубликовать на сайт'}
           </button>
         )}
       </div>
-      {isAdmin && !status.configured && (
-        <div className="text-xs text-slate-400 mt-2">Публикация не настроена: нужен токен GitHub (SITE_GITHUB_TOKEN в backend/.env).</div>
+      {!status.configured && (
+        <div className="text-xs text-red-600 dark:text-red-400 mt-2">
+          Публикация на сайт не настроена: в backend/.env на сервере не хватает {missing.length ? missing.join(', ') : 'настроек GitHub'}.
+          Пока их нет, кнопка не работает. После добавления перезапустите сервис crm-influence.
+        </div>
+      )}
+      {!isAdmin && me && (
+        <div className="text-xs text-slate-400 mt-2">Публиковать кейсы на сайт может только администратор.</div>
+      )}
+      {status.configured && !status.translate_configured && (
+        <div className="text-xs text-amber-600 mt-2">
+          Ключ Groq не задан (GROQ_API_KEY): кейсы без перевода уйдут на сайт на русском. Ключ бесплатный, console.groq.com.
+        </div>
       )}
       {result && (
-        <div className={`text-xs mt-2 ${result.ok ? 'text-emerald-600' : 'text-red-500'}`}>
-          {result.text}{' '}
-          {result.link && <a href={result.link} target="_blank" rel="noreferrer" className="underline">коммит ↗</a>}
+        <div className="mt-2 space-y-1">
+          <div className={`text-xs ${result.ok ? 'text-emerald-600' : 'text-red-600 dark:text-red-400'}`}>
+            {result.text}{' '}
+            {result.link && <a href={result.link} target="_blank" rel="noreferrer" className="underline">коммит ↗</a>}
+          </div>
+          {(result.warnings ?? []).map((w, i) => (
+            <div key={i} className="text-xs text-amber-600">⚠️ {w}</div>
+          ))}
         </div>
       )}
     </div>

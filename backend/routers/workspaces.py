@@ -60,11 +60,13 @@ class WorkspaceOut(BaseModel):
     margin_divisor: float = DEFAULT_MARGIN_DIVISOR
     # показывать ли раздел "Кейсы"; None в старой строке = включено
     cases_enabled: bool = True
+    # напоминать ли про черновики сделок в горячих задачах; None в старой строке = включено
+    draft_alerts_enabled: bool = True
     model_config = {"from_attributes": True}
 
-    @field_validator("cases_enabled", mode="before")
+    @field_validator("cases_enabled", "draft_alerts_enabled", mode="before")
     @classmethod
-    def _cases_default(cls, v):
+    def _flag_default(cls, v):
         return True if v is None else bool(v)
 
     @field_validator("margin_divisor", mode="before")
@@ -82,6 +84,7 @@ class WorkspaceUpdate(BaseModel):
     title: Optional[str] = None
     margin_divisor: Optional[float] = None
     cases_enabled: Optional[bool] = None
+    draft_alerts_enabled: Optional[bool] = None
 
 
 class MemberOut(BaseModel):
@@ -140,7 +143,12 @@ def update_workspace(
     ws = db.get(Workspace, workspace_id)
     if not ws:
         raise HTTPException(404)
-    if data.title is None and data.margin_divisor is None and data.cases_enabled is None:
+    if (
+        data.title is None
+        and data.margin_divisor is None
+        and data.cases_enabled is None
+        and data.draft_alerts_enabled is None
+    ):
         raise HTTPException(400, "Нечего менять")
     if data.title is not None:
         title = data.title.strip()
@@ -161,6 +169,11 @@ def update_workspace(
         if role != "owner":
             raise HTTPException(403, "Показ раздела Кейсы меняет только владелец пространства")
         ws.cases_enabled = data.cases_enabled
+    if data.draft_alerts_enabled is not None:
+        # настройка пространства, как и остальные флаги: только владелец
+        if role != "owner":
+            raise HTTPException(403, "Напоминания про черновики меняет только владелец пространства")
+        ws.draft_alerts_enabled = data.draft_alerts_enabled
     ws.updated_at = datetime.now()
     db.commit()
     db.refresh(ws)

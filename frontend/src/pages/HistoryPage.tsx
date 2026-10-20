@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { integrationsApi, PAYMENT_LABELS, describeAuditEntry } from '../api/integrations'
 import type { AuditLogEntry, Streamer } from '../api/integrations'
-import { StreamerModal } from './IntegrationsBoard'
+import CampaignBloggerModal from '../components/CampaignBloggerModal'
 
 interface Row extends Streamer {
   brand: string
+  // кампания сделки; null - сделка вне кампании, карточку открыть негде
+  campaign_id: number | null
 }
 
 type Tab = 'done' | 'audit'
@@ -22,7 +24,7 @@ export default function HistoryPage() {
   const [q, setQ] = useState('')
 
   const rows: Row[] = useMemo(() => {
-    const done = integrations.flatMap(it => it.streamers.map(s => ({ ...s, brand: it.brand })).filter(s => s.stage === 'done'))
+    const done = integrations.flatMap(it => it.streamers.map(s => ({ ...s, brand: it.brand, campaign_id: it.campaign_id })).filter(s => s.stage === 'done'))
     return done.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
   }, [integrations])
 
@@ -96,16 +98,19 @@ export default function HistoryPage() {
                 {filtered.map(r => (
                   <tr
                     key={r.id}
-                    onClick={() => setEditing(r)}
-                    className="border-t border-slate-100 dark:border-brand-900 hover:bg-slate-50 dark:hover:bg-brand-900/30 cursor-pointer"
+                    // модалка блогера есть только у сделок внутри кампании
+                    onClick={r.campaign_id != null ? () => setEditing(r) : undefined}
+                    className={`border-t border-slate-100 dark:border-brand-900 ${
+                      r.campaign_id != null ? 'hover:bg-slate-50 dark:hover:bg-brand-900/30 cursor-pointer' : ''
+                    }`}
                   >
                     <td className="px-3 py-2 text-slate-900 dark:text-slate-100 whitespace-nowrap">{r.brand}</td>
                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{r.streamer_name}</td>
                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                      {r.amount != null ? `${r.amount.toLocaleString('ru-RU')} ${r.currency}` : '—'}
+                      {r.amount != null ? `${r.amount.toLocaleString('ru-RU')} ${r.currency}` : '-'}
                     </td>
                     <td className="px-3 py-2 text-brand-600 dark:text-brand-400 whitespace-nowrap">
-                      {r.commission_amount != null ? `${r.commission_amount.toLocaleString('ru-RU')} ${r.currency}` : '—'}
+                      {r.commission_amount != null ? `${r.commission_amount.toLocaleString('ru-RU')} ${r.currency}` : '-'}
                     </td>
                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{PAYMENT_LABELS[r.payment_status]}</td>
                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">
@@ -131,7 +136,7 @@ export default function HistoryPage() {
                 <span className="text-slate-700 dark:text-slate-300">
                   <span className="font-medium text-slate-900 dark:text-slate-100">{e.brand}</span>
                   <span className="text-slate-400"> × {e.streamer_name}</span>
-                  <span className="text-slate-400"> — </span>
+                  <span className="text-slate-400"> - </span>
                   {describeAuditEntry(e)}
                   <span className="text-slate-400"> · {e.author_label ?? 'кто-то'}</span>
                 </span>
@@ -145,8 +150,8 @@ export default function HistoryPage() {
         </>
       )}
 
-      {editing && (
-        <StreamerModal streamer={editing} brand={editing.brand} onClose={() => setEditing(null)} />
+      {editing && editing.campaign_id != null && (
+        <CampaignBloggerModal streamerId={editing.id} campaignId={editing.campaign_id} onClose={() => setEditing(null)} />
       )}
     </div>
   )

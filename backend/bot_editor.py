@@ -43,6 +43,7 @@ from models.audit_log import AuditLogEntry
 from models.blogger_profile import BloggerProfile
 from models.brand_contact import BrandContact
 from models.brief_file import BriefFile
+from models.integration_screenshot import IntegrationScreenshot
 from models.case_study import CaseStudy
 from models.integration import Integration
 from models.integration_payment import IntegrationPayment
@@ -182,7 +183,7 @@ def _remove_file(path: Optional[str]):
 
 
 def _money(v) -> str:
-    return "—" if v is None else f"{float(v):,.0f}".replace(",", " ")
+    return "-" if v is None else f"{float(v):,.0f}".replace(",", " ")
 
 
 # --- сделка ---
@@ -197,7 +198,7 @@ def _deal_header(ctx: Ctx, it: Integration) -> str:
         lines.append(f'📊 <a href="{esc(it.kp_sheet_url)}">Таблица КП</a>')
     for s in it.streamers:
         icon = "📱" if s.talent_type == "blogger" else "🎮"
-        lines.append(f"{icon} {esc(s.streamer_name)} — {STAGE_LABELS.get(s.stage, s.stage)}, {_money(s.amount)}")
+        lines.append(f"{icon} {esc(s.streamer_name)} - {STAGE_LABELS.get(s.stage, s.stage)}, {_money(s.amount)}")
     return "\n".join(lines)
 
 
@@ -225,6 +226,8 @@ def _deal_before_delete(ctx: Ctx, it: Integration):
         _remove_file(s.contract_file_path)
         for bf in ctx.db.query(BriefFile).filter(BriefFile.streamer_id == s.id).all():
             _remove_file(bf.file_path)
+        for sh in ctx.db.query(IntegrationScreenshot).filter(IntegrationScreenshot.streamer_id == s.id).all():
+            _remove_file(sh.file_path)
         for c in ctx.db.query(CaseStudy).filter(CaseStudy.streamer_id == s.id).all():
             _remove_file(c.photo_path)
     return None
@@ -266,6 +269,8 @@ def _card_before_delete(ctx: Ctx, s: IntegrationStreamer):
     _remove_file(s.contract_file_path)
     for bf in ctx.db.query(BriefFile).filter(BriefFile.streamer_id == s.id).all():
         _remove_file(bf.file_path)
+    for sh in ctx.db.query(IntegrationScreenshot).filter(IntegrationScreenshot.streamer_id == s.id).all():
+        _remove_file(sh.file_path)
     for c in ctx.db.query(CaseStudy).filter(CaseStudy.streamer_id == s.id).all():
         _remove_file(c.photo_path)
     return None
@@ -391,6 +396,25 @@ def _adv_before_delete(ctx: Ctx, adv: Advertiser):
         return "У рекламодателя есть сделки - сначала удалите их."
     ctx.db.query(BrandContact).filter(BrandContact.advertiser_id == adv.id).delete()
     return None
+
+
+def _adv_header(ctx: Ctx, adv: Advertiser) -> str:
+    """Контакты рекламодателя в карточке (как блок «Рекламодатель» в модалке блогера на сайте):
+    основной первым, у каждого тип, значение и роль."""
+    contacts = (
+        ctx.db.query(BrandContact)
+        .filter(BrandContact.advertiser_id == adv.id)
+        .order_by(BrandContact.is_primary.desc(), BrandContact.created_at.asc(), BrandContact.id.asc())
+        .all()
+    )
+    if not contacts:
+        return "Контакты: нет"
+    lines = ["Контакты:"]
+    for c in contacts:
+        role = f" ({esc(c.label)})" if c.label else ""
+        star = "⭐ " if c.is_primary else ""
+        lines.append(f"  {star}{esc(CONTACT_TYPE_LABELS.get(c.contact_type, c.contact_type))}: {esc(c.value)}{role}")
+    return "\n".join(lines)
 
 
 def _adv_extra(ctx: Ctx, adv: Advertiser) -> list:
@@ -580,6 +604,7 @@ _reg(Entity(
     list_query=lambda ctx, pid: ctx.db.query(Advertiser).filter(Advertiser.workspace_id == ctx.ws_id).order_by(Advertiser.updated_at.desc()),
     create_prompt="Название нового рекламодателя?",
     create=_adv_create, on_change=_adv_change, before_delete=_adv_before_delete, extra_buttons=_adv_extra,
+    header=_adv_header,
 ))
 
 _reg(Entity(
@@ -720,7 +745,7 @@ def _value_label(ctx: Ctx, f: F, obj) -> str:
     if f.kind == "bool":
         return "Да" if v else "Нет"
     if v is None or v == "":
-        return "—"
+        return "-"
     if f.kind == "enum":
         return _options(ctx, f, obj).get(str(v), str(v))
     if isinstance(v, datetime):
@@ -1234,7 +1259,7 @@ async def _translate_case(tg_id: int, case_id: int, source: dict):
             db.commit()
     finally:
         db.close()
-    await send_message(tg_id, f"✅ Переведено\nEN: {esc(tr['en']['title'])} — {esc(tr['en']['mini'])}\n中文: {esc(tr['zh']['title'])} — {esc(tr['zh']['mini'])}")
+    await send_message(tg_id, f"✅ Переведено\nEN: {esc(tr['en']['title'])} - {esc(tr['en']['mini'])}\n中文: {esc(tr['zh']['title'])} - {esc(tr['zh']['mini'])}")
     await show_card(tg_id, "case", case_id)
 
 
@@ -1245,8 +1270,13 @@ async def _publish_site(tg_id: int):
         r = await site_publisher.publish(db, tg_id)
         if r["changed"]:
             text = f"✅ Опубликовано кейсов: {r['count']}. Сайт обновится, когда сервер заберёт изменения с GitHub."
+        elif r["count"] == 0:
+            text = "Нечего публиковать: ни у одного кейса нет галочки «Показывать на сайте»."
         else:
             text = "На сайте и так всё актуально."
+        # перевод не сделан (нет ключа Groq, лимит, не хватило времени): публикация прошла, но без него
+        for w in r.get("warnings", []):
+            text += f"\n⚠️ {esc(w)}"
     except site_publisher.PublishError as e:
         text = f"⚠️ {e}"
     finally:

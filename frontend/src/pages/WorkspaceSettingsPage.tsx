@@ -37,6 +37,7 @@ export default function WorkspaceSettingsPage() {
   const [titleErr, setTitleErr] = useState<string | null>(null)
   const [divisorErr, setDivisorErr] = useState<string | null>(null)
   const [casesErr, setCasesErr] = useState<string | null>(null)
+  const [draftsErr, setDraftsErr] = useState<string | null>(null)
 
   // подставляем значения при смене пространства и после обновления списка
   useEffect(() => {
@@ -80,6 +81,16 @@ export default function WorkspaceSettingsPage() {
       setCasesErr(null)
     },
     onError: e => setCasesErr(errText(e)),
+  })
+
+  // галочка «Напоминать про черновики сделок»: так же сохраняется сразу, только владелец
+  const saveDrafts = useMutation({
+    mutationFn: (value: boolean) => workspacesApi.updateDraftAlertsEnabled(current!.id, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workspaces'] })
+      setDraftsErr(null)
+    },
+    onError: e => setDraftsErr(errText(e)),
   })
 
   if (!current) return null
@@ -196,6 +207,24 @@ export default function WorkspaceSettingsPage() {
             {!isOwner && ' Менять может только владелец пространства.'}
           </div>
           {casesErr && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{casesErr}</div>}
+        </div>
+
+        <div className={card}>
+          <label className="flex items-center gap-3 text-sm text-slate-800 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={current.draft_alerts_enabled !== false}
+              onChange={e => saveDrafts.mutate(e.target.checked)}
+              disabled={!isOwner || saveDrafts.isPending}
+              className="w-4 h-4"
+            />
+            Напоминать про черновики сделок
+          </label>
+          <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            Если выключить, пункт «Черновики без суммы/даты» пропадёт из горячих задач.
+            {!isOwner && ' Менять может только владелец пространства.'}
+          </div>
+          {draftsErr && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{draftsErr}</div>}
         </div>
       </div>
     </div>

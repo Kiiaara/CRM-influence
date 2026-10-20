@@ -16,6 +16,8 @@ class Workspace(Base):
     margin_divisor: Mapped[float] = mapped_column(Numeric(6, 4), default=1.375)
     # показывать ли раздел "Кейсы" в меню и напоминания о кейсах (не у всех пространств они нужны)
     cases_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # показывать ли в горячих задачах "Черновики без суммы/даты" (в части пространств они только мешают)
+    draft_alerts_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class WorkspaceMember(Base):

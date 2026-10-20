@@ -3,39 +3,20 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { integrationsApi } from '../api/integrations'
-import type { ContractStatus, Streamer } from '../api/integrations'
 import { campaignsApi } from '../api/campaigns'
 import { useWorkspace } from '../workspaceContext'
+import { buildDealGroups } from '../utils/alerts'
+import type { AlertGroup, AlertItem, AlertRow } from '../utils/alerts'
 
-interface AlertItem {
-  id: number
-  brand: string
-  streamer: string
-  detail: string
-  // куда ведёт строка; по умолчанию - карточка сделки на канбане
-  to?: string
-}
-
-interface AlertGroup {
-  key: string
-  title: string
-  items: AlertItem[]
-}
-
-// активные стадии - те, где дедлайн/договор/оплата ещё имеют значение
-const ACTIVE_STAGES = ['negotiation', 'agreed', 'awaiting_contract', 'awaiting_payment']
-const CONTRACT_PENDING: ContractStatus[] = ['sent_to_streamer', 'sent_to_brand']
-
-type Row = Streamer & { brand: string }
-
-// значение ["queryKey": ['integrations']] то же, что и на канбане/в документах -
+// значение ["queryKey": ['integrations']] то же, что и в документах/маркировке -
 // алерты всегда синхронны с остальными разделами без дополнительных запросов
 export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void }) {
   const { data: integrations = [] } = useQuery({ queryKey: ['integrations'], queryFn: integrationsApi.list })
   const { data: campaigns = [] } = useQuery({ queryKey: ['campaigns'], queryFn: () => campaignsApi.list() })
-  // выключен ли раздел Кейсы в этом пространстве: тогда напоминание про кейс не показываем
+  // настройки пространства: выключен раздел Кейсы или напоминания про черновики - эти группы не показываем
   const { current } = useWorkspace()
   const casesEnabled = current?.cases_enabled !== false
+  const draftAlertsEnabled = current?.draft_alerts_enabled !== false
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -47,73 +28,14 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
     return () => document.removeEventListener('mousedown', onClick)
   }, [])
 
-  const rows: Row[] = useMemo(
-    () => integrations.flatMap(it => it.streamers.map(s => ({ ...s, brand: it.brand }))),
+  // кампания сделки нужна, чтобы открыть модалку блогера; сделки вне кампании отсеет buildDealGroups
+  const rows: AlertRow[] = useMemo(
+    () => integrations.flatMap(it => it.streamers.map(s => ({ ...s, brand: it.brand, campaign_id: it.campaign_id }))),
     [integrations]
   )
 
   const groups: AlertGroup[] = useMemo(() => {
     const now = dayjs()
-    const toItems = (list: Row[], detail: (r: Row) => string): AlertItem[] =>
-      list.map(r => ({ id: r.id, brand: r.brand, streamer: r.streamer_name, detail: detail(r) }))
-
-    const drafts = rows.filter(r => r.stage === 'negotiation' && (r.amount == null || !r.deadline))
-
-    const deadlineSoon = rows.filter(r => {
-      if (!r.deadline || !ACTIVE_STAGES.includes(r.stage)) return false
-      const diff = dayjs(r.deadline).startOf('day').diff(now.startOf('day'), 'day')
-      return diff >= 0 && diff <= 3
-    })
-
-    const deadlineOverdue = rows.filter(
-      r => !!r.deadline && ACTIVE_STAGES.includes(r.stage) && dayjs(r.deadline).startOf('day').isBefore(now.startOf('day'))
-    )
-
-    const contractOverdue = rows.filter(
-      r =>
-        CONTRACT_PENDING.includes(r.contract_status) &&
-        !!r.contract_sent_date &&
-        now.diff(dayjs(r.contract_sent_date), 'day') > 5
-    )
-
-    const paymentOverdue = rows.filter(
-      r =>
-        r.payment_status !== 'paid' &&
-        r.payment_status !== 'not_invoiced' &&
-        !!r.deadline &&
-        r.stage !== 'cancelled' &&
-        dayjs(r.deadline).startOf('day').isBefore(now.startOf('day'))
-    )
-
-    const caseMissing = casesEnabled ? rows.filter(r => r.stage === 'done' && !r.has_case) : []
-
-    // срок действия договора убрали с карточки канбана - ловим его здесь
-    const contractExpiring = rows.filter(r => {
-      if (!r.contract_valid_until || !ACTIVE_STAGES.includes(r.stage)) return false
-      const diff = dayjs(r.contract_valid_until).startOf('day').diff(now.startOf('day'), 'day')
-      return diff >= 0 && diff <= 7
-    })
-
-    const contractExpired = rows.filter(
-      r =>
-        !!r.contract_valid_until &&
-        r.stage !== 'cancelled' &&
-        r.stage !== 'done' &&
-        dayjs(r.contract_valid_until).startOf('day').isBefore(now.startOf('day'))
-    )
-
-    // маркировку надо получить до выхода рекламы, иначе штраф
-    const ordTodo = rows.filter(r => {
-      if (r.ord_responsible === 'not_required' || r.ord_status !== 'todo') return false
-      if (r.stage === 'cancelled') return false
-      if (!r.integration_date) return false
-      const diff = dayjs(r.integration_date).startOf('day').diff(now.startOf('day'), 'day')
-      return diff <= 2
-    })
-
-    const ordReportOverdue = rows.filter(
-      r => r.ord_responsible !== 'not_required' && r.ord_reporting_status === 'overdue' && r.stage !== 'cancelled'
-    )
 
     // кампании: подборку надо отдать вовремя, иначе клиент уходит
     // завершённые (archived_at) в алерты не попадают, даже если список вдруг пришёл с ними
@@ -148,7 +70,7 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
       return diff >= 0 && diff <= 3
     })
 
-    return [
+    const campaignGroups: AlertGroup[] = [
       {
         key: 'selectionOverdue',
         title: 'Подборка просрочена',
@@ -164,34 +86,13 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
         title: 'Дедлайн РК на подходе',
         items: campaignItems(campaignDueSoon, c => dayjs(c.campaign_due_at).format('DD.MM')),
       },
-      { key: 'drafts', title: 'Черновики без суммы/даты', items: toItems(drafts, () => 'заполните карточку') },
-      { key: 'deadlineSoon', title: 'Дедлайн через 1-3 дня', items: toItems(deadlineSoon, r => dayjs(r.deadline).format('DD.MM')) },
-      { key: 'deadlineOverdue', title: 'Дедлайн просрочен', items: toItems(deadlineOverdue, r => dayjs(r.deadline).format('DD.MM')) },
-      {
-        key: 'contractOverdue',
-        title: 'Договор > 5 дней без ответа',
-        items: toItems(contractOverdue, r => `отправлен ${dayjs(r.contract_sent_date).format('DD.MM')}`),
-      },
-      { key: 'paymentOverdue', title: 'Оплата просрочена', items: toItems(paymentOverdue, r => `дедлайн ${dayjs(r.deadline).format('DD.MM')}`) },
-      {
-        key: 'ordTodo',
-        title: 'Маркировка не готова, скоро эфир',
-        items: toItems(ordTodo, r => `эфир ${dayjs(r.integration_date).format('DD.MM')}`),
-      },
-      { key: 'ordReportOverdue', title: 'Отчётность в ОРД просрочена', items: toItems(ordReportOverdue, () => 'сдайте отчёт') },
-      {
-        key: 'contractExpiring',
-        title: 'Договор истекает в течение недели',
-        items: toItems(contractExpiring, r => `до ${dayjs(r.contract_valid_until).format('DD.MM')}`),
-      },
-      {
-        key: 'contractExpired',
-        title: 'Договор истёк',
-        items: toItems(contractExpired, r => `истёк ${dayjs(r.contract_valid_until).format('DD.MM')}`),
-      },
-      { key: 'caseMissing', title: 'Завершено, нет кейса для сайта', items: toItems(caseMissing, () => 'добавьте кейс') },
-    ].filter(g => g.items.length > 0)
-  }, [rows, campaigns, casesEnabled])
+    ]
+
+    // группы по сделкам блогеров (фильтры и условия - в utils/alerts.ts)
+    const dealGroups = buildDealGroups(rows, { now: now.toDate(), casesEnabled, draftAlertsEnabled })
+
+    return [...campaignGroups, ...dealGroups].filter(g => g.items.length > 0)
+  }, [rows, campaigns, casesEnabled, draftAlertsEnabled])
 
   const total = groups.reduce((sum, g) => sum + g.items.length, 0)
   const hot = total > 0
@@ -239,7 +140,7 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
               {g.items.slice(0, 6).map(item => (
                 <Link
                   key={`${g.key}-${item.id}`}
-                  to={item.to ?? `/integrations?open=${item.id}`}
+                  to={item.to}
                   onClick={close}
                   className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900"
                 >

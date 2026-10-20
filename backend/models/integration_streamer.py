@@ -48,6 +48,10 @@ class IntegrationStreamer(Base):
     contract_sent_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     contract_signed_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     contract_notes: Mapped[str] = mapped_column(Text, default="")
+    # договор ссылкой (облако, сервис подписания); не исключает загруженный файл
+    contract_url: Mapped[str] = mapped_column(String(512), default="")
+    # ссылка на вышедшую интеграцию (пост, видео, сторис)
+    publication_url: Mapped[str] = mapped_column(String(512), default="")
 
     # ТЗ (техническое задание) для инфлюенсера, свободный текст
     brief: Mapped[str] = mapped_column(Text, default="")
@@ -82,6 +86,12 @@ class IntegrationStreamer(Base):
     payments: Mapped[list["IntegrationPayment"]] = relationship(cascade="all, delete-orphan")
     case_studies: Mapped[list["CaseStudy"]] = relationship(cascade="all, delete-orphan")
     brief_files: Mapped[list["BriefFile"]] = relationship(cascade="all, delete-orphan")
+    screenshots: Mapped[list["IntegrationScreenshot"]] = relationship(cascade="all, delete-orphan")
+
+    @property
+    def advertiser(self):
+        """Рекламодатель сделки (для контактов в модалке блогера); None, если не задан."""
+        return self.integration.advertiser if self.integration else None
 
     @property
     def has_case(self) -> bool:

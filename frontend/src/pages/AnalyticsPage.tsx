@@ -16,6 +16,7 @@ import {
 } from 'recharts'
 import { integrationsApi, STAGES } from '../api/integrations'
 import type { Streamer } from '../api/integrations'
+import { campaignBloggerLink } from '../utils/dealLinks'
 import { useTheme } from '../theme'
 
 type Period = 'month' | 'quarter' | 'year' | 'all'
@@ -36,6 +37,8 @@ const TABS: { key: Tab; label: string }[] = [
 
 interface Row extends Streamer {
   brand: string
+  // кампания сделки; null - сделка вне кампании, ссылку на неё не даём
+  campaign_id: number | null
 }
 
 const STAGE_LABELS: Record<string, string> = Object.fromEntries(STAGES.map(s => [s.key, s.label]))
@@ -78,7 +81,7 @@ export default function AnalyticsPage() {
   }
 
   const rows: Row[] = useMemo(
-    () => integrations.flatMap(it => it.streamers.map(s => ({ ...s, brand: it.brand }))),
+    () => integrations.flatMap(it => it.streamers.map(s => ({ ...s, brand: it.brand, campaign_id: it.campaign_id }))),
     [integrations]
   )
 
@@ -187,9 +190,9 @@ function Overview({ rows, doneInPeriod, chart }: { rows: Row[]; doneInPeriod: Ro
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <StatCard icon="💰" label="Оборот" value={money(turnover)} />
         <StatCard icon="🎁" label="Доход (комиссия)" value={money(revenue)} />
-        <StatCard icon="💵" label="Средний чек" value={doneInPeriod.length ? money(avgCheck) : '—'} />
-        <StatCard icon="⏱️" label="Цикл сделки" value={avgCycleDays != null ? `${avgCycleDays.toFixed(1)} дн.` : '—'} />
-        <StatCard icon="⏳" label="Ждём оплаты" value={outstanding > 0 ? money(outstanding) : '—'} />
+        <StatCard icon="💵" label="Средний чек" value={doneInPeriod.length ? money(avgCheck) : '-'} />
+        <StatCard icon="⏱️" label="Цикл сделки" value={avgCycleDays != null ? `${avgCycleDays.toFixed(1)} дн.` : '-'} />
+        <StatCard icon="⏳" label="Ждём оплаты" value={outstanding > 0 ? money(outstanding) : '-'} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -333,9 +336,9 @@ function StreamersTab({ rows, doneInPeriod, onOpen }: { rows: Row[]; doneInPerio
                   {a.deals}
                   {a.cancelled > 0 && <span className="text-red-400 text-xs"> ({a.cancelled} отм.)</span>}
                 </td>
-                <td className="px-4 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.turnover > 0 ? money(a.turnover) : '—'}</td>
-                <td className="px-4 py-2 text-brand-600 dark:text-brand-400 whitespace-nowrap">{a.revenue > 0 ? money(a.revenue) : '—'}</td>
-                <td className="px-4 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.avgCheck > 0 ? money(a.avgCheck) : '—'}</td>
+                <td className="px-4 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.turnover > 0 ? money(a.turnover) : '-'}</td>
+                <td className="px-4 py-2 text-brand-600 dark:text-brand-400 whitespace-nowrap">{a.revenue > 0 ? money(a.revenue) : '-'}</td>
+                <td className="px-4 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.avgCheck > 0 ? money(a.avgCheck) : '-'}</td>
                 <td className="px-4 py-2 whitespace-nowrap">
                   <ReliabilityBadge value={a.reliability} missed={a.missedDeadlines} />
                 </td>
@@ -402,7 +405,7 @@ function StreamerDetail({ name, rows, chart, onClose }: { name: string; rows: Ro
         <StatCard icon="💰" label="Заработал всего" value={money(totalEarned)} compact />
         <StatCard icon="🎁" label="Наша комиссия" value={money(myRevenue)} compact />
         <StatCard icon="🪙" label="На руки инфлюенсеру" value={money(streamerNet)} compact />
-        <StatCard icon="⏳" label="Ждём оплаты" value={awaiting > 0 ? money(awaiting) : '—'} compact />
+        <StatCard icon="⏳" label="Ждём оплаты" value={awaiting > 0 ? money(awaiting) : '-'} compact />
       </div>
 
       {brands.length > 0 && (
@@ -505,8 +508,8 @@ function BrandsTab({ rows, doneInPeriod, onOpen }: { rows: Row[]; doneInPeriod: 
                   <td className="px-4 py-2 text-slate-900 dark:text-slate-100 whitespace-nowrap font-medium">{a.brand}</td>
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.deals}</td>
                   <td className="px-4 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.streamers}</td>
-                  <td className="px-4 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.turnover > 0 ? money(a.turnover) : '—'}</td>
-                  <td className="px-4 py-2 text-brand-600 dark:text-brand-400 whitespace-nowrap">{a.revenue > 0 ? money(a.revenue) : '—'}</td>
+                  <td className="px-4 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">{a.turnover > 0 ? money(a.turnover) : '-'}</td>
+                  <td className="px-4 py-2 text-brand-600 dark:text-brand-400 whitespace-nowrap">{a.revenue > 0 ? money(a.revenue) : '-'}</td>
                   <td className="px-4 py-2 whitespace-nowrap">
                     {a.lastDeal ? (
                       <span className={daysSince != null && daysSince > 90 ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400'}>
@@ -514,7 +517,7 @@ function BrandsTab({ rows, doneInPeriod, onOpen }: { rows: Row[]; doneInPeriod: 
                         {daysSince != null && daysSince > 90 && <span className="text-xs"> · {daysSince} дн. назад</span>}
                       </span>
                     ) : (
-                      <span className="text-slate-400">—</span>
+                      <span className="text-slate-400">-</span>
                     )}
                   </td>
                 </tr>
@@ -552,7 +555,7 @@ function BrandDetail({ brand, rows, onClose }: { brand: string; rows: Row[]; onC
         <StatCard icon="💰" label="Оборот" value={money(turnover)} compact />
         <StatCard icon="🎁" label="Наш доход" value={money(revenue)} compact />
         <StatCard icon="🎮" label="Инфлюенсеров" value={String(topStreamers.length)} compact />
-        <StatCard icon="⏳" label="Ждём оплаты" value={awaiting > 0 ? money(awaiting) : '—'} compact />
+        <StatCard icon="⏳" label="Ждём оплаты" value={awaiting > 0 ? money(awaiting) : '-'} compact />
       </div>
 
       {topStreamers.length > 0 && (
@@ -606,18 +609,21 @@ function DealsTable({ deals, showBrand }: { deals: Row[]; showBrand?: boolean })
                 </span>
               </td>
               <td className="px-3 py-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                {d.amount != null ? `${d.amount.toLocaleString('ru-RU')} ${d.currency}` : '—'}
+                {d.amount != null ? `${d.amount.toLocaleString('ru-RU')} ${d.currency}` : '-'}
               </td>
               <td className="px-3 py-2 text-slate-500 dark:text-slate-400 whitespace-nowrap text-xs">
-                {d.payment_status === 'paid' ? '100%' : d.paid_percent != null ? `${d.paid_percent}%` : '—'}
+                {d.payment_status === 'paid' ? '100%' : d.paid_percent != null ? `${d.paid_percent}%` : '-'}
               </td>
               <td className="px-3 py-2 text-slate-400 whitespace-nowrap text-xs">
                 {dayjs(d.integration_date ?? d.updated_at).format('DD.MM.YY')}
               </td>
               <td className="px-3 py-2 whitespace-nowrap">
-                <Link to={`/integrations?open=${d.id}`} className="text-xs text-brand-600 dark:text-brand-400 hover:underline">
-                  открыть
-                </Link>
+                {/* сделка вне кампании: открыть негде, ссылки нет */}
+                {d.campaign_id != null && (
+                  <Link to={campaignBloggerLink(d.campaign_id, d.id)} className="text-xs text-brand-600 dark:text-brand-400 hover:underline">
+                    открыть
+                  </Link>
+                )}
               </td>
             </tr>
           ))}

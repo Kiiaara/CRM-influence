@@ -10,11 +10,13 @@ index.html: title/mini/task/doing/result на ru/en/zh), фото конверт
   cases.json                       - все опубликованные кейсы
   assets/images/crm/case-<id>.webp - их фото (фото снятых с публикации кейсов удаляются)
 """
+import asyncio
 import base64
 import hashlib
 import html
 import io
 import json
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -22,6 +24,7 @@ import httpx
 from PIL import Image
 from sqlalchemy.orm import Session
 
+import case_translate
 from config import settings
 from models.case_study import CaseStudy
 from models.integration import Integration
@@ -34,6 +37,13 @@ SITE_TAGS = ("Games", "Tournament", "Special Project")
 LANGS = ("ru", "en", "zh")
 MAX_IMAGE_SIDE = 1600
 GITHUB_API = "https://api.github.com"
+# сколько секунд суммарно тратим на автоперевод при публикации. Запрос идёт через nginx с лимитом
+# ответа 60 секунд, а после перевода ещё коммит в GitHub, поэтому укладываемся в 40. Что не успели -
+# уходит на сайт на русском с предупреждением; уже переведённое сохраняется, и повторная публикация
+# переведёт остальные
+TRANSLATE_BUDGET_SEC = 40.0
+# маркеры списка в начале строки (длинное тире собрано из кода, чтобы его не было в исходнике)
+_BULLETS = "-•" + chr(0x2014) + " "
 _transport: Optional[httpx.AsyncBaseTransport] = None  # подменяется в тестах
 
 
@@ -41,8 +51,18 @@ class PublishError(Exception):
     pass
 
 
+def missing_settings() -> list[str]:
+    """Имена переменных backend/.env, без которых публикация на сайт не работает."""
+    missing = []
+    if not settings.site_github_token:
+        missing.append("SITE_GITHUB_TOKEN")
+    if not settings.site_github_repo:
+        missing.append("SITE_GITHUB_REPO")
+    return missing
+
+
 def is_configured() -> bool:
-    return bool(settings.site_github_token and settings.site_github_repo)
+    return not missing_settings()
 
 
 def parse_translations(raw: Optional[str]) -> dict:
@@ -59,7 +79,7 @@ def _esc(text: str) -> str:
 
 
 def _lines(text: str) -> list[str]:
-    return [_esc(line.lstrip("-•— ").strip()) for line in (text or "").splitlines() if line.strip()]
+    return [_esc(line.lstrip(_BULLETS).strip()) for line in (text or "").splitlines() if line.strip()]
 
 
 def _localized(case: CaseStudy, field: str) -> dict:
@@ -184,10 +204,59 @@ async def push_files(files: dict[str, bytes], message: str) -> Optional[str]:
         return commit.get("html_url") or f"https://github.com/{settings.site_github_repo}/commit/{commit['sha']}"
 
 
+def has_translation(case: CaseStudy) -> bool:
+    """Есть ли у кейса хоть одно непустое поле перевода (en или zh). Если есть - считаем, что
+    перевод делали или правили руками, и автоперевод его не трогает."""
+    tr = parse_translations(case.translations)
+    for lang in ("en", "zh"):
+        part = tr.get(lang)
+        if isinstance(part, dict) and any(str(v).strip() for v in part.values()):
+            return True
+    return False
+
+
+def _translation_source(case: CaseStudy) -> dict:
+    return {
+        "title": case.title, "mini": case.site_mini, "description": case.description,
+        "what_was_done": case.what_was_done, "result": case.result,
+    }
+
+
+async def translate_missing(db: Session, cases: list[CaseStudy]) -> tuple[int, list[str]]:
+    """Переводит через Groq кейсы без перевода. Возвращает (сколько переведено, предупреждения).
+    Никогда не бросает исключений наружу: публикация на русском важнее перевода."""
+    todo = [c for c in cases if not has_translation(c) and any((v or "").strip() for v in _translation_source(c).values())]
+    warnings: list[str] = []
+    translated = 0
+    started = time.monotonic()
+    for i, c in enumerate(todo):
+        rest = todo[i:]
+        names = ", ".join(f"«{x.title or 'без названия'}»" for x in rest[:3]) + (" и др." if len(rest) > 3 else "")
+        if time.monotonic() - started >= TRANSLATE_BUDGET_SEC:
+            warnings.append(
+                f"Время на перевод вышло, не переведено кейсов: {len(rest)} ({names}). Они ушли на сайт на русском. "
+                "Опубликуйте ещё раз: готовые переводы сохранены, система доделает остальные."
+            )
+            break
+        try:
+            # синхронный httpx - в отдельном потоке, чтобы не вешать event loop
+            tr = await asyncio.to_thread(case_translate.translate_case, _translation_source(c))
+        except case_translate.TranslateError as e:
+            warnings.append(f"Перевод не сделан для {names}, на сайте будет русский текст. Причина: {e}")
+            break  # причина общая (ключ, лимит, нет связи): остальные кейсы не пробуем, чтобы не копить таймауты
+        c.translations = json.dumps(tr, ensure_ascii=False)
+        db.commit()
+        translated += 1
+    return translated, warnings
+
+
 async def publish(db: Session, owner_tg_id: int) -> dict:
-    if not is_configured():
-        raise PublishError("Публикация не настроена: добавь SITE_GITHUB_TOKEN в backend/.env")
+    missing = missing_settings()
+    if missing:
+        raise PublishError(f"Публикация не настроена: добавь {', '.join(missing)} в backend/.env")
     cases = cases_for_site(db, owner_tg_id)
+    # переводим то, чего нет, и публикуем все три языка одним коммитом; готовые переводы не трогаем
+    translated, warnings = await translate_missing(db, cases)
     files = build_files(cases)
     commit_url = await push_files(files, f"Кейсы из CRM: {len(cases)} шт.")
     now = datetime.now()
@@ -197,4 +266,7 @@ async def publish(db: Session, owner_tg_id: int) -> dict:
         c.site_published_at = now
         c.updated_at = now
     db.commit()
-    return {"count": len(cases), "commit_url": commit_url, "changed": commit_url is not None, "site_url": settings.site_url}
+    return {
+        "count": len(cases), "commit_url": commit_url, "changed": commit_url is not None, "site_url": settings.site_url,
+        "translated": translated, "warnings": warnings,
+    }

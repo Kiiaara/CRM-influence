@@ -13,6 +13,9 @@ from config import settings
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 FIELDS = ("title", "mini", "description", "what_was_done", "result")
+# таймаут одного запроса к Groq: обычно ответ за 1-3 секунды, 25 хватает с запасом, а публикация
+# на сайт идёт за nginx с лимитом ответа 60 секунд и ждать дольше нельзя
+TIMEOUT_SEC = 25.0
 _transport: Optional[httpx.BaseTransport] = None  # подменяется в тестах
 
 SYSTEM = (
@@ -38,7 +41,7 @@ def translate_case(source: dict) -> dict:
         raise TranslateError("Не настроен ключ Groq (GROQ_API_KEY в backend/.env, бесплатно на console.groq.com)")
     payload = {f: (source.get(f) or "") for f in FIELDS}
     try:
-        with httpx.Client(timeout=60.0, transport=_transport) as client:
+        with httpx.Client(timeout=TIMEOUT_SEC, transport=_transport) as client:
             r = client.post(
                 GROQ_URL,
                 headers={"Authorization": f"Bearer {settings.groq_api_key}"},

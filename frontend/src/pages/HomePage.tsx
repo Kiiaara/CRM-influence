@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom'
 import { integrationsApi, STAGES } from '../api/integrations'
 import { authApi } from '../api/auth'
 import dayjs from 'dayjs'
+import { campaignBloggerLink } from '../utils/dealLinks'
 
 export default function HomePage() {
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: authApi.me, retry: false })
   const { data: integrations = [] } = useQuery({ queryKey: ['integrations'], queryFn: integrationsApi.list })
 
-  const cards = integrations.flatMap(it => it.streamers.map(s => ({ ...s, brand: it.brand })))
+  const cards = integrations.flatMap(it => it.streamers.map(s => ({ ...s, brand: it.brand, campaign_id: it.campaign_id })))
   const active = cards.filter(c => !['done', 'cancelled'].includes(c.stage))
   const toCollect = cards.reduce((sum, c) => sum + (c.commission_amount ?? 0), 0)
   const upcomingIntegrations = cards
@@ -24,22 +25,34 @@ export default function HomePage() {
       <p className="text-slate-500 dark:text-slate-400 mb-8">Сводка по интеграциям.</p>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <StatCard icon="🤝" label="Активных инфлюенсеров" value={active.length} to="/integrations" />
-        <StatCard icon="💰" label="Трясти со инфлюенсеров, ₽" value={Math.round(toCollect)} to="/integrations" />
-        <StatCard icon="📄" label="Брендов" value={integrations.length} to="/integrations" />
+        {/* канбан убран из меню, карточки ведут в раздел кампаний */}
+        <StatCard icon="🤝" label="Активных инфлюенсеров" value={active.length} to="/campaigns" />
+        <StatCard icon="💰" label="Трясти со инфлюенсеров, ₽" value={Math.round(toCollect)} to="/campaigns" />
+        <StatCard icon="📄" label="Брендов" value={integrations.length} to="/campaigns" />
       </div>
 
-      <Section title="Ближайшие дедлайны по интеграциям" to="/integrations">
-        {upcomingIntegrations.map(c => (
-          <Link key={c.id} to={`/integrations?open=${c.id}`} className="flex justify-between items-center py-2 px-3 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-brand-900 rounded-lg">
-            <span>
-              <span className="font-medium">{c.brand}</span>
-              <span className="text-slate-400"> × {c.streamer_name}</span>
-              <span className="text-xs text-slate-400 ml-2">({STAGES.find(s => s.key === c.stage)?.label})</span>
-            </span>
-            <span className="text-xs text-slate-400">{dayjs(c.deadline!).format('DD.MM')}</span>
-          </Link>
-        ))}
+      <Section title="Ближайшие дедлайны по интеграциям" to="/campaigns">
+        {upcomingIntegrations.map(c => {
+          const rowCls = 'flex justify-between items-center py-2 px-3 text-sm text-slate-700 dark:text-slate-300 rounded-lg'
+          const body = (
+            <>
+              <span>
+                <span className="font-medium">{c.brand}</span>
+                <span className="text-slate-400"> × {c.streamer_name}</span>
+                <span className="text-xs text-slate-400 ml-2">({STAGES.find(s => s.key === c.stage)?.label})</span>
+              </span>
+              <span className="text-xs text-slate-400">{dayjs(c.deadline!).format('DD.MM')}</span>
+            </>
+          )
+          // сделка вне кампании: открыть негде, показываем текстом
+          return c.campaign_id == null ? (
+            <div key={c.id} className={rowCls}>{body}</div>
+          ) : (
+            <Link key={c.id} to={campaignBloggerLink(c.campaign_id, c.id)} className={`${rowCls} hover:bg-slate-100 dark:hover:bg-brand-900`}>
+              {body}
+            </Link>
+          )
+        })}
         {upcomingIntegrations.length === 0 && <div className="text-sm text-slate-400 px-3 py-2">Дедлайнов нет.</div>}
       </Section>
     </div>

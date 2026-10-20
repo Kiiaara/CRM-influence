@@ -116,7 +116,10 @@ FIELD_TYPE = {
     "contract_signed_date": "date",
     "contract_valid_until": "date",
     "contract_notes": "text",
+    "contract_url": "text",
+    "publication_url": "text",
     "brief": "text",
+    "erid": "text",
     "ord_link": "text",
     "ord_report_link": "text",
 }
@@ -148,11 +151,14 @@ FIELD_LABELS = {
     "contract_signed_date": "Договор подписан",
     "contract_valid_until": "Договор действует до",
     "contract_notes": "Заметка по договору",
+    "contract_url": "Договор ссылкой",
+    "publication_url": "Ссылка на вышедшую интеграцию",
     "brief": "ТЗ",
     "ord_responsible": "Ответственный (ОРД)",
     "ord_status": "Статус маркировки",
     "ord_reporting_status": "Отчётность ОРД",
-    "ord_link": "Ссылка в ОРД (erid)",
+    "erid": "erid (идентификатор рекламы)",
+    "ord_link": "Ссылка в ОРД",
     "ord_report_link": "Ссылка на отчёт ОРД",
 }
 
@@ -161,9 +167,9 @@ CATEGORIES = [
     ("main", "📋 Основное", ["stage", "payment_status", "content_status", "talent_type"]),
     ("amounts", "💰 Суммы", ["amount", "currency", "commission_percent", "streamer_tax_percent"]),
     ("dates", "📅 Даты", ["deadline", "integration_date", "integration_time"]),
-    ("contract", "✍️ Договор", ["contract_status", "contract_sent_date", "contract_signed_date", "contract_valid_until", "contract_notes", "__file__"]),
-    ("ord", "🏷️ Маркировка ОРД", ["ord_responsible", "ord_status", "ord_reporting_status", "ord_link", "ord_report_link"]),
-    ("other", "📝 Прочее", ["contact", "streamer_name", "description", "brief"]),
+    ("contract", "✍️ Договор", ["contract_status", "contract_sent_date", "contract_signed_date", "contract_valid_until", "contract_notes", "contract_url", "__file__"]),
+    ("ord", "🏷️ Маркировка ОРД", ["ord_responsible", "ord_status", "ord_reporting_status", "erid", "ord_link", "ord_report_link"]),
+    ("other", "📝 Прочее", ["contact", "streamer_name", "description", "publication_url", "brief"]),
 ]
 
 # те же поля, что логируются в журнал изменений на сайте (routers/integrations.py TRACKED_FIELDS)
@@ -229,11 +235,17 @@ def compute_hot_tasks(db: Session, workspace_id: int) -> tuple[int, str]:
         db.query(IntegrationStreamer)
         .join(Integration)
         .options(joinedload(IntegrationStreamer.integration))
-        .filter(Integration.workspace_id == workspace_id)
+        # как на сайте: сделки вне кампании в сводке не показываем (модалка блогера живёт только в кампании)
+        .filter(Integration.workspace_id == workspace_id, Integration.campaign_id.isnot(None))
         .all()
     )
+    ws = db.get(Workspace, workspace_id)
 
-    drafts = [s for s in rows if s.stage == "negotiation" and (s.amount is None or s.deadline is None)]
+    # владелец может выключить напоминания про черновики (Workspace.draft_alerts_enabled)
+    if ws and ws.draft_alerts_enabled is False:
+        drafts = []
+    else:
+        drafts = [s for s in rows if s.stage == "negotiation" and (s.amount is None or s.deadline is None)]
     deadline_soon = [
         s for s in rows
         if s.deadline and s.stage in _ACTIVE_STAGES and today <= _day_start(s.deadline) <= today + timedelta(days=3)
@@ -250,7 +262,6 @@ def compute_hot_tasks(db: Session, workspace_id: int) -> tuple[int, str]:
         if s.payment_status not in ("paid", "not_invoiced") and s.deadline and s.stage != "cancelled" and _day_start(s.deadline) < today
     ]
     # в пространстве с выключенным разделом Кейсы напоминание про кейс не показываем
-    ws = db.get(Workspace, workspace_id)
     case_missing = [] if (ws and ws.cases_enabled is False) else [s for s in rows if s.stage == "done" and not s.has_case]
 
     sections = [

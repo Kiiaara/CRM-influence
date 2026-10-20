@@ -25,7 +25,7 @@ import type {
 } from '../api/integrations'
 import { useWorkspace } from '../workspaceContext'
 import { calcMargin, fmtPercent } from '../utils/margin'
-import { BriefFiles, ErridInput, OrdLinkInput } from './DealParts'
+import { AdvertiserCard, BriefFiles, ErridInput, OrdLinkInput, Screenshots } from './DealParts'
 
 const fmtMoney = (n: number, currency: string) => `${Math.round(n).toLocaleString('ru-RU')} ${currency}`
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -59,6 +59,8 @@ type Form = {
   contract_signed_date: string
   contract_valid_until: string
   contract_notes: string
+  contract_url: string
+  publication_url: string
   commission_percent: string
   streamer_tax_percent: string
 }
@@ -100,6 +102,8 @@ const toForm = (s: Streamer): Form => ({
   contract_signed_date: dateOf(s.contract_signed_date),
   contract_valid_until: dateOf(s.contract_valid_until),
   contract_notes: s.contract_notes ?? '',
+  contract_url: s.contract_url ?? '',
+  publication_url: s.publication_url ?? '',
   commission_percent: String(s.commission_percent),
   streamer_tax_percent: String(s.streamer_tax_percent),
 })
@@ -365,6 +369,14 @@ export default function CampaignBloggerModal({
     save.mutate(payload)
   }
 
+  // ссылки: пробелы по краям (часто копируются вместе со ссылкой) срезаем и в поле, и на сервере,
+  // чтобы форма не расходилась с сохранённым и не горел индикатор "несохранённые изменения"
+  const trimCommit = (key: keyof Form, value: string) => {
+    const v = value.trim()
+    if (v !== value) patch({ [key]: v } as Partial<Form>)
+    commit(key, v)
+  }
+
   // select и date меняют значение разом, поэтому сохраняем сразу, без ожидания blur
   const pick = (key: keyof Form, value: string) => { patch({ [key]: value } as Partial<Form>); commit(key, value) }
 
@@ -550,6 +562,13 @@ export default function CampaignBloggerModal({
             </div>
 
             <div className="flex flex-col gap-4 min-w-0">
+              {/* контакты рекламодателя только для чтения; нет рекламодателя у сделки - блока нет */}
+              {data.advertiser && (
+                <Section title={`Рекламодатель: ${data.advertiser.name}`} defaultOpen>
+                  <AdvertiserCard advertiser={data.advertiser} />
+                </Section>
+              )}
+
               <Section title="Контент и ТЗ" defaultOpen>
                 <div>
                   <label className={labelCls}>Статус контента</label>
@@ -570,6 +589,19 @@ export default function CampaignBloggerModal({
                 <div>
                   <label className={labelCls}>Файлы ТЗ</label>
                   <BriefFiles streamerId={streamerId} />
+                </div>
+                {/* результат: ссылка на вышедшую публикацию и скриншоты для будущего кейса */}
+                <OrdLinkInput
+                  label="Ссылка на вышедшую интеграцию"
+                  placeholder="https://t.me/... или https://youtube.com/..."
+                  value={form.publication_url}
+                  onChange={v => patch({ publication_url: v })}
+                  onBlur={v => trimCommit('publication_url', v)}
+                  inputClassName={field}
+                />
+                <div>
+                  <label className={labelCls}>Скриншоты интеграции</label>
+                  <Screenshots streamerId={streamerId} />
                 </div>
               </Section>
 
@@ -666,6 +698,16 @@ export default function CampaignBloggerModal({
                     />
                   </label>
                 )}
+
+                {/* ссылка не исключает файл: можно оба сразу */}
+                <OrdLinkInput
+                  label="Ссылка на договор"
+                  placeholder="https://disk.yandex.ru/... или сервис подписания"
+                  value={form.contract_url}
+                  onChange={v => patch({ contract_url: v })}
+                  onBlur={v => trimCommit('contract_url', v)}
+                  inputClassName={field}
+                />
 
                 <div>
                   <label className={labelCls}>Статус</label>
