@@ -1215,6 +1215,14 @@ export function CaseStudyCard({
   const [dragOver, setDragOver] = useState(false)
   const [translateError, setTranslateError] = useState<string | null>(null)
 
+  // переводы на сервере могли поменяться снаружи (перевод через Groq на странице «Кейсы»):
+  // подтягиваем их в карточку, иначе следующее «Сохранить кейс» вернуло бы старые тексты.
+  // Срабатывает только при реальной смене переводов на сервере, правки в полях не сбрасывает
+  const serverTranslations = JSON.stringify(caseStudy.translations ?? {})
+  useEffect(() => {
+    setTranslations(JSON.parse(serverTranslations) as CaseTranslations)
+  }, [serverTranslations])
+
   const translate = useMutation({
     mutationFn: async () => {
       // сначала сохраняем русский текст - переводим именно то, что сейчас в полях

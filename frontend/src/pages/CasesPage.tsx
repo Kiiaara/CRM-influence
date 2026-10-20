@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { integrationsApi } from '../api/integrations'
 import type { CaseStudyUpdate, Streamer } from '../api/integrations'
+import { fieldsToTranslate, looksLikeGroqKey, normalizeKey, sourceFromCase, translateBatch } from '../utils/groqTranslate'
+import type { BatchItem, BatchResult, Mode } from '../utils/groqTranslate'
 import { siteApi } from '../api/site'
 import type { PublishResult } from '../api/site'
 import { authApi } from '../api/auth'
@@ -136,6 +138,8 @@ export default function CasesPage() {
       </div>
 
       <SitePublishBar />
+
+      {withCases.length > 0 && <GroqTranslateBar rows={withCases} />}
 
       {waiting.length > 0 && (
         <div className="mb-6 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 p-4">
@@ -294,6 +298,194 @@ function errorText(e: unknown, fallback: string): string {
   const status = err?.response?.status
   if (status) return `${fallback} (ответ сервера ${status})`
   return `${fallback}: нет связи с сервером`
+}
+
+// Ключ Groq живёт ТОЛЬКО в localStorage этого браузера и на наш сервер не отправляется никогда:
+// на сервере общий конфиг, его видят коллеги из других пространств. Запросы идут из браузера
+// прямо в api.groq.com (с прод-сервера Groq блокирует IP), на сервер уходит только готовый перевод.
+const GROQ_KEY_STORAGE = 'crm_groq_api_key'
+
+function loadGroqKey(): string {
+  try {
+    return localStorage.getItem(GROQ_KEY_STORAGE) ?? ''
+  } catch {
+    return '' // localStorage недоступен (приватный режим) - ключ придётся вводить заново
+  }
+}
+
+function saveGroqKey(key: string) {
+  try {
+    if (key) localStorage.setItem(GROQ_KEY_STORAGE, key)
+    else localStorage.removeItem(GROQ_KEY_STORAGE)
+  } catch {
+    /* см. loadGroqKey */
+  }
+}
+
+// Ручной перевод кейсов через Groq из браузера: хорошее качество (в промпте объяснён контекст рекламы
+// у блогеров) вместо машинного Google/MyMemory. Серверный перевод остаётся запасным для автопубликации.
+function GroqTranslateBar({ rows }: { rows: Row[] }) {
+  const qc = useQueryClient()
+  const [key, setKey] = useState(loadGroqKey)
+  const [keyInput, setKeyInput] = useState('')
+  const [keyError, setKeyError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [result, setResult] = useState<{ mode: Mode; res: BatchResult } | null>(null)
+  const stopRef = useRef(false)
+
+  // те же ключи запросов, что в StreamerCases: данные берутся из общего кеша
+  const caseQueries = useQueries({
+    queries: rows.map(r => ({
+      queryKey: ['streamers', r.id, 'cases'],
+      queryFn: () => integrationsApi.cases(r.id),
+    })),
+  })
+  const labels = new Map<number, string>()
+  const items: BatchItem[] = []
+  caseQueries.forEach((q, i) => {
+    for (const c of q.data ?? []) {
+      labels.set(c.id, `${rows[i].brand} · ${rows[i].streamer_name}`)
+      items.push({ id: c.id, source: sourceFromCase(c), translations: c.translations ?? {} })
+    }
+  })
+  const missingCount = items.filter(it => fieldsToTranslate(it.source, it.translations, 'missing').length > 0).length
+  const allCount = items.filter(it => fieldsToTranslate(it.source, it.translations, 'all').length > 0).length
+  const running = progress !== null
+
+  const submitKey = () => {
+    const k = normalizeKey(keyInput)
+    if (!k) {
+      setKeyError('Ключ пустой или содержит недопустимые символы. Скопируйте его целиком с console.groq.com/keys')
+      return
+    }
+    saveGroqKey(k)
+    setKey(k)
+    setKeyInput('')
+    setKeyError(looksLikeGroqKey(k) ? null : 'Обычно ключ Groq начинается с gsk_ - если переводы не пойдут, проверьте ключ')
+  }
+
+  const clearKey = () => {
+    saveGroqKey('')
+    setKey('')
+    setKeyError(null)
+  }
+
+  const run = async (mode: Mode) => {
+    if (mode === 'all' && !confirm('Перевести заново все кейсы? Текущие переводы EN/中文 (в том числе правки руками) будут заменены. Названия кейсов не меняются.')) return
+    stopRef.current = false
+    setResult(null)
+    setProgress({ done: 0, total: mode === 'all' ? allCount : missingCount })
+    try {
+      const res = await translateBatch(items, key, mode, {
+        // на сервер уходит только перевод, ключа в запросе нет
+        save: (id, translations) => integrationsApi.updateCase(id, { translations }),
+        onProgress: (done, total) => setProgress({ done, total }),
+        shouldStop: () => stopRef.current,
+      })
+      setResult({ mode, res })
+    } finally {
+      setProgress(null)
+      qc.invalidateQueries({ queryKey: ['streamers'] })
+      qc.invalidateQueries({ queryKey: ['site-status'] })
+    }
+  }
+
+  const btnCls = 'px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-50'
+
+  return (
+    <div className="bg-white dark:bg-brand-950 border border-slate-200 dark:border-brand-900 rounded-xl p-3 mb-6 text-sm">
+      <div className="font-medium text-slate-900 dark:text-slate-100 mb-1">🌍 Перевод кейсов через Groq (из браузера)</div>
+      <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+        Качество выше, чем у автоперевода на сервере: ИИ знает контекст рекламы у блогеров. Переводятся сохранённые русские тексты, названия кейсов не трогаем.
+      </div>
+
+      {!key ? (
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="password"
+            value={keyInput}
+            onChange={e => setKeyInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && submitKey()}
+            placeholder="Ключ Groq (gsk_...)"
+            autoComplete="off"
+            className="flex-1 bg-slate-100 dark:bg-brand-900 border border-transparent focus:border-brand-500 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none"
+          />
+          <button onClick={submitKey} className={`${btnCls} bg-brand-600 hover:bg-brand-700 text-white`}>
+            Сохранить ключ
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          {running ? (
+            <>
+              <span className="text-slate-700 dark:text-slate-200">Переводится {Math.min(progress.done + 1, progress.total)} из {progress.total}…</span>
+              <button onClick={() => { stopRef.current = true }} className={`${btnCls} border border-slate-300 dark:border-brand-800 text-slate-600 dark:text-slate-300`}>
+                Остановить
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => run('missing')}
+                disabled={missingCount === 0}
+                title="Переводит только те поля, где перевода ещё нет. Готовые переводы не трогает"
+                className={`${btnCls} bg-brand-600 hover:bg-brand-700 text-white`}
+              >
+                Перевести недостающее ({missingCount})
+              </button>
+              <button
+                onClick={() => run('all')}
+                disabled={allCount === 0}
+                title="Переводит все кейсы заново и заменяет текущие переводы EN/中文"
+                className={`${btnCls} border border-slate-300 dark:border-brand-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-brand-900`}
+              >
+                Перевести заново ({allCount})
+              </button>
+              <button onClick={clearKey} className="text-xs text-slate-400 hover:text-red-500 ml-auto">
+                убрать ключ
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="text-[11px] text-slate-400 mt-2">
+        Ключ хранится только в этом браузере и на сервер не отправляется: настройки сервера общие, их видят коллеги из других пространств.
+        Запросы идут из браузера прямо в Groq. Бесплатный ключ: console.groq.com/keys
+      </div>
+      {keyError && <div className="text-xs text-amber-600 mt-1">{keyError}</div>}
+
+      {progress && (
+        <div className="h-1.5 bg-slate-100 dark:bg-brand-900 rounded-full mt-2 overflow-hidden">
+          <div className="h-full bg-brand-600 transition-all" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} />
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-2 space-y-1">
+          {result.res.total === 0 && !result.res.fatal && (
+            <div className="text-xs text-slate-500">Переводить нечего: у всех кейсов с русским текстом уже есть переводы.</div>
+          )}
+          {result.res.total > 0 && (
+            <div className={`text-xs ${result.res.translated > 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
+              Переведено кейсов: {result.res.translated} из {result.res.total}.
+              {result.res.stopped && ' Остановлено.'}
+              {result.res.translated > 0 && ' Чтобы переводы попали на сайт, нажмите «Опубликовать на сайт».'}
+            </div>
+          )}
+          {result.res.fatal && <div className="text-xs text-red-600 dark:text-red-400">{result.res.fatal}</div>}
+          {result.res.failed.map(f => (
+            <div key={f.id} className="text-xs text-red-600 dark:text-red-400">
+              {labels.get(f.id) ?? `Кейс ${f.id}`}: {f.message}
+            </div>
+          ))}
+          {result.res.warnings.map((w, i) => (
+            <div key={i} className="text-xs text-amber-600">⚠️ {labels.get(w.id) ?? `Кейс ${w.id}`}: {w.text}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function SitePublishBar() {
