@@ -4,7 +4,7 @@ export interface SiteStatus {
   configured: boolean
   // каких переменных backend/.env не хватает для публикации
   missing: string[]
-  // настроен ли ключ Groq для автоперевода при публикации
+  // настроен ли переводчик (DeepL или Groq) для автоперевода при публикации
   translate_configured: boolean
   site_url: string
   count: number

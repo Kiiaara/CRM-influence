@@ -36,7 +36,11 @@ class Settings(BaseSettings):
     site_github_branch: str = "main"
     site_url: str = "https://tkacheva-media.ru"
 
-    # Автоперевод кейсов на EN/ZH через Groq (бесплатный тариф, ключ на console.groq.com)
+    # Автоперевод кейсов на EN/ZH. Провайдер: auto (DeepL, если задан ключ, иначе Groq), deepl или groq
+    translate_provider: str = "auto"
+    # DeepL API (ключ Free заканчивается на :fx, адрес выбирается по нему автоматически)
+    deepl_api_key: str = ""
+    # Groq (бесплатный тариф, ключ на console.groq.com)
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
     groq_api_base: str = "https://api.groq.com"  # можно указать URL Cloudflare Worker-прокси, если Groq блокирует IP сервера (403)

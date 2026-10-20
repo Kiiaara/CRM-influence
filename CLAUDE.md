@@ -29,10 +29,13 @@ CRM для инфлюенс-менеджмента: сделки с бренда
   (репо Kiiaara/site): кейсы с `show_on_site` из пространств, которыми владеет админ, -> `cases.json` +
   фото webp в `assets/images/crm/`, одним коммитом через GitHub API (SITE_GITHUB_TOKEN); сервер сайта сам
   тянет с GitHub, index.html подгружает cases.json к ручным кейсам
-- `backend/case_translate.py` - автоперевод кейса на EN/ZH через Groq (GROQ_API_KEY, бесплатный тариф;
-  модель - GROQ_MODEL). Платные LLM API для перевода не используем - дорого.
+- `backend/case_translate.py` - автоперевод кейса на EN/ZH, два провайдера, выбор `TRANSLATE_PROVIDER`
+  (auto: DeepL при заданном `DEEPL_API_KEY`, иначе Groq). DeepL основной: бесплатный ключ (на `:fx` ходит
+  на api-free), один запрос на язык. Groq (GROQ_API_KEY, модель GROQ_MODEL) запасной: с FirstVDS он даёт 403
+  даже через Cloudflare Worker. Платные LLM API для перевода не используем - дорого.
   При публикации на сайт кейсы без перевода переводятся сами (`site_publisher.translate_missing`,
-  бюджет 40 сек); готовые переводы не трогаются, при сбое Groq публикация идёт на русском с предупреждением.
+  бюджет 40 сек); готовые переводы не трогаются, при сбое переводчика публикация идёт на русском
+  с предупреждением, в котором назван провайдер.
   Контакты рекламодателя живут только в `BrandContact`; колонки `advertisers.contact_person/telegram/email/phone`
   в старых базах остались мёртвым грузом, код их не читает
 - `backend/routers/campaigns.py` - кампании; блогеры кампании = стримеры в сделке с `Integration.campaign_id` (GET/POST `/campaigns/{id}/bloggers`), та же запись, что на канбане. В меню канбан скрыт, открывается по `/integrations`

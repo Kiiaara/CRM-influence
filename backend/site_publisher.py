@@ -295,7 +295,7 @@ def _translation_source(case: CaseStudy) -> dict:
 
 
 async def translate_missing(db: Session, cases: list[CaseStudy]) -> tuple[int, list[str]]:
-    """Переводит через Groq кейсы без перевода. Возвращает (сколько переведено, предупреждения).
+    """Переводит (DeepL или Groq, см. case_translate) кейсы без перевода. Возвращает (сколько переведено, предупреждения).
     Никогда не бросает исключений наружу: публикация на русском важнее перевода."""
     todo = [c for c in cases if not has_translation(c) and any((v or "").strip() for v in _translation_source(c).values())]
     warnings: list[str] = []

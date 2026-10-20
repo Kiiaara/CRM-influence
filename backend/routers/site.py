@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+import case_translate
 import site_publisher
 from config import settings
 from database import get_db
@@ -19,8 +20,8 @@ def site_status(db: Session = Depends(get_db), user: User = Depends(get_current_
         "configured": site_publisher.is_configured(),
         # каких переменных backend/.env не хватает для публикации (пусто - всё настроено)
         "missing": site_publisher.missing_settings(),
-        # настроен ли ключ Groq для автоперевода при публикации
-        "translate_configured": bool(settings.groq_api_key),
+        # настроен ли переводчик (DeepL или Groq) для автоперевода при публикации
+        "translate_configured": case_translate.is_configured(),
         "site_url": settings.site_url,
         "count": len(cases),
         "unpublished": sum(1 for c in cases if not c.site_published_at or c.updated_at > c.site_published_at),

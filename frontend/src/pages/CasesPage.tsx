@@ -374,7 +374,7 @@ function SitePublishBar() {
       )}
       {status.configured && !status.translate_configured && (
         <div className="text-xs text-amber-600 mt-2">
-          Ключ Groq не задан (GROQ_API_KEY): кейсы без перевода уйдут на сайт на русском. Ключ бесплатный, console.groq.com.
+          Переводчик не настроен (DEEPL_API_KEY или GROQ_API_KEY): кейсы без перевода уйдут на сайт на русском. Ключ DeepL бесплатный, deepl.com/pro-api.
         </div>
       )}
       {result && (
