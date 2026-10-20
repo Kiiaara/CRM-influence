@@ -319,5 +319,18 @@ const numSrc = sourceFromCase({ title: 'X', site_mini: '22к+ просмотро
 const numOut = await translateWithGroq({ source: numSrc, fields: ['mini'], key: 'k', fetchImpl: fakeFetch(ok(numReply)) })
 check('ответ модели с латинской k исправлен на 万', numOut.zh.mini, '2.2万+ 观看次数')
 
+// --- модель иногда возвращает обрезок: "3.4万+" вместо "3.4万+ 观看次数" ---
+const cutReply = JSON.stringify({ en: { mini: '34k+' }, zh: { mini: '3.4万+' } })
+const cutSrc = sourceFromCase({ title: 'X', site_mini: '34к+ просмотров', description: '', what_was_done: '', result: '' })
+const cutOut = await translateWithGroq({ source: cutSrc, fields: ['mini'], key: 'k', fetchImpl: fakeFetch(ok(cutReply)) })
+check('обрезанный перевод не принимается', cutOut.zh.mini, undefined)
+check('и про это есть предупреждение', cutOut.warnings.length > 0, true)
+
+// а нормально укороченный перевод принимается: иероглифы короче русского
+const shortReply = JSON.stringify({ en: { description: 'Channel integration' }, zh: { description: '频道广告合作' } })
+const shortSrc = sourceFromCase({ title: 'X', site_mini: '', description: 'Интеграция на канале', what_was_done: '', result: '' })
+const shortOut = await translateWithGroq({ source: shortSrc, fields: ['description'], key: 'k', fetchImpl: fakeFetch(ok(shortReply)) })
+check('короткий китайский перевод принимается', shortOut.zh.description, '频道广告合作')
+
 console.log(failed ? `\n${failed} провалов` : '\nвсё зелёное')
 process.exit(failed ? 1 : 0)

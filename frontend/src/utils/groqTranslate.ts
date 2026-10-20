@@ -216,7 +216,12 @@ export function parseGroqReply(reply: unknown, source: CaseSource, fields: CaseF
         value = got.join('\n')
       }
       // числа приводим сами: в промпте про 万 сказано, но модель это выполняет через раз
-      out[lang][f] = localizeNumbers(value, lang)
+      value = localizeNumbers(value, lang)
+      if (looksTruncated(sourceValue(source, f), value)) {
+        warnings.push(`Поле «${f}» (${lang.toUpperCase()}): модель вернула обрывок «${value}», поле пропущено`)
+        continue
+      }
+      out[lang][f] = value
     }
   }
   return { ...out, warnings }
@@ -245,6 +250,23 @@ export function localizeNumbers(text: string, lang: Lang): string {
     if (total >= 1e3) return `${fmtNum(total / 1e3)}k`
     return fmtNum(total)
   })
+}
+
+/** Похоже ли, что модель вернула обрывок: в оригинале были слова, а в переводе
+ *  остались только цифры и знаки. Так вышло с "34к+ просмотров" -> "3.4万+":
+ *  слово "просмотры" модель потеряла. Длину в лоб сравнивать нельзя, иероглифы
+ *  всегда короче русского. */
+export function looksTruncated(source: string, translated: string): boolean {
+  if (!source || !translated) return false
+  // Своя копия без флага g: у общей NUM_RE он есть, а такой regex помнит позицию
+  // между вызовами и со второго раза начинает промахиваться
+  const num = /(\d+(?:[.,]\d+)?)\s*(млн\.?|тыс\.?|[кk万])(?![\w.])/gi
+  // убираем числа с единицами и знаки, смотрим, осталось ли что-то словесное
+  const words = (s: string) => s.replace(num, ' ').replace(/[\d\s+.,:;!?()\-/]+/g, '')
+  const srcWords = words(source)
+  // в оригинале слов не было (например "34к+") - сравнивать нечего
+  if (!srcWords) return false
+  return words(translated).length === 0
 }
 
 export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{
