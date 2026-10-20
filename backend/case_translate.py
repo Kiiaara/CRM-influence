@@ -46,6 +46,40 @@ PROTECT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Числа с сокращениями ("34к+", "1,9 млн") переводчик сворачивает как придётся:
+# на сайте вышло "3.4万+" в одном кейсе и "22k+" в соседнем. Приводим их сами,
+# до отправки: для en латинские k/M, для zh принятое в китайском 万 (десять тысяч).
+_NUM_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(млн\.?|тыс\.?|[кk])(?![\w.])", re.IGNORECASE)
+_MULT = {"млн": 1_000_000, "тыс": 1_000, "тыс.": 1_000, "к": 1_000, "k": 1_000}
+
+
+def _fmt_num(value: float) -> str:
+    """4.0 -> "4", 3.4 -> "3.4": хвост .0 в тексте не нужен."""
+    return f"{value:.1f}".rstrip("0").rstrip(".") if value % 1 else str(int(value))
+
+
+def localize_numbers(text: str, lang: str) -> str:
+    """Приводит русские сокращения чисел к принятым в языке.
+    "34к+" -> "34k+" (en) и "3.4万+" (zh); "1,9 млн" -> "1.9M" и "190万"."""
+    if not text or lang not in ("en", "zh"):
+        return text
+
+    def one(m: re.Match) -> str:
+        amount = float(m.group(1).replace(",", "."))
+        unit = m.group(2).lower().rstrip(".")
+        total = amount * _MULT.get(unit, _MULT.get(unit + ".", 1))
+        if lang == "zh":
+            # 万 = 10 000, принятая в китайском единица счёта
+            return f"{_fmt_num(total / 10_000)}万" if total >= 10_000 else _fmt_num(total)
+        if total >= 1_000_000:
+            return f"{_fmt_num(total / 1_000_000)}M"
+        if total >= 1_000:
+            return f"{_fmt_num(total / 1_000)}k"
+        return _fmt_num(total)
+
+    return _NUM_RE.sub(one, text)
+
+
 GROQ_PATH = "/openai/v1/chat/completions"
 DEEPL_PATH = "/v2/translate"
 FIELDS = ("title", "mini", "description", "what_was_done", "result")
@@ -209,6 +243,8 @@ def _translate_line(client, name: str, one: Callable, chunk_limit: int, deadline
     """Перевод одной строки с защитой ссылок и ников (см. _translate_lines)."""
     if not line.strip():
         return ""
+    # числа приводим до перевода: иначе "34к+" и "22к+" свернутся по-разному
+    line = localize_numbers(line, lang)
     protected: list[str] = []
 
     def hide(m: re.Match) -> str:
