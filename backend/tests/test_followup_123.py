@@ -420,11 +420,12 @@ def test_publish_translates_missing_and_commits_three_languages(ctx, monkeypatch
     assert gh.commits == 1  # один коммит на три языка
     item = _published_case(gh, case_id)
     assert item["title"]["ru"] == "Фикс Игра"
-    assert item["title"]["en"] == "Fix Game" and item["title"]["zh"] == "修复游戏"
+    # название бренда не переводится автоматически, на всех языках остаётся исходным
+    assert item["title"]["en"] == "Фикс Игра" and item["title"]["zh"] == "Фикс Игра"
     assert item["doing"]["en"] == ["Streams", "KPI"]
     # перевод сохранён в кейсе: его можно поправить руками
     db = SessionLocal()
-    assert json.loads(db.get(CaseStudy, case_id).translations)["zh"]["title"] == "修复游戏"
+    assert json.loads(db.get(CaseStudy, case_id).translations)["zh"]["description"] == "上线"
     db.close()
 
 

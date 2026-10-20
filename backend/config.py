@@ -36,8 +36,11 @@ class Settings(BaseSettings):
     site_github_branch: str = "main"
     site_url: str = "https://tkacheva-media.ru"
 
-    # Автоперевод кейсов на EN/ZH. Провайдер: auto (DeepL, если задан ключ, иначе Groq), deepl или groq
+    # Автоперевод кейсов на EN/ZH. Провайдер: auto (DeepL, если есть ключ -> Google -> MyMemory -> Groq, если есть ключ),
+    # либо один из: google, mymemory, deepl, groq. Google и MyMemory работают без ключей и регистрации
     translate_provider: str = "auto"
+    # Почта для MyMemory: поднимает дневной лимит с 5000 до 50000 символов (необязательно)
+    mymemory_email: str = ""
     # DeepL API (ключ Free заканчивается на :fx, адрес выбирается по нему автоматически)
     deepl_api_key: str = ""
     # Groq (бесплатный тариф, ключ на console.groq.com)

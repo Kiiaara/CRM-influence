@@ -29,10 +29,13 @@ CRM для инфлюенс-менеджмента: сделки с бренда
   (репо Kiiaara/site): кейсы с `show_on_site` из пространств, которыми владеет админ, -> `cases.json` +
   фото webp в `assets/images/crm/`, одним коммитом через GitHub API (SITE_GITHUB_TOKEN); сервер сайта сам
   тянет с GitHub, index.html подгружает cases.json к ручным кейсам
-- `backend/case_translate.py` - автоперевод кейса на EN/ZH, два провайдера, выбор `TRANSLATE_PROVIDER`
-  (auto: DeepL при заданном `DEEPL_API_KEY`, иначе Groq). DeepL основной: бесплатный ключ (на `:fx` ходит
-  на api-free), один запрос на язык. Groq (GROQ_API_KEY, модель GROQ_MODEL) запасной: с FirstVDS он даёт 403
-  даже через Cloudflare Worker. Платные LLM API для перевода не используем - дорого.
+- `backend/case_translate.py` - автоперевод кейса на EN/ZH, четыре провайдера, выбор `TRANSLATE_PROVIDER`
+  (auto: DeepL при `DEEPL_API_KEY` -> Google -> MyMemory -> Groq при `GROQ_API_KEY`; упал один - берётся
+  следующий, в предупреждении публикации видно кто перевёл). Основной на проде Google: публичный эндпоинт
+  без ключа и карты (неофициальный, может отвалиться), построчно, ссылки/ники/erid прячутся за заглушки.
+  MyMemory запасной (5000 симв/день, `MYMEMORY_EMAIL` поднимает до 50000). DeepL (`:fx` ходит на api-free)
+  и Groq (GROQ_API_KEY, GROQ_MODEL) в коде остались, но на проде не используются: DeepL просит карту,
+  Groq даёт 403 даже через Cloudflare Worker. Платные LLM API для перевода не используем - дорого.
   При публикации на сайт кейсы без перевода переводятся сами (`site_publisher.translate_missing`,
   бюджет 40 сек); готовые переводы не трогаются, при сбое переводчика публикация идёт на русском
   с предупреждением, в котором назван провайдер.

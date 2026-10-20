@@ -31,6 +31,8 @@ class DeepL:
         self.requests = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
+        if "deepl" not in request.url.host:
+            return httpx.Response(503)  # Google/MyMemory из цепочки auto в этих тестах недоступны
         body = json.loads(request.content)
         self.requests.append({"url": request.url, "headers": request.headers, "body": body})
         if self.status != 200:
@@ -94,10 +96,14 @@ def test_one_request_per_language_with_all_fields(deepl):
     for body in by_lang.values():
         assert body["source_lang"] == "RU"
         sent = " | ".join(body["text"])
+        # title не отправляем: название бренда не переводится
         for f in case_translate.FIELDS:
+            if f in case_translate.KEEP_AS_IS_FIELDS:
+                assert SOURCE[f] not in sent
+                continue
             for line in SOURCE[f].split("\n"):
                 assert line in sent
-    assert tr["en"]["title"] == "EN-US:Игра dpl-125001"
+    assert tr["en"]["description"] == "EN-US:Запуск"
     assert tr["zh"]["mini"] == "ZH:20 млн+ просмотров"
 
 
@@ -127,7 +133,11 @@ def _both(monkeypatch, provider="auto", deepl_key="dpl-key:fx", groq_key="gsk-dp
     d, g = DeepL(), Groq()
 
     def route(request):
-        return d.handler(request) if "deepl" in request.url.host else g.handler(request)
+        if "deepl" in request.url.host:
+            return d.handler(request)
+        if "groq" in request.url.host:
+            return g.handler(request)
+        return httpx.Response(503)  # Google/MyMemory в этих тестах недоступны, auto доходит до Groq
 
     monkeypatch.setattr(settings, "deepl_api_key", deepl_key)
     monkeypatch.setattr(settings, "groq_api_key", groq_key)
@@ -160,17 +170,17 @@ def test_explicit_deepl_without_key_is_error_naming_deepl(monkeypatch):
         case_translate.translate_case(SOURCE)
 
 
-def test_auto_without_any_key_says_not_configured(monkeypatch):
+def test_auto_without_any_key_goes_to_free_providers(monkeypatch):
+    # ключей нет: auto не падает с "не настроен", а пробует Google и MyMemory (здесь оба недоступны)
     _both(monkeypatch, deepl_key="", groq_key="")
     with pytest.raises(case_translate.TranslateError) as e:
         case_translate.translate_case(SOURCE)
-    assert "не настроен" in str(e.value).lower()
-    assert "DEEPL_API_KEY" in str(e.value) and "GROQ_API_KEY" in str(e.value)
+    assert "Google" in str(e.value) and "MyMemory" in str(e.value)
 
 
 def test_is_configured_follows_provider(monkeypatch):
     _both(monkeypatch, deepl_key="", groq_key="")
-    assert case_translate.is_configured() is False
+    assert case_translate.is_configured() is True  # Google работает без ключей
     _both(monkeypatch, deepl_key="k:fx", groq_key="")
     assert case_translate.is_configured() is True
     _both(monkeypatch, provider="groq", deepl_key="k:fx", groq_key="")
@@ -236,7 +246,7 @@ def test_publish_translates_via_deepl_and_saves(deepl):
     done, warnings = asyncio.run(site_publisher.translate_missing(db, [c]))
     assert (done, warnings) == (1, [])
     saved = json.loads(c.translations)
-    assert saved["en"]["title"] == "EN-US:Игра dpl-125002" and saved["zh"]["title"] == "ZH:Игра dpl-125002"
+    assert saved["en"]["description"] == "EN-US:Запуск" and saved["zh"]["description"] == "ZH:Запуск"
     assert db.commits == 1
 
 

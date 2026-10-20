@@ -295,7 +295,7 @@ def _translation_source(case: CaseStudy) -> dict:
 
 
 async def translate_missing(db: Session, cases: list[CaseStudy]) -> tuple[int, list[str]]:
-    """Переводит (DeepL или Groq, см. case_translate) кейсы без перевода. Возвращает (сколько переведено, предупреждения).
+    """Переводит (Google / MyMemory / DeepL / Groq, см. case_translate) кейсы без перевода. Возвращает (сколько переведено, предупреждения).
     Никогда не бросает исключений наружу: публикация на русском важнее перевода."""
     todo = [c for c in cases if not has_translation(c) and any((v or "").strip() for v in _translation_source(c).values())]
     warnings: list[str] = []
@@ -319,6 +319,10 @@ async def translate_missing(db: Session, cases: list[CaseStudy]) -> tuple[int, l
         c.translations = json.dumps(tr, ensure_ascii=False)
         db.commit()
         translated += 1
+        # перевод сделал запасной провайдер: говорим об этом один раз (причина у всех кейсов одна)
+        for note in getattr(tr, "notes", []):
+            if note not in warnings:
+                warnings.append(note)
     return translated, warnings
 
 

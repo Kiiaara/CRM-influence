@@ -20,10 +20,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 @pytest.fixture(autouse=True)
 def _isolate_translate_settings(monkeypatch):
-    """Ключ DeepL из локального .env не должен подменять Groq в старых тестах перевода."""
+    """Ключи и провайдер из локального .env не должны влиять на тесты перевода. По умолчанию в тестах
+    провайдер groq: старые тесты проверяют именно Groq, а новые (Google, MyMemory, auto) выставляют свой."""
     from config import settings
     monkeypatch.setattr(settings, "deepl_api_key", "")
-    monkeypatch.setattr(settings, "translate_provider", "auto")
+    monkeypatch.setattr(settings, "mymemory_email", "")
+    monkeypatch.setattr(settings, "translate_provider", "groq")
 
 
 def pytest_sessionfinish(session, exitstatus):

@@ -1,7 +1,11 @@
 """Автоперевод кейса на английский и китайский для переключателя языков на сайте.
 
-Два провайдера, выбор - TRANSLATE_PROVIDER в .env (auto по умолчанию: DeepL, если задан
-DEEPL_API_KEY, иначе Groq):
+Четыре провайдера, выбор - TRANSLATE_PROVIDER в .env. По умолчанию auto: DeepL (если задан
+DEEPL_API_KEY) -> Google -> MyMemory -> Groq (если задан GROQ_API_KEY). Если провайдер упал, auto
+пробует следующий и сообщает пользователю, кто в итоге перевёл. Без ключей работает Google.
+- Google (публичный эндпоинт translate.googleapis.com, без ключа и регистрации; неофициальный,
+  может отвалиться без предупреждения - поэтому есть запасной MyMemory): строка за строкой.
+- MyMemory (без ключа, 5000 симв/день на IP, с MYMEMORY_EMAIL до 50000): строка за строкой.
 - DeepL: на каждый язык один запрос с массивом строк (все поля кейса сразу). Ключ Free (на ':fx')
   ходит на api-free.deepl.com, остальные на api.deepl.com.
 - Groq (бесплатный тариф с лимитами, OpenAI-совместимый API): один запрос, на выходе JSON
@@ -10,17 +14,46 @@ DEEPL_API_KEY, иначе Groq):
 На входе русские тексты кейса, на выходе {"en": {...}, "zh": {...}}. Переводы потом можно поправить руками в CRM.
 """
 import json
-from typing import Optional
+import re
+import time
+from typing import Callable, Optional
 
 import httpx
 
 from config import settings
+
+GOOGLE_URL = "https://translate.googleapis.com/translate_a/single"
+MYMEMORY_URL = "https://api.mymemory.translated.net/get"
+# таймаут одного запроса к Google/MyMemory: отвечают за доли секунды, ждать дольше нет смысла
+FREE_TIMEOUT_SEC = 8.0
+# общий бюджет перевода одного кейса по всей цепочке провайдеров (меньше TRANSLATE_BUDGET_SEC публикации,
+# nginx режет ответ на 60 секундах)
+CASE_DEADLINE_SEC = 30.0
+# максимальная длина куска текста в одном запросе: Google берёт через GET с запасом, MyMemory - до 500 символов
+GOOGLE_CHUNK = 1500
+MYMEMORY_CHUNK = 450
+# язык -> код целевого языка у Google / в langpair MyMemory
+GOOGLE_LANGS = {"en": "en", "zh": "zh-CN"}
+MYMEMORY_LANGS = {"en": "en", "zh": "zh"}
+LABELS = {"deepl": "DeepL", "google": "Google", "mymemory": "MyMemory", "groq": "Groq"}
+# что нельзя отдавать переводчику: почта, ссылки, ники, erid (метка рекламы). Заменяются на заглушки и возвращаются
+PROTECT_RE = re.compile(
+    r"[\w.+-]+@[\w-]+\.[\w.-]+"            # почта
+    r"|https?://[^\s]*[^\s.,;:!?)»\"']"    # ссылка без хвостовой пунктуации
+    r"|www\.[^\s]*[^\s.,;:!?)»\"']"
+    r"|\berid[:=\s]*[A-Za-z0-9]+"            # маркировка рекламы
+    r"|@\w+",                              # ник
+    re.IGNORECASE,
+)
 
 GROQ_PATH = "/openai/v1/chat/completions"
 DEEPL_PATH = "/v2/translate"
 FIELDS = ("title", "mini", "description", "what_was_done", "result")
 # поля-списки: один пункт на строку, при переводе число строк должно сохраниться
 LIST_FIELDS = ("what_was_done", "result")
+# название кейса - это имя бренда или проекта, его не переводят:
+# "BuffBuff" превращался в китайское 增益增益 ("усиление-усиление")
+KEEP_AS_IS_FIELDS = ("title",)
 NO_GROQ_KEY = "Не настроен ключ Groq (GROQ_API_KEY в backend/.env, бесплатно на console.groq.com)"
 # таймаут одного запроса к Groq: обычно ответ за 1-3 секунды, 25 хватает с запасом, а публикация
 # на сайт идёт за nginx с лимитом ответа 60 секунд и ждать дольше нельзя
@@ -59,43 +92,214 @@ def deepl_url(key: str) -> str:
     return f"https://{host}{DEEPL_PATH}"
 
 
-def pick_provider() -> str:
-    """Какой переводчик используем: 'deepl' или 'groq'. Бросает TranslateError, если нужный не настроен.
-    auto (и любое неизвестное значение): DeepL при наличии ключа, иначе Groq, иначе ошибка."""
+def provider_chain() -> list[str]:
+    """Список провайдеров по порядку попыток. Бросает TranslateError, если явно выбранный не настроен.
+    google / mymemory / deepl / groq: один выбранный, без запасных.
+    auto (и любое неизвестное значение): DeepL (если ключ) -> Google -> MyMemory -> Groq (если ключ)."""
     mode = (settings.translate_provider or "auto").strip().lower()
     if mode == "deepl":
         if not settings.deepl_api_key.strip():
             raise TranslateError("Не настроен ключ DeepL (DEEPL_API_KEY в backend/.env, бесплатно на deepl.com/pro-api)")
-        return "deepl"
+        return ["deepl"]
     if mode == "groq":
         if not settings.groq_api_key:
             raise TranslateError(NO_GROQ_KEY)
-        return "groq"
+        return ["groq"]
+    if mode in ("google", "mymemory"):
+        return [mode]
+    chain = []
     if settings.deepl_api_key.strip():
-        return "deepl"
+        chain.append("deepl")
+    chain += ["google", "mymemory"]
     if settings.groq_api_key:
-        return "groq"
-    raise TranslateError(
-        "Перевод не настроен: задай DEEPL_API_KEY (рекомендуется, deepl.com/pro-api) "
-        "или GROQ_API_KEY (console.groq.com) в backend/.env"
-    )
+        chain.append("groq")
+    return chain
+
+
+def pick_provider() -> str:
+    """Первый провайдер цепочки (основной)."""
+    return provider_chain()[0]
 
 
 def is_configured() -> bool:
-    """Настроен ли перевод (для статуса публикации в интерфейсе)."""
+    """Настроен ли перевод (для статуса публикации в интерфейсе). Google/MyMemory ключей не требуют."""
     try:
-        pick_provider()
+        provider_chain()
     except TranslateError:
         return False
     return True
 
 
+class TranslationResult(dict):
+    """{"en": {...}, "zh": {...}} плюс notes - предупреждения для пользователя (кто из провайдеров упал)."""
+
+    def __init__(self, data: dict, notes: Optional[list[str]] = None):
+        super().__init__(data)
+        self.notes = notes or []
+
+
 def translate_case(source: dict) -> dict:
     """source: {title, mini, description, what_was_done, result} на русском -> {"en": {...}, "zh": {...}}.
-    Провайдер выбирается настройкой TRANSLATE_PROVIDER (см. pick_provider)."""
-    if pick_provider() == "deepl":
-        return _translate_deepl(source)
-    return _translate_groq(source)
+    Провайдеры берутся из provider_chain(): упал один - пробуем следующий. Если сработал не первый,
+    в результате .notes объясняет, кто упал и кто перевёл. Упали все - TranslateError со всеми причинами."""
+    chain = provider_chain()
+    deadline = time.monotonic() + CASE_DEADLINE_SEC
+    runners: dict[str, Callable[[dict], dict]] = {
+        "deepl": _translate_deepl,
+        "groq": _translate_groq,
+        "google": lambda s: _translate_lines(s, "Google", _google_one, GOOGLE_CHUNK, deadline),
+        "mymemory": lambda s: _translate_lines(s, "MyMemory", _mymemory_one, MYMEMORY_CHUNK, deadline),
+    }
+    # название бренда переводчику не отдаём: "BuffBuff" на китайском становился 增益增益.
+    # Если человек впишет перевод названия руками, он сохранится: сюда такие поля не доходят
+    to_translate = {f: v for f, v in source.items() if f not in KEEP_AS_IS_FIELDS}
+    failed: list[tuple[str, str]] = []
+    for name in chain:
+        try:
+            result = runners[name](to_translate)
+        except TranslateError as e:
+            failed.append((name, str(e)))
+            continue
+        # возвращаем название как есть на всех языках
+        for lang in result:
+            for f in KEEP_AS_IS_FIELDS:
+                result[lang][f] = _as_text(source.get(f))
+        notes = []
+        if failed:
+            dead = "; ".join(f"{LABELS[n]}: {msg}" for n, msg in failed)
+            notes.append(f"Основной переводчик не сработал ({dead}). Перевод сделал {LABELS[name]}, качество может быть ниже.")
+        return TranslationResult(result, notes)
+    if len(failed) == 1:
+        raise TranslateError(failed[0][1])
+    raise TranslateError("Не сработал ни один переводчик. " + "; ".join(f"{LABELS[n]}: {msg}" for n, msg in failed))
+
+
+def _translate_lines(source: dict, name: str, one: Callable, chunk_limit: int, deadline: float) -> dict:
+    """Построчный перевод для Google и MyMemory (у них нет пакетного режима).
+    Списковые поля режутся по строкам и собираются обратно: число пунктов сохраняется.
+    Пустые строки и строки без букв (ссылка, ник, число) не отправляются и остаются как есть.
+    Ссылки, почта, ники и erid внутри текста прячутся за заглушки и возвращаются после перевода;
+    если переводчик заглушку потерял, строка остаётся русской (лучше русский оригинал, чем битая ссылка)."""
+    lines = {}
+    for f in FIELDS:
+        value = _as_text(source.get(f))
+        lines[f] = value.split("\n") if f in LIST_FIELDS else [value]
+    result = {"en": {f: "" for f in FIELDS}, "zh": {f: "" for f in FIELDS}}
+    if not any(l.strip() for ls in lines.values() for l in ls):
+        return result  # переводить нечего, лишних запросов нет
+
+    cache: dict[tuple[str, str], str] = {}  # одинаковые строки (повторяющиеся пункты) переводим один раз
+    try:
+        with httpx.Client(timeout=FREE_TIMEOUT_SEC, transport=_transport) as client:
+            for lang in ("en", "zh"):
+                for f in FIELDS:
+                    out = []
+                    for line in lines[f]:
+                        key = (lang, line)
+                        if key not in cache:
+                            cache[key] = _translate_line(client, name, one, chunk_limit, deadline, lang, line)
+                        out.append(cache[key])
+                    result[lang][f] = "\n".join(out)
+    except httpx.HTTPError:
+        raise TranslateError(f"Нет связи с {name}, попробуй ещё раз")
+    return result
+
+
+def _translate_line(client, name: str, one: Callable, chunk_limit: int, deadline: float, lang: str, line: str) -> str:
+    """Перевод одной строки с защитой ссылок и ников (см. _translate_lines)."""
+    if not line.strip():
+        return ""
+    protected: list[str] = []
+
+    def hide(m: re.Match) -> str:
+        protected.append(m.group(0))
+        return f"QZ{len(protected)}QZ"
+
+    masked = PROTECT_RE.sub(hide, line.strip())
+    # после вычета заглушек не осталось букв: строка - ссылка, ник или число, переводить нечего
+    if not re.search(r"[^\W\d_]", re.sub(r"QZ\d+QZ", "", masked)):
+        return line.strip()
+    parts = []
+    for piece in _chunks(masked, chunk_limit):
+        if time.monotonic() > deadline:
+            raise TranslateError(f"Время на перевод через {name} вышло")
+        parts.append(one(client, piece, lang).strip())
+    text = " ".join(p for p in parts if p)
+    for i, original in enumerate(protected, 1):
+        token = f"QZ{i}QZ"
+        if token not in text:
+            return line.strip()
+        text = text.replace(token, original)
+    return text
+
+
+def _chunks(text: str, limit: int) -> list[str]:
+    """Режет длинную строку по словам на куски не длиннее limit (MyMemory принимает до ~500 символов)."""
+    if len(text) <= limit:
+        return [text]
+    out, cur = [], ""
+    for word in text.split(" "):
+        if cur and len(cur) + 1 + len(word) > limit:
+            out.append(cur)
+            cur = word
+        else:
+            cur = f"{cur} {word}" if cur else word
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _google_one(client: httpx.Client, text: str, lang: str) -> str:
+    """Один запрос к публичному Google Translate. Параметры кодирует httpx (без кодирования кириллицы Google отвечает 400)."""
+    r = client.get(GOOGLE_URL, params={"client": "gtx", "sl": "ru", "tl": GOOGLE_LANGS[lang], "dt": "t", "q": text})
+    return _google_text(r)
+
+
+def _google_text(r: httpx.Response) -> str:
+    """Разбор ответа Google: [[[перевод, оригинал, ...], ...], ...]. Длинный текст приходит кусками - склеиваем item[0]."""
+    if r.status_code == 429:
+        raise TranslateError("Google временно ограничил запросы, попробуй позже")
+    if r.status_code >= 400:
+        raise TranslateError(f"Google ответил ошибкой {r.status_code}")
+    try:
+        items = r.json()[0]
+        text = "".join(item[0] for item in items if item and isinstance(item[0], str))
+    except (ValueError, KeyError, IndexError, TypeError):
+        text = ""
+    if not text.strip():
+        raise TranslateError("Не удалось разобрать ответ Google (неофициальный эндпоинт мог измениться)")
+    return text
+
+
+def _mymemory_one(client: httpx.Client, text: str, lang: str) -> str:
+    """Один запрос к MyMemory. С MYMEMORY_EMAIL (параметр de) дневной лимит выше."""
+    params = {"q": text, "langpair": f"ru|{MYMEMORY_LANGS[lang]}"}
+    email = (settings.mymemory_email or "").strip()
+    if email:
+        params["de"] = email
+    r = client.get(MYMEMORY_URL, params=params)
+    return _mymemory_text(r)
+
+
+def _mymemory_text(r: httpx.Response) -> str:
+    """Разбор ответа MyMemory с понятной ошибкой при исчерпанном дневном лимите."""
+    quota_msg = "Дневной лимит MyMemory исчерпан (5000 символов на IP). Задай MYMEMORY_EMAIL в backend/.env (лимит 50000) или попробуй завтра"
+    if r.status_code == 429:
+        raise TranslateError(quota_msg)
+    if r.status_code >= 400:
+        raise TranslateError(f"MyMemory ответил ошибкой {r.status_code}")
+    try:
+        data = r.json()
+        text = str(data["responseData"]["translatedText"])
+    except (ValueError, KeyError, TypeError):
+        raise TranslateError("Не удалось разобрать ответ MyMemory, попробуй ещё раз")
+    details = str(data.get("responseDetails") or "").lower()
+    if (data.get("quotaFinished") or "mymemory warning" in text.lower()
+            or "limit" in details or "quota" in details or str(data.get("responseStatus")) == "429"):
+        raise TranslateError(quota_msg)
+    if str(data.get("responseStatus", "200")) != "200" or not text.strip():
+        raise TranslateError("MyMemory не вернул перевод, попробуй ещё раз")
+    return text
 
 
 def _translate_deepl(source: dict) -> dict:
