@@ -130,10 +130,14 @@ export default function AlertsPanel({ onNavigate }: { onNavigate?: () => void })
         to: '/campaigns',
       }))
 
-    const selectionOverdue = liveCampaigns.filter(
+    // подборку напоминаем только пока её делают: со статуса "отдали подборку" и дальше
+    // она уже у клиента, и срок сдачи не горит
+    const pickingCampaigns = liveCampaigns.filter(c => c.status === 'picking')
+
+    const selectionOverdue = pickingCampaigns.filter(
       c => !!c.selection_due_at && dayjs(c.selection_due_at).startOf('day').isBefore(now.startOf('day'))
     )
-    const selectionSoon = liveCampaigns.filter(c => {
+    const selectionSoon = pickingCampaigns.filter(c => {
       if (!c.selection_due_at) return false
       const diff = dayjs(c.selection_due_at).startOf('day').diff(now.startOf('day'), 'day')
       return diff >= 0 && diff <= 2

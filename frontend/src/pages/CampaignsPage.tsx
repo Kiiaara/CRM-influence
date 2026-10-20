@@ -618,7 +618,11 @@ function BloggersBlock({ c }: { c: Campaign }) {
       )}
 
       {openId !== null && (
-        <CampaignBloggerModal streamerId={openId} campaignId={c.id} onClose={() => setOpenId(null)} />
+        <CampaignBloggerModal
+          streamerId={openId}
+          campaignId={c.id}
+          nick={displayNick({ name: '', links: bloggers.find(b => b.streamer_id === openId)?.link })}
+          onClose={() => setOpenId(null)} />
       )}
 
       <AddBloggerForm
@@ -639,6 +643,8 @@ function BloggerRow({ b, onOpen, onRemove }: { b: CampaignBlogger; onOpen: () =>
   const pay = PAYMENT_LABELS[b.payment_status] ?? b.payment_status
   const paid = b.payment_status === 'paid'
   const cancelled = b.stage === 'cancelled'
+  // ник из ссылки; links режется по пробелам внутри displayNick
+  const nick = displayNick({ name: b.name, links: b.link })
   return (
     // клик по строке открывает модалку правки; на канбан отсюда не уходим
     <div
@@ -652,7 +658,13 @@ function BloggerRow({ b, onOpen, onRemove }: { b: CampaignBlogger; onOpen: () =>
     >
       <span className="col-span-2 sm:col-span-1 font-medium text-slate-900 dark:text-slate-100 truncate">
         {b.talent_type === 'blogger' && <span className="mr-1" title="Блогер">📱</span>}
-        {b.name}
+        {nick ? (
+          <>
+            {nick}
+            {/* имя из базы приглушённо рядом, чтобы не терять контекст */}
+            <span className="ml-1.5 text-xs font-normal text-slate-400 dark:text-slate-500">({b.name})</span>
+          </>
+        ) : b.name}
       </span>
       <span className="text-slate-700 dark:text-slate-200 whitespace-nowrap">
         {b.amount != null ? fmtMoney(b.amount, b.currency) : <span className="text-slate-300 dark:text-slate-600">-</span>}

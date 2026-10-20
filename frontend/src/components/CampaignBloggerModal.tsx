@@ -252,10 +252,13 @@ function PaymentsBlock({
 export default function CampaignBloggerModal({
   streamerId,
   campaignId,
+  nick = '',
   onClose,
 }: {
   streamerId: number
   campaignId: number
+  // ник из ссылки блогера (считает список кампании); пусто - показываем только имя
+  nick?: string
   onClose: () => void
 }) {
   const qc = useQueryClient()
@@ -408,7 +411,11 @@ export default function CampaignBloggerModal({
           <div className="min-w-0">
             <div className="text-xs text-slate-400">Блогер кампании</div>
             <h2 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-slate-100 truncate">
-              {data?.streamer_name ?? '...'}
+              {nick ? nick : (data?.streamer_name ?? '...')}
+              {/* ник основным, имя из базы приглушённо рядом */}
+              {nick && data?.streamer_name && (
+                <span className="ml-2 text-sm font-normal text-slate-400 dark:text-slate-500">({data.streamer_name})</span>
+              )}
             </h2>
           </div>
           <button

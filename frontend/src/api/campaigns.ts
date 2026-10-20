@@ -84,6 +84,8 @@ export interface CampaignBlogger {
   integration_date: string | null
   deadline: string | null
   stage: Stage
+  // ссылки/ник блогера из баз через пробел; пусто, если не нашли
+  link: string
 }
 
 export interface CampaignBloggerPayload {

@@ -3,6 +3,7 @@
 Сделка на канбане - это конкретный инфлюенсер. Кампания - весь запрос клиента,
 который живёт с момента поступления, когда блогеры ещё не подобраны.
 """
+import json
 from datetime import datetime
 from typing import List, Optional
 
@@ -14,9 +15,12 @@ from sqlalchemy.orm import Session
 from database import get_db
 from deps import get_current_user, get_current_workspace
 from models.advertiser import Advertiser
+from models.blogger_profile import BloggerProfile
 from models.campaign import Campaign
 from models.integration import Integration
 from models.integration_streamer import IntegrationStreamer
+from models.own_blogger import OwnBlogger
+from models.streamer_profile import StreamerProfile
 from models.user import User
 from models.workspace import Workspace, WorkspaceMember
 from routers.integrations import StreamerCreate, create_streamer
@@ -109,6 +113,8 @@ class CampaignBloggerOut(BaseModel):
     integration_date: Optional[datetime] = None
     deadline: Optional[datetime] = None
     stage: str
+    # ссылки/ник блогера через пробел из баз (пусто, если не нашли); ник из них достаёт фронт
+    link: str = ""
 
 
 class CampaignBloggerCreate(BaseModel):
@@ -175,7 +181,72 @@ def _out(db: Session, c: Campaign, stats: Optional[dict] = None) -> CampaignOut:
     })
 
 
-def _blogger_out(s: IntegrationStreamer) -> CampaignBloggerOut:
+def _norm_name(name: Optional[str]) -> str:
+    """Ключ сравнения имён: без регистра, лишние пробелы схлопнуты."""
+    return " ".join((name or "").split()).casefold()
+
+
+def _sheet_row_links(raw: Optional[str]) -> List[str]:
+    """Ссылки из sheet_row базы агентства (порт sheetRowLinks с фронта): у записей из таблицы
+    url/telegram пустые, а реальная ссылка лежит в гиперссылке ячейки или в тексте значения."""
+    try:
+        row = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    if not isinstance(row, list):
+        return []
+    found: List[str] = []
+    for cell in row:
+        if not isinstance(cell, dict):
+            continue
+        if cell.get("u"):
+            found.append(str(cell["u"]))
+        text = str(cell.get("v") or "")
+        if "://" in text or "t.me/" in text:
+            for p in text.replace(",", " ").replace(";", " ").replace("|", " ").split():
+                if "://" in p or "t.me/" in p:
+                    found.append(p)
+    return found
+
+
+def _links_by_name(db: Session, ws: Workspace, names: List[str]) -> dict:
+    """norm(имя) -> строка со ссылками блогера. Константное число запросов (по два на базу)
+    независимо от длины списка. lower() в SQLite не понимает кириллицу, поэтому имена
+    сверяем в Python: сначала лёгкие (id, name), потом полные поля только для совпавших."""
+    wanted = {_norm_name(n) for n in names if _norm_name(n)}
+    result: dict = {}
+    if not wanted:
+        return result
+
+    def matched(model, extra_filter=None):
+        q = db.query(model.id, model.name)
+        if extra_filter is not None:
+            q = q.filter(extra_filter)
+        ids = [r.id for r in q.all() if _norm_name(r.name) in wanted]
+        if not ids:
+            return []
+        return db.query(model).filter(model.id.in_(ids)).order_by(model.id.asc()).all()
+
+    def put(name: str, parts: List[str]):
+        link = " ".join(p.strip() for p in parts if p and p.strip())
+        key = _norm_name(name)
+        # первая найденная непустая ссылка выигрывает: порядок баз - своя, агентская, инфлюенсеры
+        if link and key not in result:
+            result[key] = link
+
+    # своя база только этого пространства
+    for r in matched(OwnBlogger, OwnBlogger.workspace_id == ws.id):
+        put(r.name, [r.url])
+    # база агентства общая
+    for r in matched(BloggerProfile):
+        put(r.name, [r.url, r.telegram, *_sheet_row_links(r.sheet_row)])
+    # база инфлюенсеров: twitch_url часто голый ник
+    for r in matched(StreamerProfile):
+        put(r.name, [r.twitch_url, r.social_links])
+    return result
+
+
+def _blogger_out(s: IntegrationStreamer, links: Optional[dict] = None) -> CampaignBloggerOut:
     return CampaignBloggerOut(
         streamer_id=s.id,
         integration_id=s.integration_id,
@@ -187,6 +258,7 @@ def _blogger_out(s: IntegrationStreamer) -> CampaignBloggerOut:
         integration_date=s.integration_date,
         deadline=s.deadline,
         stage=s.stage,
+        link=(links or {}).get(_norm_name(s.streamer_name), ""),
     )
 
 
@@ -302,7 +374,8 @@ def list_campaign_bloggers(
         .order_by(IntegrationStreamer.id.asc())
         .all()
     )
-    return [_blogger_out(s) for s in rows]
+    links = _links_by_name(db, ws, [s.streamer_name for s in rows])
+    return [_blogger_out(s, links) for s in rows]
 
 
 @router.post("/{campaign_id}/bloggers", response_model=CampaignBloggerOut, status_code=201)
@@ -350,5 +423,5 @@ def add_campaign_blogger(
         ),
         db=db, ws=ws, user=user,
     )
-    return _blogger_out(s)
+    return _blogger_out(s, _links_by_name(db, ws, [s.streamer_name]))
 
