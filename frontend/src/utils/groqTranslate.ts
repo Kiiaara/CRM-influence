@@ -215,10 +215,36 @@ export function parseGroqReply(reply: unknown, source: CaseSource, fields: CaseF
         }
         value = got.join('\n')
       }
-      out[lang][f] = value
+      // числа приводим сами: в промпте про 万 сказано, но модель это выполняет через раз
+      out[lang][f] = localizeNumbers(value, lang)
     }
   }
   return { ...out, warnings }
+}
+
+// Числа с сокращениями модель сворачивает как придётся: в одном кейсе выходило
+// "3.4万+", в соседнем "22k+". Поэтому приводим их сами, уже после ответа.
+// Для en латинские k/M, для zh принятое в китайском 万 (десять тысяч).
+const NUM_RE = /(\d+(?:[.,]\d+)?)\s*(млн\.?|тыс\.?|[кk])(?![\w.])/gi
+const NUM_MULT: Record<string, number> = { 'млн': 1e6, 'тыс': 1e3, 'к': 1e3, 'k': 1e3 }
+
+function fmtNum(value: number): string {
+  // 4.0 -> "4", 3.4 -> "3.4": хвост .0 в тексте не нужен
+  return value % 1 ? String(Number(value.toFixed(1))) : String(Math.round(value))
+}
+
+/** "34к+" -> "34k+" (en) и "3.4万+" (zh); "1,9 млн" -> "1.9M" и "190万" */
+export function localizeNumbers(text: string, lang: Lang): string {
+  if (!text) return text
+  return text.replace(NUM_RE, (_m, num: string, unit: string) => {
+    const amount = Number(num.replace(',', '.'))
+    const total = amount * (NUM_MULT[unit.toLowerCase().replace(/\.$/, '')] ?? 1)
+    if (!Number.isFinite(total)) return _m
+    if (lang === 'zh') return total >= 1e4 ? `${fmtNum(total / 1e4)}万` : fmtNum(total)
+    if (total >= 1e6) return `${fmtNum(total / 1e6)}M`
+    if (total >= 1e3) return `${fmtNum(total / 1e3)}k`
+    return fmtNum(total)
+  })
 }
 
 export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{

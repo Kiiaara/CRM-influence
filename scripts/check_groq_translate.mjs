@@ -10,6 +10,7 @@ import {
   buildRequest,
   buildSystemPrompt,
   fetchGroqModels,
+  localizeNumbers,
   fieldsToTranslate,
   groqErrorText,
   isChatModel,
@@ -298,6 +299,25 @@ check('"заново" переводит и готовое', [b7.translated, b7.
 const saveFail = async () => { throw new Error('500') }
 const b8 = await translateBatch([mk(1), mk(2)], 'k', 'missing', { fetchImpl: fakeFetch(ok(reply)), save: saveFail })
 check('ошибка сохранения на сервер: кейс в failed, прогон идёт дальше', [b8.translated, b8.failed.length], [0, 2])
+
+
+// --- числа приводятся к единому виду, модель это делает через раз ---
+check('zh: 34к+ -> 3.4万+', localizeNumbers('34к+ просмотров', 'zh'), '3.4万+ просмотров')
+check('zh: 22к+ -> 2.2万+', localizeNumbers('22к+ просмотров', 'zh'), '2.2万+ просмотров')
+check('zh: латинская k тоже ловится', localizeNumbers('22k+ 观看次数', 'zh'), '2.2万+ 观看次数')
+check('zh: 1,9 млн -> 190万', localizeNumbers('1,9 млн+ просмотров', 'zh'), '190万+ просмотров')
+check('zh: 10к -> 1万 без дроби', localizeNumbers('10к', 'zh'), '1万')
+check('en: 34к+ -> 34k+', localizeNumbers('34к+ просмотров', 'en'), '34k+ просмотров')
+check('en: 1,9 млн -> 1.9M', localizeNumbers('1,9 млн', 'en'), '1.9M')
+check('точка от сокращения не остаётся', localizeNumbers('Более 34 тыс. просмотров', 'en'), 'Более 34k просмотров')
+check('текст без чисел не меняется', localizeNumbers('Top Nimo.tv', 'zh'), 'Top Nimo.tv')
+check('пустая строка', localizeNumbers('', 'zh'), '')
+
+// числа чинятся и в разобранном ответе модели
+const numReply = JSON.stringify({ en: { mini: '22k+ views' }, zh: { mini: '22k+ 观看次数' } })
+const numSrc = sourceFromCase({ title: 'X', site_mini: '22к+ просмотров', description: '', what_was_done: '', result: '' })
+const numOut = await translateWithGroq({ source: numSrc, fields: ['mini'], key: 'k', fetchImpl: fakeFetch(ok(numReply)) })
+check('ответ модели с латинской k исправлен на 万', numOut.zh.mini, '2.2万+ 观看次数')
 
 console.log(failed ? `\n${failed} провалов` : '\nвсё зелёное')
 process.exit(failed ? 1 : 0)
