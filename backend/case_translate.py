@@ -11,7 +11,7 @@ import httpx
 
 from config import settings
 
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_PATH = "/openai/v1/chat/completions"
 FIELDS = ("title", "mini", "description", "what_was_done", "result")
 # таймаут одного запроса к Groq: обычно ответ за 1-3 секунды, 25 хватает с запасом, а публикация
 # на сайт идёт за nginx с лимитом ответа 60 секунд и ждать дольше нельзя
@@ -35,6 +35,13 @@ class TranslateError(Exception):
     pass
 
 
+def groq_url() -> str:
+    """Адрес запроса: GROQ_API_BASE (по умолчанию api.groq.com, можно прокси) + путь API.
+    Слеши на конце базы срезаем, чтобы не получить '//' в пути."""
+    base = (settings.groq_api_base or "").strip().rstrip("/") or "https://api.groq.com"
+    return base + GROQ_PATH
+
+
 def translate_case(source: dict) -> dict:
     """source: {title, mini, description, what_was_done, result} на русском -> {"en": {...}, "zh": {...}}."""
     if not settings.groq_api_key:
@@ -43,7 +50,7 @@ def translate_case(source: dict) -> dict:
     try:
         with httpx.Client(timeout=TIMEOUT_SEC, transport=_transport) as client:
             r = client.post(
-                GROQ_URL,
+                groq_url(),
                 headers={"Authorization": f"Bearer {settings.groq_api_key}"},
                 json={
                     "model": settings.groq_model,
@@ -60,6 +67,11 @@ def translate_case(source: dict) -> dict:
 
     if r.status_code == 401:
         raise TranslateError("Groq не принял ключ - проверь GROQ_API_KEY")
+    if r.status_code == 403:
+        raise TranslateError(
+            "Groq ответил 403: скорее всего он блокирует IP сервера по региону. "
+            "Помогает прокси: задай GROQ_API_BASE в backend/.env (адрес Cloudflare Worker, см. CLOUDFLARE_WORKER_SETUP.md)"
+        )
     if r.status_code == 429:
         raise TranslateError("Лимит бесплатного Groq исчерпан, попробуй через минуту")
     if r.status_code == 404 or (r.status_code == 400 and "model" in r.text):

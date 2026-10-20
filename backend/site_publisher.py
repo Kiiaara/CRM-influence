@@ -16,9 +16,11 @@ import hashlib
 import html
 import io
 import json
+import re
 import time
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urlsplit
 
 import httpx
 from PIL import Image
@@ -82,6 +84,71 @@ def _lines(text: str) -> list[str]:
     return [_esc(line.lstrip(_BULLETS).strip()) for line in (text or "").splitlines() if line.strip()]
 
 
+# URL в тексте: только ASCII-символы допустимые в адресе, чтобы русский/китайский текст
+# сразу после ссылки и кавычки/скобки-теги не попадали в href
+_URL_RE = re.compile(r"https?://[A-Za-z0-9\-._~:/?#\[\]@!$&()*+,;=%]+")
+_URL_TRAIL = ".,;:!?"  # знаки конца предложения: к адресу не относятся
+_LABEL_MAX = 40
+
+
+def _split_url(url: str) -> tuple[str, str]:
+    """Отделяет от найденного адреса хвост пунктуации: 'https://a.ru/x).' -> ('https://a.ru/x', ').')."""
+    tail = ""
+    while url:
+        last = url[-1]
+        if last in _URL_TRAIL or (last == ")" and url.count(")") > url.count("(")) or last == "]":
+            tail = last + tail
+            url = url[:-1]
+        else:
+            break
+    return url, tail
+
+
+def _url_label(url: str) -> str:
+    """Текст ссылки - только ник канала, без домена:
+    https://www.twitch.tv/xxx?a=1 -> xxx, https://t.me/yyy -> yyy, youtube.com/@zzz -> zzz.
+    Домен в тексте не нужен: на сайте должен стоять просто никнейм, ведущий на канал."""
+    parts = urlsplit(url)
+    host = parts.netloc.rsplit("@", 1)[-1]
+    if host.lower().startswith("www."):
+        host = host[4:]
+
+    # последний непустой кусок пути и есть ник; @ в начале убираем
+    segments = [s for s in parts.path.split("/") if s]
+    # служебные хвосты вроде /videos или /about ник не несут, берём предыдущий сегмент
+    while len(segments) > 1 and segments[-1].lower() in ("videos", "about", "featured", "streams", "clips"):
+        segments.pop()
+    nick = segments[-1].lstrip("@") if segments else ""
+
+    # ссылка на сам домен без пути - показываем домен, иначе текст будет пустым
+    label = nick or host.rstrip("/") or url
+    return label if len(label) <= _LABEL_MAX else label[: _LABEL_MAX - 3] + "..."
+
+
+def linkify_html(text: str) -> str:
+    """Текст кейса -> безопасный html: всё экранируется, а http(s)-адреса становятся ссылками
+    <a href="полный адрес">домен/путь</a>. Без ссылок результат равен _esc(text)."""
+    text = (text or "").strip()
+    out, pos = [], 0
+    for m in _URL_RE.finditer(text):
+        url, tail = _split_url(m.group(0))
+        if not url.split("//", 1)[1]:
+            continue  # одно 'https://' без адреса - не ссылка
+        out.append(html.escape(text[pos:m.start()], quote=False))
+        out.append(
+            f'<a href="{html.escape(url, quote=True)}" target="_blank" rel="noopener">'
+            f"{html.escape(_url_label(url), quote=False)}</a>"
+        )
+        out.append(html.escape(tail, quote=False))
+        pos = m.end()
+    out.append(html.escape(text[pos:], quote=False))
+    return "".join(out)
+
+
+def _lines_html(text: str) -> list[str]:
+    return [linkify_html(line.lstrip(_BULLETS).strip()) for line in (text or "").splitlines() if line.strip()]
+
+
 def _localized(case: CaseStudy, field: str) -> dict:
     """{ru, en, zh}; нет перевода - показываем русский, чтобы на сайте не было пустоты."""
     tr = parse_translations(case.translations)
@@ -117,6 +184,11 @@ def case_to_site(case: CaseStudy, has_image: bool) -> dict:
         "task": {lang: _esc(task[lang]) for lang in LANGS},
         "doing": {lang: _lines(doing[lang]) for lang in LANGS},
         "result": {lang: _lines(result[lang]) for lang in LANGS},
+        # те же тексты, но с адресами в виде кликабельных ссылок (html уже экранирован);
+        # сайт показывает их через innerHTML, а если полей нет - берёт чистые task/doing/result
+        "taskHtml": {lang: linkify_html(task[lang]) for lang in LANGS},
+        "doingHtml": {lang: _lines_html(doing[lang]) for lang in LANGS},
+        "resultHtml": {lang: _lines_html(result[lang]) for lang in LANGS},
     }
 
 

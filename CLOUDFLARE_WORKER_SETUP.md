@@ -71,6 +71,24 @@ journalctl -u crm-influence -n 30 --no-pager | grep -i "telegram\|ConnectTimeout
 
 Если `ConnectTimeout` больше не появляется в свежих логах — готово.
 
+## Отдельный воркер для Groq (автоперевод кейсов)
+
+Если перевод кейсов падает с «Groq ответил 403» - Groq блокирует IP сервера по региону.
+Решается таким же воркером, только он проксирует `https://api.groq.com`.
+
+1. Создай второй Worker (например `groq-proxy`) по шагам 2-3 выше, в коде замени строку
+   `target` на: `const target = "https://api.groq.com" + url.pathname + url.search;`
+2. Нажми **Deploy** и скопируй адрес вида `https://groq-proxy.твой-логин.workers.dev`.
+3. Пропиши на сервере (без слэша на конце) и перезапусти бэк:
+
+```bash
+cd /opt/crm-influence/backend
+echo 'GROQ_API_BASE=https://groq-proxy.твой-логин.workers.dev' >> .env
+sudo systemctl restart crm-influence
+```
+
+Ключ `GROQ_API_KEY` остаётся тем же, воркер просто передаёт запрос дальше.
+
 ---
 
 Бесплатный тариф Cloudflare Workers — 100 000 запросов в день, для

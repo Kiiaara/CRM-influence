@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     # Автоперевод кейсов на EN/ZH через Groq (бесплатный тариф, ключ на console.groq.com)
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
+    groq_api_base: str = "https://api.groq.com"  # можно указать URL Cloudflare Worker-прокси, если Groq блокирует IP сервера (403)
 
     # Dev-режим без TG-логина: бэк подставляет фиктивного юзера-админа
     dev_auth_bypass: bool = False
