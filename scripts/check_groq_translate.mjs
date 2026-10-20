@@ -3,17 +3,22 @@
 // Сеть не нужна: fetch подменяется. Запуск: node --experimental-strip-types scripts\check_groq_translate.mjs
 import {
   GROQ_URL,
-  GROQ_MODEL,
+  GROQ_MODELS_URL,
+  GROQ_FALLBACK_MODEL,
   GroqError,
   SYSTEM_BASE,
   buildRequest,
   buildSystemPrompt,
+  fetchGroqModels,
   fieldsToTranslate,
   groqErrorText,
+  isChatModel,
   looksLikeGroqKey,
   mergeTranslations,
   normalizeKey,
   parseGroqReply,
+  parseModelsReply,
+  resolveModel,
   sourceFromCase,
   translateBatch,
   translateWithGroq,
@@ -31,7 +36,7 @@ const truth = (label, cond) => check(label, !!cond, true)
 function fakeFetch(...responses) {
   const calls = []
   const impl = async (url, init) => {
-    calls.push({ url, init, body: JSON.parse(init.body) })
+    calls.push({ url, init, body: init.body ? JSON.parse(init.body) : null })
     const r = responses[Math.min(calls.length - 1, responses.length - 1)]
     if (r instanceof Error) throw r
     return r
@@ -72,7 +77,8 @@ const req = buildRequest(src, ['mini', 'description', 'what_was_done', 'result']
 check('адрес', req.url, 'https://api.groq.com/openai/v1/chat/completions')
 check('адрес из константы', GROQ_URL, req.url)
 check('ключ в Authorization', req.headers.Authorization, 'Bearer gsk_test')
-check('модель', req.body.model, GROQ_MODEL)
+check('модель без настроек - запасная константа', req.body.model, GROQ_FALLBACK_MODEL)
+check('модель из настроек уходит в запрос', buildRequest(src, ['mini'], 'k', 'qwen/qwen3-32b').body.model, 'qwen/qwen3-32b')
 check('json-режим', req.body.response_format, { type: 'json_object' })
 const userPayload = JSON.parse(req.body.messages[1].content)
 check('title не попал в запрос', 'title' in userPayload, false)
@@ -137,6 +143,60 @@ truth('три текста разные', new Set([t401, t403, t429]).size === 3
 truth('500 - временная недоступность', /недоступен/i.test(groqErrorText(503)))
 truth('400 про модель', /модел/i.test(groqErrorText(400, '{"error":{"message":"The model `x` does not exist"}}')))
 truth('прочее - с кодом', groqErrorText(418).includes('418'))
+const t404 = groqErrorText(404, '{"error":{"message":"The model `old-model` does not exist"}}', 'old-model')
+truth('404 про модель называет модель и код', t404.includes('old-model') && t404.includes('404'))
+truth('404 про модель советует выбрать другую в списке', /выберите другую модель/i.test(t404))
+truth('404 про модель не требует обновлять приложение', !/нужно обновить приложение/i.test(t404) && /не нужно/i.test(t404))
+truth('в текстах ошибок нет длинных тире', !t404.includes(String.fromCharCode(0x2014)))
+
+console.log('--- список моделей ---')
+const modelsReply = {
+  object: 'list',
+  data: [
+    { id: 'whisper-large-v3', active: true },
+    { id: 'whisper-large-v3-turbo', active: true },
+    { id: 'llama-3.1-8b-instant', active: true },
+    { id: 'meta-llama/llama-guard-4-12b', active: true },
+    { id: 'meta-llama/llama-prompt-guard-2-86m', active: true },
+    { id: 'openai/gpt-oss-safeguard-20b', active: true },
+    { id: 'llama-3.3-70b-versatile', active: true },
+    { id: 'playai-tts', active: true },
+    { id: 'compound-beta', active: true },
+    { id: 'text-embedding-3', active: true },
+    { id: 'qwen/qwen3-32b', active: true },
+    { id: 'old-dead-70b', active: false },
+    { id: 'llama-3.1-8b-instant', active: true },
+    { id: 123 },
+    null,
+  ],
+}
+check('фильтр: whisper, embedding, guard, tts, compound, неактивные и дубли убраны, крупные первыми',
+  parseModelsReply(modelsReply), ['llama-3.3-70b-versatile', 'qwen/qwen3-32b', 'llama-3.1-8b-instant'])
+check('мусор вместо ответа - пустой список', [parseModelsReply(null), parseModelsReply({}), parseModelsReply({ data: 'x' })], [[], [], []])
+truth('isChatModel: whisper нет, llama да', !isChatModel('whisper-large-v3') && isChatModel('llama-3.3-70b-versatile') && !isChatModel(''))
+check('при равном размере - по алфавиту', parseModelsReply({ data: [{ id: 'b-8b' }, { id: 'a-8b' }] }), ['a-8b', 'b-8b'])
+
+console.log('--- выбор модели ---')
+const avail = ['llama-3.3-70b-versatile', 'qwen/qwen3-32b']
+check('не выбрана - первая из списка', resolveModel('', avail), 'llama-3.3-70b-versatile')
+check('выбрана из списка - она', resolveModel('qwen/qwen3-32b', avail), 'qwen/qwen3-32b')
+check('выбранной уже нет в списке - первая из списка', resolveModel('old-model', avail), 'llama-3.3-70b-versatile')
+check('список пуст, введено руками - как введено', resolveModel('  my-model ', []), 'my-model')
+check('список пуст и ничего не введено - запасная константа', resolveModel('', []), GROQ_FALLBACK_MODEL)
+
+console.log('--- запрос списка моделей ---')
+const mf = fakeFetch({ ok: true, status: 200, json: async () => modelsReply, text: async () => '' })
+const got = await fetchGroqModels('gsk_k', mf)
+check('адрес и метод', [mf.calls[0].url, mf.calls[0].init.method], [GROQ_MODELS_URL, 'GET'])
+check('адрес списка моделей', GROQ_MODELS_URL, 'https://api.groq.com/openai/v1/models')
+check('ключ в Authorization', mf.calls[0].init.headers.Authorization, 'Bearer gsk_k')
+check('список отфильтрован', got, ['llama-3.3-70b-versatile', 'qwen/qwen3-32b', 'llama-3.1-8b-instant'])
+let mErr = null
+try { await fetchGroqModels('k', fakeFetch(bad(401))) } catch (e) { mErr = e }
+truth('401 на списке -> GroqError auth', mErr instanceof GroqError && mErr.kind === 'auth')
+mErr = null
+try { await fetchGroqModels('k', fakeFetch(new TypeError('Failed to fetch'))) } catch (e) { mErr = e }
+truth('обрыв сети на списке -> network', mErr instanceof GroqError && mErr.kind === 'network')
 
 console.log('--- запрос целиком ---')
 const f1 = fakeFetch(ok(reply))
@@ -155,6 +215,14 @@ for (const [status, kind] of [[401, 'auth'], [403, 'forbidden'], [429, 'rate'], 
 let netErr = null
 try { await translateWithGroq({ source: src, fields: f4, key: 'k', fetchImpl: fakeFetch(new TypeError('Failed to fetch')) }) } catch (e) { netErr = e }
 truth('обрыв сети -> kind=network с понятным текстом', netErr instanceof GroqError && netErr.kind === 'network' && /связи/i.test(netErr.message))
+
+const fm = fakeFetch(ok(reply))
+await translateWithGroq({ source: src, fields: f4, key: 'k', model: 'qwen/qwen3-32b', fetchImpl: fm })
+check('перевод идёт с моделью из настроек', fm.calls[0].body.model, 'qwen/qwen3-32b')
+let m404 = null
+try { await translateWithGroq({ source: src, fields: f4, key: 'k', model: 'old-model', fetchImpl: fakeFetch(bad(404, '{"error":{"message":"The model `old-model` does not exist"}}')) }) } catch (e) { m404 = e }
+truth('404 про модель -> kind=model', m404 instanceof GroqError && m404.kind === 'model')
+truth('404 про модель: в тексте id модели и совет выбрать другую', m404 && m404.message.includes('old-model') && /выберите другую модель/i.test(m404.message))
 
 console.log('--- слияние с готовыми переводами ---')
 const fresh = { en: { mini: 'NEW', description: 'NEW', what_was_done: 'NEW', result: 'NEW' }, zh: { mini: 'NEW', description: 'NEW', what_was_done: 'NEW', result: 'NEW' } }
@@ -206,6 +274,11 @@ const b3 = await translateBatch([mk(1), mk(2), mk(3)], 'k', 'missing', { fetchIm
 check('401 останавливает прогон', [b3.translated, auth.calls.length], [1, 2])
 check('fatal с понятным текстом', b3.fatal, groqErrorText(401))
 check('то что успело - сохранено', saved.map(s => s[0]), [1])
+
+const modelBatch = fakeFetch(bad(404, 'model not found'))
+const b3m = await translateBatch([mk(1), mk(2)], 'k', 'missing', { fetchImpl: modelBatch, save, model: 'old-model' })
+check('404 про модель останавливает прогон, kind передаётся', [modelBatch.calls.length, b3m.fatalKind], [1, 'model'])
+check('в запросах прогона модель из настроек', modelBatch.calls[0].body.model, 'old-model')
 
 const rate = fakeFetch(bad(429))
 const b4 = await translateBatch([mk(1), mk(2)], 'k', 'missing', { fetchImpl: rate, save })

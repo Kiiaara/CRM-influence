@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { integrationsApi } from '../api/integrations'
 import type { CaseStudyUpdate, Streamer } from '../api/integrations'
-import { fieldsToTranslate, looksLikeGroqKey, normalizeKey, sourceFromCase, translateBatch } from '../utils/groqTranslate'
+import { fetchGroqModels, fieldsToTranslate, looksLikeGroqKey, normalizeKey, resolveModel, sourceFromCase, translateBatch } from '../utils/groqTranslate'
 import type { BatchItem, BatchResult, Mode } from '../utils/groqTranslate'
 import { siteApi } from '../api/site'
 import type { PublishResult } from '../api/site'
@@ -322,6 +322,27 @@ function saveGroqKey(key: string) {
   }
 }
 
+// Выбранная модель Groq хранится рядом с ключом, тоже только в этом браузере.
+// Набор моделей у Groq меняется, поэтому id в коде не зашит: список берётся с сервера Groq.
+const GROQ_MODEL_STORAGE = 'crm_groq_model'
+
+function loadGroqModel(): string {
+  try {
+    return localStorage.getItem(GROQ_MODEL_STORAGE) ?? ''
+  } catch {
+    return '' // см. loadGroqKey
+  }
+}
+
+function saveGroqModel(model: string) {
+  try {
+    if (model) localStorage.setItem(GROQ_MODEL_STORAGE, model)
+    else localStorage.removeItem(GROQ_MODEL_STORAGE)
+  } catch {
+    /* см. loadGroqKey */
+  }
+}
+
 // Ручной перевод кейсов через Groq из браузера: хорошее качество (в промпте объяснён контекст рекламы
 // у блогеров) вместо машинного Google/MyMemory. Серверный перевод остаётся запасным для автопубликации.
 function GroqTranslateBar({ rows }: { rows: Row[] }) {
@@ -332,6 +353,38 @@ function GroqTranslateBar({ rows }: { rows: Row[] }) {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [result, setResult] = useState<{ mode: Mode; res: BatchResult } | null>(null)
   const stopRef = useRef(false)
+  // модель: то, что сохранено (может быть пустым или устаревшим), и список с сервера Groq
+  const [savedModel, setSavedModel] = useState(loadGroqModel)
+  const [models, setModels] = useState<string[]>([])
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [modelsError, setModelsError] = useState<string | null>(null)
+  const model = resolveModel(savedModel, models)
+
+  // Запрос списка моделей у Groq. Не вышло - список пуст, id вводится руками, работу не блокируем
+  const loadModels = async (k: string) => {
+    setModelsLoading(true)
+    setModelsError(null)
+    try {
+      setModels(await fetchGroqModels(k))
+    } catch (e) {
+      setModels([])
+      setModelsError(e instanceof Error ? e.message : 'Не удалось получить список моделей')
+    } finally {
+      setModelsLoading(false)
+    }
+  }
+
+  // при сохранённом ключе список подтягивается сам (и при смене ключа)
+  useEffect(() => {
+    if (key) void loadModels(key)
+    else setModels([])
+  }, [key])
+
+  const chooseModel = (id: string) => {
+    const v = id.trim()
+    saveGroqModel(v)
+    setSavedModel(v)
+  }
 
   // те же ключи запросов, что в StreamerCases: данные берутся из общего кеша
   const caseQueries = useQueries({
@@ -379,10 +432,16 @@ function GroqTranslateBar({ rows }: { rows: Row[] }) {
       const res = await translateBatch(items, key, mode, {
         // на сервер уходит только перевод, ключа в запросе нет
         save: (id, translations) => integrationsApi.updateCase(id, { translations }),
+        model,
         onProgress: (done, total) => setProgress({ done, total }),
         shouldStop: () => stopRef.current,
       })
       setResult({ mode, res })
+      // Groq не принял модель: сбрасываем сохранённую и заново запрашиваем список, чтобы выбрать другую
+      if (res.fatalKind === 'model') {
+        chooseModel('')
+        void loadModels(key)
+      }
     } finally {
       setProgress(null)
       qc.invalidateQueries({ queryKey: ['streamers'] })
@@ -448,6 +507,45 @@ function GroqTranslateBar({ rows }: { rows: Row[] }) {
           )}
         </div>
       )}
+
+      {key && !running && (
+        <div className="flex flex-wrap items-center gap-2 mt-2">
+          <label htmlFor="groq-model" className="text-xs text-slate-500 dark:text-slate-400">Модель</label>
+          {models.length > 0 ? (
+            <select
+              id="groq-model"
+              value={model}
+              onChange={e => chooseModel(e.target.value)}
+              className="bg-slate-100 dark:bg-brand-900 border border-transparent focus:border-brand-500 rounded-lg px-2 py-1.5 text-sm text-slate-900 dark:text-slate-100 outline-none max-w-full"
+            >
+              {models.map(id => <option key={id} value={id}>{id}</option>)}
+            </select>
+          ) : (
+            <input
+              id="groq-model"
+              value={savedModel}
+              onChange={e => chooseModel(e.target.value)}
+              placeholder={modelsLoading ? 'Загружаю список…' : 'id модели, например из console.groq.com/docs/models'}
+              autoComplete="off"
+              className="flex-1 min-w-[14rem] bg-slate-100 dark:bg-brand-900 border border-transparent focus:border-brand-500 rounded-lg px-2 py-1.5 text-sm text-slate-900 dark:text-slate-100 outline-none"
+            />
+          )}
+          <button
+            onClick={() => void loadModels(key)}
+            disabled={modelsLoading}
+            className="text-xs text-slate-500 hover:text-brand-600 disabled:opacity-50"
+          >
+            {modelsLoading ? 'обновляю…' : 'обновить список'}
+          </button>
+        </div>
+      )}
+      {key && !running && (
+        <div className="text-[11px] text-slate-400 mt-1">
+          Список моделей берётся из вашего аккаунта Groq, актуальные смотрите на console.groq.com/docs/models.
+          Если перевод пишет, что модель не принята, выберите другую.
+        </div>
+      )}
+      {modelsError && <div className="text-xs text-amber-600 mt-1">{modelsError}</div>}
 
       <div className="text-[11px] text-slate-400 mt-2">
         Ключ хранится только в этом браузере и на сервер не отправляется: настройки сервера общие, их видят коллеги из других пространств.

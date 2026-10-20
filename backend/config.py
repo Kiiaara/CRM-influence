@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     deepl_api_key: str = ""
     # Groq (бесплатный тариф, ключ на console.groq.com)
     groq_api_key: str = ""
+    # Список моделей у Groq меняется, id может устареть (404): актуальный смотреть в консоли Groq (console.groq.com/docs/models).
+    # Серверный Groq с FirstVDS заблокирован по IP, так что это для полноты; браузерный перевод берёт модель из списка Groq.
     groq_model: str = "llama-3.3-70b-versatile"
     groq_api_base: str = "https://api.groq.com"  # можно указать URL Cloudflare Worker-прокси, если Groq блокирует IP сервера (403)
 

@@ -10,8 +10,12 @@
 // На сервер уходит только готовый перевод (PATCH /integrations/cases/{id}, поле translations).
 
 export const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-// та же модель, что по умолчанию на бэке (settings.groq_model)
-export const GROQ_MODEL = 'llama-3.3-70b-versatile'
+export const GROQ_MODELS_URL = 'https://api.groq.com/openai/v1/models'
+// ТОЛЬКО запасной путь на случай, когда список моделей получить не удалось и пользователь ничего не выбрал.
+// Набор моделей у Groq меняется, id может протухнуть (так уже было): основной выбор идёт из списка с сервера Groq.
+export const GROQ_FALLBACK_MODEL = 'llama-3.3-70b-versatile'
+// запрос списка моделей лёгкий, 15 секунд с запасом
+export const GROQ_MODELS_TIMEOUT_MS = 15000
 // один запрос обычно 1-3 секунды; 40 с с запасом на загруженный Groq
 export const GROQ_TIMEOUT_MS = 40000
 
@@ -78,13 +82,14 @@ export class GroqError extends Error {
 // После этих ошибок остальные кейсы пойдут так же плохо, прогон останавливаем
 const FATAL_KINDS: GroqErrorKind[] = ['auth', 'forbidden', 'rate', 'model', 'network']
 
-// Понятный текст по коду ответа Groq
-export function groqErrorText(status: number, body = ''): string {
+// Понятный текст по коду ответа Groq. model - id модели из запроса, чтобы назвать её в тексте
+export function groqErrorText(status: number, body = '', model = ''): string {
   if (status === 401) return 'Groq не принял ключ (401): проверьте ключ, он должен начинаться с gsk_'
   if (status === 403) return 'Groq ответил 403: доступ с вашего адреса заблокирован. Попробуйте другую сеть или VPN'
   if (status === 429) return 'Лимит бесплатного Groq исчерпан (429): подождите минуту и повторите'
   if ((status === 400 || status === 404) && /model/i.test(body)) {
-    return `Groq не знает модель ${GROQ_MODEL} (${status}): модель убрана из бесплатных, нужно обновить приложение`
+    const name = model ? ` ${model}` : ''
+    return `Groq не принял модель${name} (${status}): её нет в вашем аккаунте или она отключена. Выберите другую модель в списке «Модель» рядом, обновлять приложение не нужно`
   }
   if (status >= 500) return `Groq временно недоступен (${status}): повторите через минуту`
   return `Groq ответил ошибкой ${status}`
@@ -145,7 +150,7 @@ export function fieldsToTranslate(source: CaseSource, translations: StoredTransl
 }
 
 // Запрос к Groq: адрес, заголовки и тело. title и пустые поля сюда не попадают.
-export function buildRequest(source: CaseSource, fields: CaseField[], key: string, model = GROQ_MODEL) {
+export function buildRequest(source: CaseSource, fields: CaseField[], key: string, model = GROQ_FALLBACK_MODEL) {
   const wanted = fields.filter(isTranslatable).filter(f => sourceValue(source, f))
   const payload = Object.fromEntries(wanted.map(f => [f, sourceValue(source, f)]))
   return {
@@ -216,12 +221,92 @@ export function parseGroqReply(reply: unknown, source: CaseSource, fields: CaseF
   return { ...out, warnings }
 }
 
-export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal }) => Promise<{
+export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{
   ok: boolean
   status: number
   json: () => Promise<unknown>
   text: () => Promise<string>
 }>
+
+// ---------- Список моделей Groq ----------
+
+// Не chat-модели: распознавание речи, озвучка, эмбеддинги, guard/модерация и составные агенты (compound)
+const NON_CHAT_MODEL = /whisper|embed|guard|safeguard|moderation|tts|playai|orpheus|compound|rerank/i
+
+// Подходит ли id для перевода текста (обычная chat-модель)
+export function isChatModel(id: string): boolean {
+  return !!id && !NON_CHAT_MODEL.test(id)
+}
+
+// Размер модели в миллиардах параметров из id ("llama-3.3-70b-versatile" -> 70); неизвестный - 0
+function modelSize(id: string): number {
+  const m = id.match(/(\d+(?:\.\d+)?)b(?![a-z])/i)
+  return m ? parseFloat(m[1]) : 0
+}
+
+// Ответ GET /models -> id подходящих chat-моделей. Отключённые (active: false) и дубли выбрасываются.
+// Сортировка: крупные модели первыми (для перевода лучше), при равенстве по алфавиту.
+// Так первая в списке и есть разумный выбор по умолчанию.
+export function parseModelsReply(reply: unknown): string[] {
+  const data = (reply as { data?: unknown } | null)?.data
+  if (!Array.isArray(data)) return []
+  const ids = new Set<string>()
+  for (const m of data) {
+    const id = typeof (m as { id?: unknown })?.id === 'string' ? (m as { id: string }).id.trim() : ''
+    if ((m as { active?: unknown })?.active === false) continue
+    if (isChatModel(id)) ids.add(id)
+  }
+  return [...ids].sort((a, b) => modelSize(b) - modelSize(a) || a.localeCompare(b))
+}
+
+// Какая модель реально уйдёт в запрос. selected - то, что сохранено в настройках.
+// Список получен и выбранной в нём нет (модель убрали) - берём первую из списка.
+// Список пуст (не загрузился) - выбранная руками как есть, иначе запасная константа.
+export function resolveModel(selected: string, available: string[]): string {
+  const sel = (selected || '').trim()
+  if (available.length > 0) return available.includes(sel) ? sel : available[0]
+  return sel || GROQ_FALLBACK_MODEL
+}
+
+// Вид ошибки Groq по коду и телу ответа
+function errorKind(status: number, body: string): GroqErrorKind {
+  return status === 401 ? 'auth'
+    : status === 403 ? 'forbidden'
+    : status === 429 ? 'rate'
+    : (status === 400 || status === 404) && /model/i.test(body) ? 'model'
+    : status >= 500 ? 'server'
+    : 'http'
+}
+
+// Запрос списка моделей, доступных ключу. Ошибки - GroqError с понятным текстом (как при переводе).
+export async function fetchGroqModels(key: string, fetchImpl?: FetchLike, timeoutMs = GROQ_MODELS_TIMEOUT_MS): Promise<string[]> {
+  const doFetch: FetchLike = fetchImpl ?? ((url, init) => fetch(url, init))
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  let res
+  try {
+    res = await doFetch(GROQ_MODELS_URL, { method: 'GET', headers: { Authorization: `Bearer ${key}` }, signal: ctrl.signal })
+  } catch (e) {
+    if ((e as { name?: string })?.name === 'AbortError') {
+      throw new GroqError('timeout', 'Groq не ответил со списком моделей, введите id модели руками')
+    }
+    throw new GroqError('network', 'Нет связи с Groq: проверьте интернет и расширения браузера, блокирующие запросы')
+  } finally {
+    clearTimeout(timer)
+  }
+  if (!res.ok) {
+    let body = ''
+    try { body = await res.text() } catch { /* тело не нужно */ }
+    throw new GroqError(errorKind(res.status, body), groqErrorText(res.status, body), res.status)
+  }
+  let reply: unknown
+  try {
+    reply = await res.json()
+  } catch {
+    throw new GroqError('parse', 'Groq вернул непонятный список моделей, введите id модели руками')
+  }
+  return parseModelsReply(reply)
+}
 
 // Один запрос к Groq: перевод указанных полей кейса на оба языка.
 // Нечего переводить (все поля пустые) - запрос не делаем.
@@ -229,6 +314,7 @@ export async function translateWithGroq(opts: {
   source: CaseSource
   fields: CaseField[]
   key: string
+  model?: string // id модели из настроек; не задан - запасная константа
   fetchImpl?: FetchLike
   timeoutMs?: number
 }): Promise<FreshTranslations & { warnings: string[] }> {
@@ -237,7 +323,7 @@ export async function translateWithGroq(opts: {
   const wanted = fields.filter(isTranslatable).filter(f => sourceValue(source, f))
   if (wanted.length === 0) return { en: {}, zh: {}, warnings: [] }
 
-  const req = buildRequest(source, wanted, key)
+  const req = buildRequest(source, wanted, key, opts.model || GROQ_FALLBACK_MODEL)
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? GROQ_TIMEOUT_MS)
   let res
@@ -255,14 +341,7 @@ export async function translateWithGroq(opts: {
   if (!res.ok) {
     let body = ''
     try { body = await res.text() } catch { /* тело не нужно для обычных кодов */ }
-    const kind: GroqErrorKind =
-      res.status === 401 ? 'auth'
-      : res.status === 403 ? 'forbidden'
-      : res.status === 429 ? 'rate'
-      : (res.status === 400 || res.status === 404) && /model/i.test(body) ? 'model'
-      : res.status >= 500 ? 'server'
-      : 'http'
-    throw new GroqError(kind, groqErrorText(res.status, body), res.status)
+    throw new GroqError(errorKind(res.status, body), groqErrorText(res.status, body, req.body.model), res.status)
   }
   let reply: unknown
   try {
@@ -302,6 +381,7 @@ export type BatchResult = {
   failed: { id: number; message: string }[]
   warnings: { id: number; text: string }[]
   fatal: string | null // причина остановки всего прогона (ключ, лимит, блокировка)
+  fatalKind: GroqErrorKind | null // вид этой ошибки (model - повод заново запросить список моделей)
   stopped: boolean // пользователь нажал «стоп»
 }
 
@@ -314,6 +394,7 @@ export async function translateBatch(
   mode: Mode,
   opts: {
     save: (id: number, translations: FullTranslations) => Promise<unknown>
+    model?: string // id модели из настроек
     fetchImpl?: FetchLike
     onProgress?: (done: number, total: number, id: number | null) => void
     shouldStop?: () => boolean
@@ -322,7 +403,7 @@ export async function translateBatch(
   const plan = items
     .map(it => ({ ...it, fields: fieldsToTranslate(it.source, it.translations, mode) }))
     .filter(it => it.fields.length > 0)
-  const result: BatchResult = { total: plan.length, translated: 0, failed: [], warnings: [], fatal: null, stopped: false }
+  const result: BatchResult = { total: plan.length, translated: 0, failed: [], warnings: [], fatal: null, fatalKind: null, stopped: false }
   let done = 0
   opts.onProgress?.(0, plan.length, null)
   for (const it of plan) {
@@ -331,7 +412,7 @@ export async function translateBatch(
       break
     }
     try {
-      const fresh = await translateWithGroq({ source: it.source, fields: it.fields, key, fetchImpl: opts.fetchImpl })
+      const fresh = await translateWithGroq({ source: it.source, fields: it.fields, key, model: opts.model, fetchImpl: opts.fetchImpl })
       for (const w of fresh.warnings) result.warnings.push({ id: it.id, text: w })
       try {
         await opts.save(it.id, mergeTranslations(it.translations, it.source, fresh, mode))
@@ -345,6 +426,7 @@ export async function translateBatch(
     } catch (e) {
       if (e instanceof GroqError && FATAL_KINDS.includes(e.kind)) {
         result.fatal = e.message
+        result.fatalKind = e.kind
         break
       }
       result.failed.push({ id: it.id, message: e instanceof Error ? e.message : 'Не удалось перевести' })
