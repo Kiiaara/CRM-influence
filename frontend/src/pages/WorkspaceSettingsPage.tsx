@@ -168,6 +168,10 @@ export default function WorkspaceSettingsPage() {
               Коэффициент меняет только владелец пространства: от него зависят суммы блогерам и наш доход.
             </div>
           )}
+          <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            Новый коэффициент работает только для кампаний, созданных после смены. У старых свой, зафиксированный:
+            его видно и можно поправить в самой кампании.
+          </div>
           {liveErr && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{liveErr}</div>}
           {divisorSaved && <div className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">Сохранено</div>}
           {divisorErr && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{divisorErr}</div>}

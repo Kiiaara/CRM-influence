@@ -23,6 +23,7 @@ from models.streamer_profile import StreamerProfile
 from models.user import User
 from models.workspace import Workspace, WorkspaceMember
 from routers.integrations import StreamerCreate, create_streamer
+from routers.workspaces import DEFAULT_MARGIN_DIVISOR, validate_margin_divisor
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
@@ -95,8 +96,10 @@ class CampaignOut(BaseModel):
     # счётчик и сумма по живым (не отменённым) блогерам кампании, чтобы видеть без раскрытия
     bloggers_count: int = 0
     bloggers_total: float = 0
-    # сколько уходит блогерам: вписанные вручную выплаты + остальные по коэффициенту пространства
+    # сколько уходит блогерам: вписанные вручную выплаты + остальные по коэффициенту кампании
     bloggers_payout_total: float = 0
+    # свой коэффициент наценки кампании; null - по настройке пространства
+    margin_divisor: Optional[float] = None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
@@ -140,6 +143,8 @@ class CampaignCreate(BaseModel):
     owner_tg_id: Optional[int] = None
     notes: str = ""
     kp_url: str = ""
+    # не передан (или null) - фиксируем текущий коэффициент пространства
+    margin_divisor: Optional[float] = None
 
 
 class CampaignUpdate(BaseModel):
@@ -154,31 +159,45 @@ class CampaignUpdate(BaseModel):
     owner_tg_id: Optional[int] = None
     notes: Optional[str] = None
     kp_url: Optional[str] = None
+    # число - свой коэффициент, явный null - вернуться к коэффициенту пространства
+    margin_divisor: Optional[float] = None
     # true - отметить завершённой (проставит дату), false - вернуть в активные
     archived: Optional[bool] = None
+
+
+def _divisor_of(ws: Workspace, c: Optional[Campaign]) -> float:
+    """Рабочий коэффициент: свой у кампании, иначе пространства, иначе дефолт."""
+    if c is not None and c.margin_divisor:
+        return float(c.margin_divisor)
+    return float(ws.margin_divisor or DEFAULT_MARGIN_DIVISOR)
 
 
 def _stats(db: Session, ws: Workspace, campaign_ids: List[int]) -> dict:
     """campaign_id -> (число живых блогеров, клиентская сумма, сумма выплат блогерам).
     Отменённые сделки не считаем. Выплата блогера: вписанная вручную, иначе сумма / margin_divisor
-    пространства. Считаем в Python после выборки: у части строк выплата своя, а не формула."""
+    кампании (у кампании null - пространства). Делитель у каждой кампании пачки свой.
+    Считаем в Python после выборки: у части строк выплата своя, а не формула."""
     if not campaign_ids:
         return {}
-    divisor = float(ws.margin_divisor or 1.375)
+    ws_divisor = _divisor_of(ws, None)
     rows = (
-        db.query(Integration.campaign_id, IntegrationStreamer.amount, IntegrationStreamer.blogger_payout)
+        db.query(
+            Integration.campaign_id, Campaign.margin_divisor,
+            IntegrationStreamer.amount, IntegrationStreamer.blogger_payout,
+        )
         .join(IntegrationStreamer, IntegrationStreamer.integration_id == Integration.id)
+        .join(Campaign, Campaign.id == Integration.campaign_id)
         .filter(Integration.campaign_id.in_(campaign_ids), IntegrationStreamer.stage != "cancelled")
         .all()
     )
     result: dict = {}
-    for campaign_id, amount, payout in rows:
+    for campaign_id, camp_divisor, amount, payout in rows:
         count, total, payout_total = result.get(campaign_id, (0, 0.0, 0.0))
         amount_f = float(amount) if amount is not None else 0.0
         if payout is not None:
             payout_f = float(payout)
         else:
-            payout_f = amount_f / divisor
+            payout_f = amount_f / (float(camp_divisor) if camp_divisor else ws_divisor)
         result[campaign_id] = (count + 1, total + amount_f, payout_total + payout_f)
     return result
 
@@ -305,6 +324,8 @@ def create_campaign(
     _validate_status(data.status)
     _validate_advertiser(db, ws, data.advertiser_id)
     _validate_owner(db, ws, data.owner_tg_id)
+    if data.margin_divisor is not None:
+        validate_margin_divisor(data.margin_divisor)
 
     c = Campaign(
         workspace_id=ws.id,
@@ -320,6 +341,8 @@ def create_campaign(
         owner_tg_id=data.owner_tg_id,
         notes=data.notes,
         kp_url=data.kp_url.strip(),
+        # фиксируем коэффициент на момент создания: смена настройки пространства её не тронет
+        margin_divisor=data.margin_divisor if data.margin_divisor is not None else _divisor_of(ws, None),
     )
     db.add(c)
     db.commit()
@@ -343,6 +366,9 @@ def update_campaign(
         _validate_owner(db, ws, data.owner_tg_id)
     if data.name is not None and not data.name.strip():
         raise HTTPException(400, "Название не может быть пустым")
+    # явный null допустим (вернуться к пространству), число проверяем как у пространства
+    if data.margin_divisor is not None:
+        validate_margin_divisor(data.margin_divisor)
 
     for k, v in data.model_dump(exclude_unset=True).items():
         if k == "archived":

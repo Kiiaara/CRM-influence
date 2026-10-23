@@ -52,8 +52,10 @@ export interface Campaign {
   // живые (не отменённые) блогеры кампании: сколько и на какую сумму
   bloggers_count: number
   bloggers_total: number
-  // сколько уходит блогерам: вписанные вручную выплаты + остальные по коэффициенту пространства
+  // сколько уходит блогерам: вписанные вручную выплаты + остальные по коэффициенту кампании
   bloggers_payout_total: number
+  // свой коэффициент наценки кампании; null - по настройке пространства
+  margin_divisor: number | null
   created_at: string
   updated_at: string
 }
@@ -70,6 +72,8 @@ export interface CampaignPayload {
   owner_tg_id?: number | null
   notes?: string
   kp_url?: string
+  // число - свой коэффициент, null - вернуться к коэффициенту пространства
+  margin_divisor?: number | null
   // true - отметить завершённой, false - вернуть в активные
   archived?: boolean
 }

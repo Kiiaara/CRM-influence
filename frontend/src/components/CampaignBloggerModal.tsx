@@ -259,10 +259,13 @@ export default function CampaignBloggerModal({
   streamerId,
   campaignId,
   nick = '',
+  marginDivisor,
   onClose,
 }: {
   streamerId: number
   campaignId: number
+  // коэффициент наценки кампании; null/не передан - берём коэффициент пространства
+  marginDivisor?: number | null
   // ник из ссылки блогера (считает список кампании); пусто - показываем только имя
   nick?: string
   onClose: () => void
@@ -337,14 +340,14 @@ export default function CampaignBloggerModal({
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  // коэффициент берём из текущего пространства; не пришёл - дефолт 1.375 (внутри calcMargin)
+  // коэффициент кампании; у кампании пусто - пространства; и его нет - дефолт 1.375
   const { current } = useWorkspace()
-  const divisor = current?.margin_divisor ?? DEFAULT_MARGIN_DIVISOR
+  const divisor = marginDivisor ?? current?.margin_divisor ?? DEFAULT_MARGIN_DIVISOR
   // вписанная вручную выплата идёт третьим аргументом; пустое поле = считаем по коэффициенту
   const calc = form
     ? calcMargin(
         form.amount.trim() === '' ? null : Number(form.amount),
-        current?.margin_divisor,
+        divisor,
         form.blogger_payout.trim() === '' ? null : Number(form.blogger_payout),
       )
     : null

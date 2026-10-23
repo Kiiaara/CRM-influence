@@ -113,6 +113,27 @@ def _migrate_workspaces_add_margin_divisor():
             conn.execute(text("ALTER TABLE workspaces ADD COLUMN margin_divisor NUMERIC(6, 4) DEFAULT 1.375"))
 
 
+def _migrate_campaign_margin_divisor():
+    """campaigns.margin_divisor: коэффициент наценки кампании. При добавлении колонки сразу
+    фиксируем существующим кампаниям коэффициент их пространства (null там - дефолт 1.375),
+    иначе они поедут при смене настройки. UPDATE только вместе с ALTER: потом null у кампании
+    значит осознанное "по пространству", и повторный запуск его не трогает."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "campaigns" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("campaigns")]
+    if "margin_divisor" in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE campaigns ADD COLUMN margin_divisor NUMERIC(6, 4)"))
+        conn.execute(text(
+            "UPDATE campaigns SET margin_divisor = COALESCE("
+            "(SELECT margin_divisor FROM workspaces WHERE workspaces.id = campaigns.workspace_id), 1.375) "
+            "WHERE margin_divisor IS NULL"
+        ))
+
+
 def _backfill_workspace_owners_and_members():
     """Для существующих workspace без owner_tg_id проставляем первого админа
     и создаём workspace_members на основе уже существующих юзеров."""
@@ -589,6 +610,7 @@ async def lifespan(app: FastAPI):
     _migrate_streamers_add_contract_url()
     _migrate_streamers_add_publication_url()
     _migrate_blogger_payout()
+    _migrate_campaign_margin_divisor()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство
     db = SessionLocal()

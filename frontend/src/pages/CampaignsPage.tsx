@@ -18,7 +18,8 @@ import type { TalentType } from '../api/integrations'
 import { tasksApi } from '../api/tasks'
 import CampaignBloggerModal from '../components/CampaignBloggerModal'
 import { displayNick, matchesQuery, sheetRowLinks } from '../utils/bloggerSearch'
-import { fmtPercent } from '../utils/margin'
+import { DEFAULT_MARGIN_DIVISOR, fmtPercent, parseMarginDivisor } from '../utils/margin'
+import { useWorkspace } from '../workspaceContext'
 import { parseBloggerLink } from '../utils/dealLinks'
 
 const cellInput =
@@ -292,6 +293,9 @@ export default function CampaignsPage() {
         <CampaignBloggerModal
           streamerId={deepOpen.streamerId}
           campaignId={deepOpen.campaignId}
+          marginDivisor={
+            [...activeCampaigns, ...archivedCampaigns].find(x => x.id === deepOpen.campaignId)?.margin_divisor
+          }
           onClose={() => setDeepOpen(null)}
         />
       )}
@@ -545,11 +549,52 @@ function CampaignDetails({ c, set }: { c: Campaign; set: SetFn }) {
         <Labeled label="КП (ссылка)">
           <KpLinkInput value={c.kp_url} onSave={v => set(c.id, { kp_url: v })} />
         </Labeled>
+        <Labeled label="Коэффициент наценки">
+          <DivisorInput value={c.margin_divisor} onSave={v => set(c.id, { margin_divisor: v })} />
+        </Labeled>
         <Labeled label="Комментарий">
           <TextCell value={c.notes} placeholder="-" onSave={v => set(c.id, { notes: v })} />
         </Labeled>
       </div>
       <BloggersBlock c={c} />
+    </div>
+  )
+}
+
+// "1,375" вместо "1.375", как принято в интерфейсе
+const fmtDivisor = (d: number) => String(d).replace('.', ',')
+
+// коэффициент кампании: пусто = по настройке пространства (на бэк уходит null)
+function DivisorInput({ value, onSave }: { value: number | null; onSave: (v: number | null) => void }) {
+  const toText = (v: number | null) => (v == null ? '' : fmtDivisor(v))
+  const [draft, setDraft] = useState(toText(value))
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => { setDraft(toText(value)); setErr(null) }, [value])
+  const commit = () => {
+    const text = draft.trim()
+    if (text === '') {
+      setErr(null)
+      if (value !== null) onSave(null)
+      return
+    }
+    const parsed = parseMarginDivisor(text)
+    if ('error' in parsed) { setErr(parsed.error); return }
+    setErr(null)
+    if (parsed.value !== value) onSave(parsed.value)
+  }
+  return (
+    <div>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={draft}
+        placeholder="по настройке пространства"
+        onChange={e => { setDraft(e.target.value); setErr(null) }}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        className={boxInput}
+      />
+      {err && <div className="text-xs text-red-600 dark:text-red-400 mt-1">{err}</div>}
     </div>
   )
 }
@@ -598,7 +643,9 @@ function BloggersBlock({ c }: { c: Campaign }) {
   })
 
   // суммарный доход кампании = клиентская сумма минус выплаты блогерам; выплаты бэк уже собрал
-  // (вписанные вручную + остальные по коэффициенту пространства), поэтому делением тут не считаем
+  // (вписанные вручную + остальные по коэффициенту кампании), поэтому делением тут не считаем
+  const { current } = useWorkspace()
+  const effectiveDivisor = c.margin_divisor ?? current?.margin_divisor ?? DEFAULT_MARGIN_DIVISOR
   const totalMargin = c.bloggers_total - c.bloggers_payout_total
   const totalPercent = c.bloggers_total > 0 ? Math.round((totalMargin / c.bloggers_total) * 1000) / 10 : 0
 
@@ -625,6 +672,7 @@ function BloggersBlock({ c }: { c: Campaign }) {
         {c.bloggers_count > 0 && c.bloggers_total > 0 && (
           <span className="font-normal">
             {' · '}Клиентская сумма: {fmtMoney(c.bloggers_total, c.currency)}
+            <span className="text-slate-400 dark:text-slate-500 text-[11px]">{' '}(коэффициент {fmtDivisor(effectiveDivisor)})</span>
             {' · '}Наш доход: <span className="font-medium text-emerald-600 dark:text-emerald-400">{fmtMoney(totalMargin, c.currency)} ({fmtPercent(totalPercent)}%)</span>
           </span>
         )}
@@ -655,6 +703,7 @@ function BloggersBlock({ c }: { c: Campaign }) {
         <CampaignBloggerModal
           streamerId={openId}
           campaignId={c.id}
+          marginDivisor={c.margin_divisor}
           nick={displayNick({ name: '', links: bloggers.find(b => b.streamer_id === openId)?.link })}
           onClose={() => setOpenId(null)} />
       )}

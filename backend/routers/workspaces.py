@@ -1,6 +1,7 @@
 """CRUD для рабочих пространств (Workspaces) + участники с ролями."""
 import math
 from datetime import datetime
+from decimal import Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,6 +22,15 @@ ROLES = ("owner", "lead", "viewer")
 # дефолт делителя: 100 на руки * 1.25 (комиссия) * 1.10 = 137.5 клиентских, 137.5 / 1.375 = 100
 DEFAULT_MARGIN_DIVISOR = 1.375
 MAX_MARGIN_DIVISOR = 100  # колонка Numeric(6,4) вмещает до 99.9999
+
+
+def validate_margin_divisor(d: float) -> None:
+    """Общая проверка коэффициента (пространство и кампания): делим на него, поэтому 0 и минус
+    недопустимы; потолок - предел колонки Numeric(6,4); больше 4 знаков после запятой колонка потеряет."""
+    if not math.isfinite(d) or d <= 0 or d >= MAX_MARGIN_DIVISOR:
+        raise HTTPException(400, f"Коэффициент должен быть больше 0 и меньше {MAX_MARGIN_DIVISOR}")
+    if Decimal(str(d)).as_tuple().exponent < -4:
+        raise HTTPException(400, "Коэффициент: не больше 4 знаков после запятой")
 
 
 def _member_role(db: Session, workspace_id: int, tg_id: int) -> Optional[str]:
@@ -159,11 +169,8 @@ def update_workspace(
         # коэффициент меняет только владелец: от него зависят суммы блогерам и маржа
         if role != "owner":
             raise HTTPException(403, "Коэффициент маржи меняет только владелец пространства")
-        d = data.margin_divisor
-        # делим на него, поэтому 0 и минус недопустимы; потолок - предел колонки Numeric(6,4)
-        if not math.isfinite(d) or d <= 0 or d >= MAX_MARGIN_DIVISOR:
-            raise HTTPException(400, f"Коэффициент должен быть больше 0 и меньше {MAX_MARGIN_DIVISOR}")
-        ws.margin_divisor = d
+        validate_margin_divisor(data.margin_divisor)
+        ws.margin_divisor = data.margin_divisor
     if data.cases_enabled is not None:
         # видимость раздела - настройка пространства, как и коэффициент: только владелец
         if role != "owner":
