@@ -103,6 +103,8 @@ export interface Streamer {
   payment_status: PaymentStatus
   content_status: ContentStatus | null
   amount: number | null
+  // ручная выплата блогеру на руки; null - по коэффициенту пространства
+  blogger_payout: number | null
   currency: string
   commission_percent: number
   streamer_tax_percent: number

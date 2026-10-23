@@ -9,7 +9,6 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -96,6 +95,8 @@ class CampaignOut(BaseModel):
     # счётчик и сумма по живым (не отменённым) блогерам кампании, чтобы видеть без раскрытия
     bloggers_count: int = 0
     bloggers_total: float = 0
+    # сколько уходит блогерам: вписанные вручную выплаты + остальные по коэффициенту пространства
+    bloggers_payout_total: float = 0
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
@@ -108,6 +109,8 @@ class CampaignBloggerOut(BaseModel):
     name: str
     talent_type: str
     amount: Optional[float] = None
+    # ручная выплата блогеру на руки; null - по коэффициенту пространства
+    blogger_payout: Optional[float] = None
     currency: str
     payment_status: str
     integration_date: Optional[datetime] = None
@@ -155,29 +158,41 @@ class CampaignUpdate(BaseModel):
     archived: Optional[bool] = None
 
 
-def _stats(db: Session, campaign_ids: List[int]) -> dict:
-    """campaign_id -> (число живых блогеров, сумма). Отменённые сделки не считаем."""
+def _stats(db: Session, ws: Workspace, campaign_ids: List[int]) -> dict:
+    """campaign_id -> (число живых блогеров, клиентская сумма, сумма выплат блогерам).
+    Отменённые сделки не считаем. Выплата блогера: вписанная вручную, иначе сумма / margin_divisor
+    пространства. Считаем в Python после выборки: у части строк выплата своя, а не формула."""
     if not campaign_ids:
         return {}
+    divisor = float(ws.margin_divisor or 1.375)
     rows = (
-        db.query(Integration.campaign_id, func.count(IntegrationStreamer.id), func.coalesce(func.sum(IntegrationStreamer.amount), 0))
+        db.query(Integration.campaign_id, IntegrationStreamer.amount, IntegrationStreamer.blogger_payout)
         .join(IntegrationStreamer, IntegrationStreamer.integration_id == Integration.id)
         .filter(Integration.campaign_id.in_(campaign_ids), IntegrationStreamer.stage != "cancelled")
-        .group_by(Integration.campaign_id)
         .all()
     )
-    return {r[0]: (r[1], float(r[2])) for r in rows}
+    result: dict = {}
+    for campaign_id, amount, payout in rows:
+        count, total, payout_total = result.get(campaign_id, (0, 0.0, 0.0))
+        amount_f = float(amount) if amount is not None else 0.0
+        if payout is not None:
+            payout_f = float(payout)
+        else:
+            payout_f = amount_f / divisor
+        result[campaign_id] = (count + 1, total + amount_f, payout_total + payout_f)
+    return result
 
 
-def _out(db: Session, c: Campaign, stats: Optional[dict] = None) -> CampaignOut:
+def _out(db: Session, ws: Workspace, c: Campaign, stats: Optional[dict] = None) -> CampaignOut:
     if stats is None:
-        stats = _stats(db, [c.id])
-    count, total = stats.get(c.id, (0, 0.0))
+        stats = _stats(db, ws, [c.id])
+    count, total, payout_total = stats.get(c.id, (0, 0.0, 0.0))
     return CampaignOut.model_validate(c).model_copy(update={
         "advertiser_name": _adv_name(db, c.advertiser_id),
         "owner_label": _label(db, c.owner_tg_id),
         "bloggers_count": count,
         "bloggers_total": total,
+        "bloggers_payout_total": payout_total,
     })
 
 
@@ -253,6 +268,7 @@ def _blogger_out(s: IntegrationStreamer, links: Optional[dict] = None) -> Campai
         name=s.streamer_name,
         talent_type=s.talent_type,
         amount=float(s.amount) if s.amount is not None else None,
+        blogger_payout=float(s.blogger_payout) if s.blogger_payout is not None else None,
         currency=s.currency,
         payment_status=s.payment_status,
         integration_date=s.integration_date,
@@ -272,8 +288,8 @@ def list_campaigns(
     q = db.query(Campaign).filter(Campaign.workspace_id == ws.id)
     q = q.filter(Campaign.archived_at.is_not(None) if archived else Campaign.archived_at.is_(None))
     rows = q.order_by(Campaign.created_at.desc()).all()
-    stats = _stats(db, [c.id for c in rows])
-    return [_out(db, c, stats) for c in rows]
+    stats = _stats(db, ws, [c.id for c in rows])
+    return [_out(db, ws, c, stats) for c in rows]
 
 
 @router.post("", response_model=CampaignOut, status_code=201)
@@ -308,7 +324,7 @@ def create_campaign(
     db.add(c)
     db.commit()
     db.refresh(c)
-    return _out(db, c)
+    return _out(db, ws, c)
 
 
 @router.patch("/{campaign_id}", response_model=CampaignOut)
@@ -346,7 +362,7 @@ def update_campaign(
             it.brand = _adv_name(db, c.advertiser_id) or c.name
     db.commit()
     db.refresh(c)
-    return _out(db, c)
+    return _out(db, ws, c)
 
 
 @router.delete("/{campaign_id}")

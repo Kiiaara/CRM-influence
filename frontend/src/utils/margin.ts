@@ -10,15 +10,28 @@ export type Margin = {
   toBlogger: number // блогеру на руки, целые рубли
   margin: number // наша маржа, целые рубли
   marginPercent: number // маржа в процентах от клиентской суммы, один знак после запятой
+  manual: boolean // true - выплата блогеру вписана вручную, false - посчитана по коэффициенту
 }
 
 // Возвращает null, когда считать нельзя: сумма пустая/некорректная или коэффициент <= 0
 // (деление на ноль и отрицательный делитель дали бы мусор). Коэффициент не пришёл - дефолт.
+// manualPayout - вписанная вручную выплата блогеру: если она валидна (конечная, >= 0, не больше
+// клиентской суммы), берём её вместо деления на коэффициент; невалидную молча игнорируем.
 export function calcMargin(
   amount: number | null | undefined,
   divisor: number | null | undefined,
+  manualPayout?: number | null,
 ): Margin | null {
   if (amount == null || !Number.isFinite(amount) || amount < 0) return null
+
+  if (manualPayout != null && Number.isFinite(manualPayout) && manualPayout >= 0 && manualPayout <= amount) {
+    const toBlogger = Math.round(manualPayout)
+    const margin = Math.round(amount) - toBlogger
+    // процент от клиентской суммы; от нулевой не определён - показываем 0
+    const marginPercent = amount === 0 ? 0 : Math.round((margin / amount) * 1000) / 10
+    return { toBlogger, margin, marginPercent, manual: true }
+  }
+
   const d = divisor ?? DEFAULT_MARGIN_DIVISOR
   if (!Number.isFinite(d) || d <= 0) return null
 
@@ -27,7 +40,7 @@ export function calcMargin(
   const margin = Math.round(amount) - toBlogger
   // от нулевой суммы процент не определён - показываем 0
   const marginPercent = amount === 0 ? 0 : Math.round((1 - 1 / d) * 1000) / 10
-  return { toBlogger, margin, marginPercent }
+  return { toBlogger, margin, marginPercent, manual: false }
 }
 
 // Верхняя граница коэффициента, совпадает с MAX_MARGIN_DIVISOR на бэке (колонка Numeric(6,4))

@@ -29,6 +29,8 @@ class IntegrationStreamer(Base):
     content_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # ручная выплата блогеру на руки; null - считаем по коэффициенту пространства
+    blogger_payout: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str] = mapped_column(String(8), default="RUB")
 
     # для расчёта суммы на руки инфлюенсеру: amount - (amount * commission%) - (amount * tax%)

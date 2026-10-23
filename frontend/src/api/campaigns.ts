@@ -52,6 +52,8 @@ export interface Campaign {
   // живые (не отменённые) блогеры кампании: сколько и на какую сумму
   bloggers_count: number
   bloggers_total: number
+  // сколько уходит блогерам: вписанные вручную выплаты + остальные по коэффициенту пространства
+  bloggers_payout_total: number
   created_at: string
   updated_at: string
 }
@@ -79,6 +81,8 @@ export interface CampaignBlogger {
   name: string
   talent_type: TalentType
   amount: number | null
+  // ручная выплата блогеру на руки; null - по коэффициенту пространства
+  blogger_payout: number | null
   currency: string
   payment_status: PaymentStatus
   integration_date: string | null

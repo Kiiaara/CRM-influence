@@ -62,6 +62,7 @@ TRACKED_FIELDS = (
     "payment_status",
     "content_status",
     "amount",
+    "blogger_payout",
     "deadline",
     "contract_status",
     "contract_sent_date",
@@ -230,6 +231,8 @@ class StreamerOut(BaseModel):
     payment_status: str
     content_status: Optional[str] = None
     amount: Optional[float] = None
+    # ручная выплата блогеру на руки; null - по коэффициенту пространства
+    blogger_payout: Optional[float] = None
     currency: str
     commission_percent: float
     streamer_tax_percent: float
@@ -297,6 +300,7 @@ class StreamerCreate(BaseModel):
     payment_status: str = "not_invoiced"
     content_status: Optional[str] = None
     amount: Optional[float] = None
+    blogger_payout: Optional[float] = None
     currency: str = "RUB"
     commission_percent: float = 15
     streamer_tax_percent: float = 6
@@ -320,6 +324,7 @@ class StreamerUpdate(BaseModel):
     payment_status: Optional[str] = None
     content_status: Optional[str] = None
     amount: Optional[float] = None
+    blogger_payout: Optional[float] = None
     currency: Optional[str] = None
     commission_percent: Optional[float] = None
     streamer_tax_percent: Optional[float] = None
@@ -572,6 +577,17 @@ def list_streamers(integration_id: int, db: Session = Depends(get_db), ws: Works
     )
 
 
+def _validate_blogger_payout(amount, payout):
+    """Ручная выплата: не отрицательная и не больше клиентской суммы.
+    Суммы нет - сравнивать не с чем, выплату принимаем."""
+    if payout is None:
+        return
+    if float(payout) < 0:
+        raise HTTPException(400, "Выплата блогеру не может быть отрицательной")
+    if amount is not None and float(payout) > float(amount):
+        raise HTTPException(400, "Выплата блогеру не может быть больше клиентской суммы")
+
+
 @router.post("/{integration_id}/streamers", response_model=StreamerOut, status_code=201)
 def create_streamer(
     integration_id: int,
@@ -589,6 +605,7 @@ def create_streamer(
     _validate_ord_status(data.ord_status)
     _validate_ord_reporting_status(data.ord_reporting_status)
     _validate_integration_time(data.integration_time)
+    _validate_blogger_payout(data.amount, data.blogger_payout)
     max_pos = (
         db.query(IntegrationStreamer)
         .filter(IntegrationStreamer.integration_id == integration_id, IntegrationStreamer.stage == data.stage)
@@ -604,6 +621,7 @@ def create_streamer(
         payment_status=data.payment_status,
         content_status=data.content_status,
         amount=data.amount,
+        blogger_payout=data.blogger_payout,
         currency=data.currency,
         commission_percent=data.commission_percent,
         streamer_tax_percent=data.streamer_tax_percent,
@@ -658,8 +676,14 @@ def update_streamer(streamer_id: int, data: StreamerUpdate, db: Session = Depend
         _validate_contract_status(data.contract_status)
     if "integration_time" in data.model_fields_set:
         _validate_integration_time(data.integration_time)
+    # проверяем итоговую пару: поменяли только сумму - выплата из базы тоже должна в неё влезать
+    if "amount" in data.model_fields_set or "blogger_payout" in data.model_fields_set:
+        _validate_blogger_payout(
+            data.amount if "amount" in data.model_fields_set else s.amount,
+            data.blogger_payout if "blogger_payout" in data.model_fields_set else s.blogger_payout,
+        )
 
-    changes = data.model_dump(exclude_unset=True)
+    changes =data.model_dump(exclude_unset=True)
     old_values = {f: getattr(s, f) for f in TRACKED_FIELDS if f in changes}
 
     for k, v in changes.items():

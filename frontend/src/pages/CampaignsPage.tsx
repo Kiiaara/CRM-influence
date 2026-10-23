@@ -18,9 +18,8 @@ import type { TalentType } from '../api/integrations'
 import { tasksApi } from '../api/tasks'
 import CampaignBloggerModal from '../components/CampaignBloggerModal'
 import { displayNick, matchesQuery, sheetRowLinks } from '../utils/bloggerSearch'
-import { calcMargin, fmtPercent } from '../utils/margin'
+import { fmtPercent } from '../utils/margin'
 import { parseBloggerLink } from '../utils/dealLinks'
-import { useWorkspace } from '../workspaceContext'
 
 const cellInput =
   'w-full bg-transparent border border-transparent hover:border-slate-200 dark:hover:border-brand-800 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-900 dark:text-slate-100 outline-none'
@@ -598,9 +597,10 @@ function BloggersBlock({ c }: { c: Campaign }) {
     queryFn: () => campaignsApi.bloggers(c.id),
   })
 
-  // суммарный доход (маржа) кампании: тот же коэффициент пространства, что и в модалке блогера
-  const { current } = useWorkspace()
-  const total = calcMargin(c.bloggers_total, current?.margin_divisor)
+  // суммарный доход кампании = клиентская сумма минус выплаты блогерам; выплаты бэк уже собрал
+  // (вписанные вручную + остальные по коэффициенту пространства), поэтому делением тут не считаем
+  const totalMargin = c.bloggers_total - c.bloggers_payout_total
+  const totalPercent = c.bloggers_total > 0 ? Math.round((totalMargin / c.bloggers_total) * 1000) / 10 : 0
 
   // удаление блогера из кампании: удаляется сама сделка со всей её историей, поэтому спрашиваем
   const removeBlogger = useMutation({
@@ -622,10 +622,10 @@ function BloggersBlock({ c }: { c: Campaign }) {
       <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
         Блогеры кампании {bloggers.length > 0 && `(${bloggers.length})`}
         {/* клиентская сумма и наш доход по живым блогерам (отменённые бэк уже исключил) */}
-        {total && c.bloggers_count > 0 && (
+        {c.bloggers_count > 0 && c.bloggers_total > 0 && (
           <span className="font-normal">
             {' · '}Клиентская сумма: {fmtMoney(c.bloggers_total, c.currency)}
-            {' · '}Наш доход: <span className="font-medium text-emerald-600 dark:text-emerald-400">{fmtMoney(total.margin, c.currency)} ({fmtPercent(total.marginPercent)}%)</span>
+            {' · '}Наш доход: <span className="font-medium text-emerald-600 dark:text-emerald-400">{fmtMoney(totalMargin, c.currency)} ({fmtPercent(totalPercent)}%)</span>
           </span>
         )}
       </div>

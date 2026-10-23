@@ -24,7 +24,7 @@ import type {
   Streamer,
 } from '../api/integrations'
 import { useWorkspace } from '../workspaceContext'
-import { calcMargin, fmtPercent } from '../utils/margin'
+import { DEFAULT_MARGIN_DIVISOR, calcMargin, fmtPercent } from '../utils/margin'
 import { AdvertiserCard, BriefFiles, ErridInput, OrdLinkInput, Screenshots } from './DealParts'
 
 const fmtMoney = (n: number, currency: string) => `${Math.round(n).toLocaleString('ru-RU')} ${currency}`
@@ -38,6 +38,7 @@ const labelCls = 'text-xs text-slate-500 dark:text-slate-400'
 // поля, которые правятся в модалке, в виде строк для инпутов
 type Form = {
   amount: string
+  blogger_payout: string
   currency: string
   payment_status: PaymentStatus
   stage: Stage
@@ -81,6 +82,7 @@ const dateOf = (v: string | null) => (v ? v.slice(0, 10) : '')
 
 const toForm = (s: Streamer): Form => ({
   amount: s.amount != null ? String(s.amount) : '',
+  blogger_payout: s.blogger_payout != null ? String(s.blogger_payout) : '',
   currency: s.currency,
   payment_status: s.payment_status,
   stage: s.stage,
@@ -337,7 +339,15 @@ export default function CampaignBloggerModal({
 
   // коэффициент берём из текущего пространства; не пришёл - дефолт 1.375 (внутри calcMargin)
   const { current } = useWorkspace()
-  const calc = form ? calcMargin(form.amount.trim() === '' ? null : Number(form.amount), current?.margin_divisor) : null
+  const divisor = current?.margin_divisor ?? DEFAULT_MARGIN_DIVISOR
+  // вписанная вручную выплата идёт третьим аргументом; пустое поле = считаем по коэффициенту
+  const calc = form
+    ? calcMargin(
+        form.amount.trim() === '' ? null : Number(form.amount),
+        current?.margin_divisor,
+        form.blogger_payout.trim() === '' ? null : Number(form.blogger_payout),
+      )
+    : null
 
   const patch = (p: Partial<Form>) => { setForm(f => (f ? { ...f, ...p } : f)); setSavedAt(false) }
 
@@ -350,6 +360,12 @@ export default function CampaignBloggerModal({
       if (next !== null && !Number.isFinite(next)) { patch({ amount: toForm(data).amount }); return }
       if (next === data.amount) return
       payload = { amount: next }
+    } else if (key === 'blogger_payout') {
+      // как сумма: пустое поле = null (считаем по коэффициенту), кривое значение откатываем к серверному
+      const next = value.trim() === '' ? null : Number(value)
+      if (next !== null && !Number.isFinite(next)) { patch({ blogger_payout: toForm(data).blogger_payout }); return }
+      if (next === data.blogger_payout) return
+      payload = { blogger_payout: next }
     } else if (NUMBER_KEYS.includes(key)) {
       // комиссия и налог: пустое или кривое значение откатываем к серверному
       const next = Number(value)
@@ -448,10 +464,22 @@ export default function CampaignBloggerModal({
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start pb-16">
             <div className="flex flex-col gap-4 min-w-0">
               <Section title="Деньги и сроки" defaultOpen>
-                <div className="grid grid-cols-[1fr_110px] gap-3">
+                <div className="grid grid-cols-[1fr_1fr_110px] gap-3">
                   <div>
                     <label className={labelCls}>Клиентская сумма</label>
                     {textInput('amount', 'number')}
+                  </div>
+                  <div>
+                    <label className={labelCls}>Блогеру на руки</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={form.blogger_payout}
+                      onChange={e => patch({ blogger_payout: e.target.value })}
+                      onBlur={e => commit('blogger_payout', e.target.value)}
+                      placeholder="по формуле"
+                      className={field}
+                    />
                   </div>
                   <div>
                     <label className={labelCls}>Валюта</label>
@@ -465,6 +493,24 @@ export default function CampaignBloggerModal({
                     <div className="flex justify-between gap-3">
                       <span className="text-slate-500 dark:text-slate-400">Блогеру на руки</span>
                       <span className="font-medium text-slate-900 dark:text-slate-100">{fmtMoney(calc.toBlogger, form.currency)}</span>
+                    </div>
+                    {/* подпись режима: по формуле или вписано руками (со сбросом к формуле) */}
+                    <div className="flex justify-end items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
+                      {calc.manual ? (
+                        <>
+                          <span>вписано вручную</span>
+                          <button
+                            type="button"
+                            onClick={() => pick('blogger_payout', '')}
+                            title="Сбросить к расчёту по коэффициенту"
+                            className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-brand-800 text-slate-500 dark:text-slate-400 hover:text-red-500 hover:border-red-300"
+                          >
+                            сбросить
+                          </button>
+                        </>
+                      ) : (
+                        <span>по коэффициенту {divisor.toLocaleString('ru-RU')}</span>
+                      )}
                     </div>
                     <div className="flex justify-between gap-3">
                       <span className="text-slate-500 dark:text-slate-400">Наш доход</span>

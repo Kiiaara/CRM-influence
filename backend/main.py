@@ -544,6 +544,19 @@ def _migrate_streamers_add_publication_url():
             conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN publication_url VARCHAR(512) DEFAULT ''"))
 
 
+def _migrate_blogger_payout():
+    """Ручная выплата блогеру на руки: blogger_payout у участника сделки, если колонки нет.
+    У старых строк null - они считаются по коэффициенту пространства, как раньше."""
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "integration_streamers" not in insp.get_table_names():
+        return
+    cols = [c["name"] for c in insp.get_columns("integration_streamers")]
+    if "blogger_payout" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE integration_streamers ADD COLUMN blogger_payout NUMERIC(12, 2)"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -575,6 +588,7 @@ async def lifespan(app: FastAPI):
     _migrate_workspaces_add_draft_alerts_enabled()
     _migrate_streamers_add_contract_url()
     _migrate_streamers_add_publication_url()
+    _migrate_blogger_payout()
     auth_router.bootstrap_initial_admins()
     # гарантируем что есть хотя бы одно пространство
     db = SessionLocal()
